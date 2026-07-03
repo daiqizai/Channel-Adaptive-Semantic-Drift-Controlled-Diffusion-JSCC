@@ -305,6 +305,18 @@ outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
 outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/
 ```
 
+该目录每个 SNR 只保存 32 张 PNG，主要用于复现 `EXP-S2-002` 到 `EXP-S4-005`。更大的 residual validation export 位于：
+
+```text
+outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256/
+```
+
+该目录仍在同一 512 张 COCO val subset 上评估 M0，但每个 SNR 保存前 256 张 PNG。复现命令：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s2_deepjscc_highres_export.py --config configs/s2_deepjscc_coco256_awgn.yaml --checkpoint outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt --device cuda:0 --snrs 1,4,7,13,19 --batch-size 16 --num-workers 4 --export-count 256 --output-dir outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256
+```
+
 后续 `M1-BlindDiffusion` 应优先读取：
 
 ```text
@@ -710,6 +722,49 @@ outputs/EXP-S4-005/samples/
 结论：这是小样本 pilot，不是最终 M2/M3/Ours，但方向明显比通用 SD img2img 更健康。1/4/7/13/19 dB 上 refined PSNR 相比 M0 分别提升 `+0.3866/+0.1868/+0.0905/+0.1248/+0.1682` dB；LPIPS 除 7 dB 基本持平外均改善；pseudo final failure 没有高于 M0。
 
 注意：`EXP-S4-004` 是同一 pilot 的失败尝试，训练完成后因 `train_history.csv` 字段写入 bug 中断，保留在 `outputs/EXP-S4-004/`，不要复用该实验 ID。
+
+## S5 Pixel Residual Restoration Validation
+
+当前已完成 `EXP-S4-006`：使用更大的 M0 export 训练/验证同一个 SNR-conditioned residual refiner。
+
+配置：
+
+```text
+configs/s5_residual_refiner_validation_coco256_awgn.yaml
+```
+
+切分：
+
+- train：`sample_000032.png` 到 `sample_000191.png`，每个 SNR 160 张
+- eval：`sample_000192.png` 到 `sample_000255.png`，每个 SNR 64 张
+
+先检查输入和切分：
+
+```bash
+python3 scripts/s5_residual_refiner_pilot.py --config configs/s5_residual_refiner_validation_coco256_awgn.yaml --dry-run
+```
+
+运行 validation。该命令不下载模型或数据；如环境里有代理变量，建议清空代理变量运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_pilot.py --config configs/s5_residual_refiner_validation_coco256_awgn.yaml --device cuda:0
+```
+
+输出：
+
+```text
+outputs/EXP-S4-006/checkpoints/best.pt
+outputs/EXP-S4-006/train_history.csv
+outputs/EXP-S4-006/metrics.json
+outputs/EXP-S4-006/summary.csv
+outputs/EXP-S4-006/per_sample.csv
+outputs/EXP-S4-006/REPORT.md
+outputs/EXP-S4-006/exports/snr_XXdb/refined/
+outputs/EXP-S4-006/exports/snr_XXdb/final/
+outputs/EXP-S4-006/samples/
+```
+
+结论：pure refined 在 1/4/7/13/19 dB 上 PSNR 分别提升 `+1.1323/+0.7837/+0.5859/+0.5504/+0.5654` dB，LPIPS 全部改善；经过 top-1 agreement fallback 后，M3 final PSNR 仍提升 `+0.3313/+0.3812/+0.3815/+0.4557/+0.4561` dB，且 pseudo final failure 未高于 M0。低 SNR 下 accept rate 较低，后续应做 detector error analysis，而不能把 pure refined 直接当最终方法。
 
 ## 项目进度可视化汇总
 
