@@ -1,0 +1,90 @@
+# 当前进度
+
+## 当前阶段
+
+- 阶段0：文献与代码准备
+- 阶段1：DeepJSCC baseline
+- 阶段2-HR：高分辨率 DeepJSCC 重训
+- 阶段3：Blind diffusion refinement
+- 阶段4：Semantic drift metric
+- 阶段5：Channel-adaptive semantic guidance
+- 阶段6：完整实验
+- 阶段7：论文整理
+
+当前处于：阶段5 validation，已基于 `EXP-S2-002` 完成 CLIP image-image consistency、冻结 ImageNet 分类器 pseudo-label consistency、COCO caption CLIP image-text consistency 三条辅助语义诊断，并用冻结分类器 top-1 agreement 实现了最小 semantic fallback。`EXP-S4-002` 已完成低强度固定 diffusion 与保守 SNR-aware schedule 的小规模验证，`EXP-S4-003` 进一步确认 SD VAE encode/decode roundtrip 在不运行 UNet denoise、不使用 prompt 的情况下已显著损伤高保真 M0。当前不能把通用 Stable Diffusion img2img 作为正向视觉增强主线。
+
+## 当前任务
+
+- 状态：阶段1 DeepJSCC sanity baseline 已完成；COCO2017 `train2017/val2017` 和官方 annotations 已完成；COCO-256 正式训练已产生可用 `best.pt`，但 epoch 89 后出现 NaN，`latest.pt` 不可用；`M1-BlindDiffusion` 已在 1/7/19 dB、每个 SNR 16 张图上完成，结果为明显负向；`EXP-S3-001` 已完成 CLIP image-image consistency 辅助诊断和 failure case gallery；`EXP-S3-002` 已完成冻结 AlexNet pseudo-label consistency 诊断；`EXP-S3-003` 已完成 COCO caption CLIP image-text consistency 诊断；`EXP-S4-001` 已完成 receiver-side semantic fallback pilot；`EXP-S4-002` 已完成 `[1,4,7,13,19]` dB、每个 SNR 8 张图的低强度/SNR-aware diffusion validation，结果仍不满足视觉收益要求；`EXP-S4-003` 已完成 SD VAE roundtrip 诊断，确认 VAE 重编码本身会带来约 3.49-7.33 dB 的 M0 PSNR 损失
+- 负责人/对话：liulu + Codex
+- 开始日期：2026-06-29
+- 相关代码：`configs/`, `data/`, `src/`, `scripts/`, `outputs/`, `tests/`, `references/`, `third_party/`
+- 日志路径：`outputs/EXP-S1-001/metrics.json`
+- checkpoint 路径：`third_party/Deep-JSCC-PyTorch/out/checkpoints/CIFAR10_8_13.0_0.17_AWGN_22h13m53s_on_Jun_07_2024/epoch_999.pkl`
+
+## 已完成
+
+| 日期 | 内容 | 路径 | 验证方式 | 结论 |
+|---|---|---|---|---|
+| 2026-06-29 | 创建项目中枢文档 | `PROJECT.md`, `AGENTS.md`, `PROGRESS.md`, `EXPERIMENTS.md`, `LITERATURE.md`, `README.md` | 检查项目目录中文件存在 | 项目边界和记录文件已就位 |
+| 2026-06-29 | 定义核心问题、核心假设和不做的事情 | `PROJECT.md` | 复核项目定义 | 项目聚焦 diffusion-enhanced JSCC，并显式控制 semantic drift |
+| 2026-06-29 | 将中枢文档统一改为中文 | 全部中枢文档 | 人工检查文档语言 | 后续协作以中文为主，必要英文术语保留 |
+| 2026-06-29 | 整理相关工作分类和创新边界 | `LITERATURE.md` | 检查三类相关工作和创新边界是否写入 | 文献调研按 Diffusion JSCC、Channel-adaptive JSCC、Semantic reliability 三条线推进 |
+| 2026-06-29 | 明确多 AI 协作协议 | `AGENTS.md` | 检查开始必读、结束必更、禁止事项是否写入 | 本地文件作为唯一共享记忆，降低多对话协作丢上下文风险 |
+| 2026-06-29 | 完成第一轮文献和 baseline 代码扫描 | `LITERATURE.md` | 记录 DiffJSCC、SGD-JSCC、DiT-JSCC、JSCGC、Dynamic_JSCC、DeepJSCC-l++、PJSCC 等工作 | diffusion/generative JSCC 撞车风险较强，项目应收紧到 SNR-aware diffusion refinement + semantic drift 显式度量 |
+| 2026-06-29 | 创建初始代码目录 | `configs/`, `data/`, `src/`, `scripts/`, `outputs/`, `tests/`, `references/`, `third_party/` | 检查目录和 README 文件存在 | 代码、配置、输出、第三方依赖和文献资料有了固定位置 |
+| 2026-06-29 | 克隆第一候选 DeepJSCC baseline | `third_party/Deep-JSCC-PyTorch` | `git rev-parse HEAD` 返回 `2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06` | 第三方仓库已本地化，包含 CIFAR-10/AWGN/Rayleigh checkpoint |
+| 2026-06-29 | 审计 Deep-JSCC-PyTorch baseline | `third_party/Deep-JSCC-PyTorch` | 阅读 README、`train.py`、`eval.py`、`model.py`、`channel.py`、`dataset.py`、`utils.py` 并运行 `py_compile` | 适合作为阶段1 baseline，但应通过本项目 adapter 包装，不直接修改第三方源码 |
+| 2026-06-29 | 写入阶段1配置和 smoke test | `configs/s1_deepjscc_cifar10_awgn.yaml`, `scripts/s1_deepjscc_smoke.py`, `src/cadsd_jscc/` | `py_compile` 通过 | 依赖安装成功后，可用合成图像验证 checkpoint 加载、SNR 切换、重建输出和 PSNR |
+| 2026-06-29 | 尝试安装阶段1依赖 | `requirements.txt`, `requirements-torch-cpu.txt`, `README.md` | `pip show torch torchvision tensorboardX` 未找到包 | 默认 PyPI 下载超时；CPU-only PyTorch 下载 hash mismatch，当前 smoke test 受环境依赖阻塞 |
+| 2026-06-29 | 添加忽略规则 | `.gitignore` | 检查规则覆盖 `__pycache__`、数据、输出和第三方仓库 | 避免缓存、数据集、实验输出和外部仓库误入版本管理 |
+| 2026-06-29 | 补充课题收敛约束 | `MILESTONES.md`, `PROJECT.md`, `EXPERIMENTS.md`, `AGENTS.md`, `README.md` | 人工复核文档是否覆盖最小闭环、semantic drift 定义、实验矩阵和成功/失败判据 | 项目从方向约束升级为可收敛执行约束 |
+| 2026-06-29 | 安装阶段1和研究扩展依赖 | `requirements-torch-cpu.txt`, `requirements.txt`, `requirements-research.txt`, `README.md` | import `torch`, `torchvision`, `pytorch_msssim`, `lpips`, `diffusers`, `transformers`, `open_clip`, `cleanfid` 通过 | CPU 环境依赖已就位，尚未下载正式数据集或模型权重 |
+| 2026-06-29 | 运行 DeepJSCC smoke test | `scripts/s1_deepjscc_smoke.py`, `outputs/smoke/s1_deepjscc/` | `python3 scripts/s1_deepjscc_smoke.py --device cpu --batch-size 2` 成功，生成 `metrics.json` 和两张样例图 | checkpoint 加载、SNR 切换、重建输出和 PSNR 计算已验证；该结果不是正式实验 |
+| 2026-06-29 | 下载 CIFAR-10 并运行 mini-eval | `data/cifar10/`, `outputs/mini/s1_deepjscc_cifar10_awgn/` | `python3 scripts/s1_deepjscc_mini_eval.py --device cpu --download` 成功 | 64 张固定 test subset 上 PSNR/SSIM 随 SNR 升高而提升；MS-SSIM 因 32x32 尺寸限制不可用 |
+| 2026-06-29 | 完成 EXP-S1-001 正式 baseline | `outputs/EXP-S1-001/`, `EXPERIMENTS.md` | `python3 scripts/s1_deepjscc_mini_eval.py --device cpu --num-samples 1024 --batch-size 64 --output-dir outputs/EXP-S1-001 --formal` 成功 | M0-DeepJSCC 在 CIFAR-10 test subset/AWGN/CBR 0.17 上有了可复现基线 |
+| 2026-06-29 | 新增高分辨率 DeepJSCC 训练入口 | `configs/s2_deepjscc_coco256_awgn.yaml`, `scripts/train_deepjscc_highres.py`, `src/cadsd_jscc/datasets.py` | `py_compile` 通过；dry-run 使用合成 256x256 图像完成 1 个 epoch | COCO-256 重训路线已落地，正式训练需要 GPU 和 COCO2017 数据 |
+| 2026-06-29 | 检查 GPU 并尝试安装 CUDA PyTorch | `requirements-torch-cu128.txt`, `README.md` | `nvidia-smi` 在提权环境可见 RTX 4090 D；当前 Python 仍显示 `torch 2.12.1+cpu` | 机器有 GPU，但 CUDA PyTorch 安装未完成；`torch==2.11.0+cu128` 下载速度过慢，后续网络操作被审批额度限制拦截 |
+| 2026-06-30 | 验证 CUDA PyTorch 和高分辨率训练 GPU 路径 | `scripts/train_deepjscc_highres.py`, `outputs/smoke/s2_deepjscc_coco256_train_gpu/` | `torch 2.11.0+cu128`，`torch.cuda.is_available()` 为 True，设备为 RTX 4090 D；GPU dry-run 完成 1 个 epoch；`diffusers`、`transformers`、`open_clip`、`lpips`、`cleanfid` import 通过 | CUDA 训练链路和关键研究依赖可用；当前仍缺 COCO2017 `train2017/val2017` 数据 |
+| 2026-06-30 | 下载并验证 COCO2017 val，运行真实图像 GPU smoke | `data/coco/val2017/`, `outputs/smoke/s2_deepjscc_coco256_val2017_gpu/` | `val2017.zip` 下载并解压完成，图片数 5000；用 `val2017` 临时覆盖 train/val root 跑通 256x256 GPU smoke | 真实 COCO 图像读取、crop、GPU 前后向、checkpoint 和样例图保存均可用；`train2017.zip` 正在下载 |
+| 2026-06-30 | 启动 COCO-256 AWGN DeepJSCC 长任务 pipeline | `scripts/run_s2_coco256_awgn_train.sh`, `outputs/logs/s2_coco256_awgn_train.screen.log` | `screen` 会话 `s2_coco256_awgn_train` 已启动；脚本会续传 `train2017.zip`、解压、检查图片数，然后运行 GPU 训练 | 长任务已开始；当前阶段仍需等待 `train2017` 下载和训练完成后再登记正式 `M0-HR` baseline |
+| 2026-06-30 | 暂停 COCO2017 train 下载以确认代理/流量来源 | `data/coco/train2017.zip`, `data/coco/train2017.zip.possibly_corrupt_20260630_2046` | 环境变量显示 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY=http://127.0.0.1:17890`；所有 `wget` 和 `screen` 下载进程已停止 | 当前不会继续产生下载流量；新 `train2017.zip` 约 15MB，早先双进程风险 partial 已改名保留为 possibly_corrupt |
+| 2026-06-30 | 将 COCO2017 train 下载切换为直连 | `scripts/run_s2_coco256_awgn_train.sh`, `outputs/logs/s2_coco256_awgn_train.direct.screen.log` | `wget --no-proxy --spider` 可直连 COCO 官方源；长任务 screen 会话 `s2_coco256_awgn_train` 已重启，实际 wget 命令包含 `--no-proxy` | Codex 仍可使用当前代理环境，但 COCO 数据下载不再走 `127.0.0.1:17890` 代理 |
+| 2026-06-30 | 准备 COCO-val 高分辨率 pilot 训练集并完成训练 | `scripts/prepare_image_symlink_split.py`, `configs/s2_deepjscc_coco_val256_awgn_pilot.yaml`, `data/coco_val_split/`, `outputs/train/s2_deepjscc_coco_val256_awgn_snr7_cbr017_pilot/` | 从 `data/coco/val2017/` 用 seed 42 生成 4500/500 不重叠符号链接切分；训练 50 epoch 完成；final PSNR 26.6647 dB，SSIM 0.7837 | 已得到非正式 HR pilot checkpoint，可用于 diffusion/refinement 接口调试；该结果不能替代正式 COCO train/val 主实验 |
+| 2026-06-30 | 评估其他高分辨率数据集下载路线 | `data/imagenette/imagenette2-320.tgz` | `Imagenette2-320` 官方包可 `wget --no-proxy` 直连，大小约 326MB，但实测直连速度也偏慢，当前仅保留约 1.1MB partial | Imagenette 适合作为带分类标签的高分辨率语义 pilot 备选，但当前优先利用已完成的 COCO val split 训练 |
+| 2026-06-30 | 检查后台下载与训练状态 | `data/coco/train2017.zip`, `outputs/logs/s2_coco256_awgn_train.direct.screen.log`, `outputs/train/s2_deepjscc_coco_val256_awgn_snr7_cbr017_pilot/` | 23:00 检查：screen 仅剩 `s2_coco256_awgn_train`；`wget --no-proxy` 仍在运行；`train2017.zip` 约 46MB；GPU 空闲；pilot checkpoint 和 `metrics.json` 已落盘 | COCO 正式训练尚未开始；当前可继续用 pilot checkpoint 推进 high-res inference/diffusion 接口 |
+| 2026-06-30 | 扫描近期 JSCC / diffusion-JSCC 论文数据集设置 | `LITERATURE.md` | 整理 Dynamic_JSCC、DeepJSCC-l++、DiffJSCC、SGD-JSCC、DiT-JSCC、JSCGC 的训练/测试数据集 | 近期 generative/diffusion JSCC 主流转向 OpenImages/ImageNet/COCO/Kodak；本项目 COCO-256 主路线合理，CIFAR-10 只保留为 sanity |
+| 2026-06-30 | 细读 DeepJSCC-l++ 可取之处 | `LITERATURE.md` | 梳理 side information、Swin backbone、mask/zero-padding、DWA 和公开代码价值 | 该工作适合作为 channel-adaptive JSCC 相关工作和后续扩展参考；当前不建议改为主 baseline，以免偏离 semantic drift controlled diffusion 主线 |
+| 2026-06-30 | 再次检查当前总体进度 | `data/coco/train2017.zip`, `outputs/train/s2_deepjscc_coco_val256_awgn_snr7_cbr017_pilot/` | 23:50 检查：screen 仍只有 `s2_coco256_awgn_train`；实际进程为 `wget --no-proxy`；`train2017.zip` 约 56MB；GPU 空闲；pilot 输出文件齐全 | 当前不需要等 COCO，可先基于 pilot checkpoint 开始 high-res inference/export 和 diffusion refinement 接口 |
+| 2026-06-30 | 完成 COCO-val pilot M0-HR SNR sweep 和 `x_hat` 导出 | `scripts/s2_deepjscc_highres_export.py`, `outputs/eval/s2_deepjscc_coco_val256_awgn_pilot_m0_export/` | 在 500 张 pilot val 图上跑 `[1,4,7,13,19]` dB；每个 SNR 导出 32 张重建 PNG；保存 PSNR/SSIM/MS-SSIM/推理时间 | high-res DeepJSCC export 接口可用；后续 `M1-BlindDiffusion` 可直接读取 `exports/snr_XXdb/reconstruction/` |
+| 2026-07-01 | 完成 COCO2017 train 下载并自动解压 | `data/coco/train2017/`, `data/coco/val2017/` | `train2017.zip` 完整存在；`train2017` 图片数 118287，`val2017` 图片数 5000 | 正式 COCO-256 训练数据已就位 |
+| 2026-07-01 | COCO-256 正式训练完成但后段 NaN | `outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/` | 训练共写入 100 行 history；epoch 0-88 有限，epoch 89-99 为 NaN；`best.pt` 为 epoch 73，val PSNR 31.5618 dB，SSIM 0.9054；`latest.pt` 为 NaN，不可用 | 已有可用正式 high-res DeepJSCC checkpoint，但必须使用 `best.pt`；训练稳定性需记录为风险 |
+| 2026-07-01 | 评估正式 COCO-256 best checkpoint 的 M0-HR SNR sweep | `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/` | 在 512 张 COCO val subset 上跑 `[1,4,7,13,19]` dB；导出每个 SNR 32 张 `x_hat`；7 dB PSNR 31.5590，19 dB PSNR 33.7264 | 正式 `M0-HR` baseline 可用于接 `M1-BlindDiffusion`；后续不要再用 pilot 或 `latest.pt` 做主输入 |
+| 2026-07-01 | 给高分辨率训练脚本增加 NaN 防护 | `scripts/train_deepjscc_highres.py` | `py_compile` 通过；训练中若 loss 或 metrics 非有限会提前停止，且 final metrics 会回到 `best.pt` 评估 | 后续重训可避免 `latest.pt` 被 NaN 覆盖；当前已有结果不被改写 |
+| 2026-07-01 | 分析 COCO-val pilot M0-HR 结果 | `outputs/train/s2_deepjscc_coco_val256_awgn_snr7_cbr017_pilot/`, `outputs/eval/s2_deepjscc_coco_val256_awgn_pilot_m0_export/` | 训练末期 val PSNR 稳定到 26.66 dB；SNR sweep 从 1 到 19 dB 的 PSNR 从 25.13 升到 27.30，SSIM 从 0.7096 升到 0.8125，MS-SSIM 从 0.8991 升到 0.9607 | pilot checkpoint 质量足够调试 diffusion；高 SNR 收益趋于平台，说明瓶颈主要来自 JSCC 压缩/模型容量；低 SNR 仍保留主体语义，适合测试 diffusion semantic drift |
+| 2026-07-01 | 接入 M1-BlindDiffusion 最小脚本和配置 | `configs/s3_m1_blind_diffusion_coco256_awgn.yaml`, `scripts/s3_blind_diffusion_refine.py` | `py_compile` 通过；`--dry-run` 验证 1/7/19 dB 每个 SNR 16 张样本能和正式 M0 export 对齐 | 脚本只读取正式 `best.pt` 对应 M0 export，拒绝覆盖已有输出目录，可保存 refined 图、metrics 和三行样例图 |
+| 2026-07-01 | 尝试运行 M1-BlindDiffusion 正式小规模实验 | `outputs/EXP-S2-001/` | 提权运行 `python3 scripts/s3_blind_diffusion_refine.py --device cuda:0 --allow-download` 被审批层拒绝；local-only CPU 运行因 `runwayml/stable-diffusion-v1-5` 不在本地 cache 而失败，未创建 `outputs/EXP-S2-001/` | 当前不能虚构 M1 指标；后续需要用户显式允许下载/使用 GPU，或先把 diffusion 权重放入 `outputs/cache/huggingface` |
+| 2026-07-01 | 记录下载流量规则 | `AGENTS.md`, `README.md` | 写入大模型/大数据/ CUDA 等大文件下载默认清空代理变量、走服务器直连；只有用户明确允许时才走代理/本机流量 | 后续执行 Hugging Face、COCO、PyTorch 等大下载前必须检查 `env | grep -i proxy`，必要时使用 `env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy ...` |
+| 2026-07-01 | 完成 M1-BlindDiffusion 小规模正式实验 | `outputs/EXP-S2-002/` | 用服务器直连 `hf-mirror.com` 补齐 SD v1.5 UNet 权重；运行 `python3 scripts/s3_blind_diffusion_refine.py --device cuda:0`；生成 48 张 refined 图、3 张样例图和 `metrics.json` | 负结果：M1 在 1/7/19 dB 上 PSNR 从 28.17/31.83/34.14 dB 降到 16.22/16.78/16.89 dB，LPIPS 从 0.1747/0.0542/0.0254 升到 0.5025/0.4600/0.4549；样例显示明显 hallucination 和语义漂移 |
+| 2026-07-02 | 完成 M1 结果的 CLIP consistency 初步诊断 | `configs/s4_clip_consistency_m1_exp_s2_002.yaml`, `scripts/s4_clip_consistency_eval.py`, `outputs/EXP-S3-001/` | 使用 OpenAI CLIP ViT-B/32 本地权重评估 1/7/19 dB、每个 SNR 16 张图；保存 `metrics.json` 和 `per_sample.csv` | 辅助语义诊断确认 M1 明显漂移：原图-M0 CLIP mean 为 0.9022/0.9587/0.9848，原图-M1 为 0.6619/0.6867/0.6954；M1 在所有 48 个样本上都低于 M0 |
+| 2026-07-02 | 整理 CLIP top failure case gallery | `scripts/s4_make_clip_failure_gallery.py`, `outputs/EXP-S3-001/failure_cases/` | 从 `outputs/EXP-S3-001/per_sample.csv` 选取全局 top 12 和每个 SNR top 6，生成 original/M0/M1 triptych、sheet、CSV 和 JSON 索引 | 已固化 18 个不重复 failure case；全局最大 CLIP drop 为 19 dB `sample_000013.png`，drop 0.4026，图中 M0 接近原图但 M1 明显改写主体结构 |
+| 2026-07-02 | 完成冻结分类器 pseudo-label consistency 诊断 | `configs/s4_classifier_consistency_m1_exp_s2_002.yaml`, `scripts/s4_classifier_consistency_eval.py`, `outputs/EXP-S3-002/` | 使用本地缓存 AlexNet ImageNet 权重评估 1/7/19 dB、每个 SNR 16 张图；保存 `metrics.json` 和 `per_sample.csv` | 辅助分类器诊断确认 M1 明显漂移：all-subset 中 M0 top-1 与原图一致率为 0.50/0.6875/0.9375，M1 仅为 0.125/0.0625/0.125；在原图置信度 >=0.3 子集上 M0 为 0.8889/1.0/1.0，M1 为 0.2222/0.1111/0.2222 |
+| 2026-07-02 | 整理冻结分类器 top failure case gallery | `scripts/s4_make_classifier_failure_gallery.py`, `outputs/EXP-S3-002/failure_cases/` | 从 `outputs/EXP-S3-002/per_sample.csv` 选取 M0 匹配原图但 M1 不匹配的样本，生成全局 top 12 和每个 SNR top 6 triptych、sheet、CSV 和 JSON 索引 | 已固化 18 个不重复 classifier failure case；典型例子是 19 dB `sample_000002.png`，原图/M0 均为 `Pomeranian`，M1 变为 `gondola` |
+| 2026-07-02 | 汇总 M1 负结果跨指标证据 | `scripts/s4_summarize_m1_negative_result.py`, `outputs/analysis/m1_negative_result_summary/` | 聚合 `EXP-S2-002` 图像指标、`EXP-S3-001` CLIP 诊断和 `EXP-S3-002` 分类器诊断，输出 `REPORT.md`、`summary.csv`、`summary.json` | 派生汇总确认固定强度 blind diffusion 是系统性负结果：平均 PSNR delta 为 -14.7485 dB，平均 LPIPS delta 为 +0.3877，平均 CLIP drop 为 0.2672，分类器 all-subset M1 pseudo drift-origin 为 0.8958 |
+| 2026-07-02 | 下载并验证 COCO2017 annotations | `data/coco/annotations_trainval2017.zip`, `data/coco/annotations/` | 使用清空代理变量和 `--no-proxy` 的服务器直连方式下载 241MB 官方 zip；`unzip -t` 显示无错误；解压 captions/instances/keypoints JSON | COCO caption/object 语义评估所需标注已就位；未走用户本机代理流量 |
+| 2026-07-02 | 完成 COCO caption CLIP image-text consistency 诊断 | `configs/s4_coco_caption_clip_m1_exp_s2_002.yaml`, `scripts/s4_coco_caption_clip_eval.py`, `outputs/EXP-S3-003/` | 用 COCO `captions_val2017.json` 反查 48 个样本的 captions，使用本地 OpenAI CLIP ViT-B/32 评估 image-text 相似度；保存 `metrics.json`、`per_sample.csv`、`sample_metadata.json` | caption 语义诊断继续确认 M1 漂移：1/7/19 dB 下 M0 caption-max mean 为 0.3306/0.3305/0.3263，M1 为 0.2816/0.2815/0.2877；M1 caption-max 低于 M0 的比例为 1.0/0.8125/0.8125 |
+| 2026-07-02 | 整理 COCO caption top failure case gallery | `scripts/s4_make_coco_caption_failure_gallery.py`, `outputs/EXP-S3-003/failure_cases/` | 从 `outputs/EXP-S3-003/per_sample.csv` 按 caption CLIP drop 生成全局 top 12 和每个 SNR top 6 triptych、sheet、CSV/JSON/README 索引 | 已固化 caption-based failure case；全局最大 caption drop 为 7 dB `sample_000008.png`，COCO caption 为 car/clock/flowers，M1 明显改写为杂乱纹理 |
+| 2026-07-03 | 梳理当前语义评价指标和后续主指标口径 | `PROJECT.md`, `MILESTONES.md`, `EXPERIMENTS.md`, `README.md` | 复核当前三套辅助诊断和里程碑中的冻结语义模型定义 | 当前不应把 CLIP/caption/pseudo-label 诊断包装成最终主指标；后续主线应固定 `T_cls`、clean-correct subset、Drift-Origin/Refinement-Drift/Final-Failure，并用辅助指标解释 failure case |
+| 2026-07-03 | 生成项目进度可视化总览 | `scripts/s4_make_project_progress_visual_summary.py`, `outputs/analysis/project_progress_visual_summary/` | 从已有 metrics/CSV/PNG 派生 `REPORT.md`、汇总 CSV、阶段进度图、M0 SNR 曲线、M1 质量对比、M1 语义诊断图和代表性可视化拼图；抽查图像尺寸和关键 PNG 显示正常 | 已得到当前项目全局进度与负结果证据包；本次不新增模型运行，不写入 `EXPERIMENTS.md` |
+| 2026-07-03 | 整理 2026-07-04 组会汇报材料 | `reports/group_meeting_2026-07-04.md` | 汇总 `PROJECT.md`、`MILESTONES.md`、`EXPERIMENTS.md`、`outputs/analysis/m1_negative_result_summary/REPORT.md` 和三类 failure case gallery | 已形成可直接搬到 PPT 的 8-10 分钟汇报主线、关键表格、推荐图、讲稿提示和答疑口径；本次未新增实验，不更新 `EXPERIMENTS.md` |
+| 2026-07-03 | 完成最小 semantic fallback pilot | `configs/s5_semantic_fallback_m1_exp_s2_002.yaml`, `scripts/s5_semantic_fallback_eval.py`, `outputs/EXP-S4-001/` | `py_compile`、`--dry-run`、`python3 scripts/s5_semantic_fallback_eval.py --device cuda:0` 成功；生成 `metrics.json`、`per_sample.csv`、`REPORT.md`、M3 final 图和 3 张 original/M0/M1/M3 拼图 | receiver-side top-1 agreement detector 不看原图即可拒绝大多数 M1 漂移，M3 pseudo final failure 回到 M0 水平；但少量 accepted M1 仍降低 PSNR/LPIPS，说明固定强度 M1 太激进，下一步必须做更弱的 SNR-aware strength 网格 |
+| 2026-07-03 | 完成低强度 SNR-aware diffusion validation | `configs/s5_snr_adaptive_diffusion_strength_validation.yaml`, `scripts/s5_snr_adaptive_diffusion_validation.py`, `outputs/EXP-S4-002/` | `py_compile`、`--dry-run`、清空代理变量后运行 `python3 scripts/s5_snr_adaptive_diffusion_validation.py --device cuda:0` 成功；生成 2 个候选、5 个 SNR、每个 SNR 8 张图的 metrics/CSV/样例拼图 | `fixed_0p05` 和 `snr_adaptive_0p10_to_0p05` 均比 0.25 语义更稳，但 refined PSNR/LPIPS 仍明显差于 M0；fallback 可把 final failure 压回 M0 附近，却不能弥补 SD img2img 对高保真重建的质量损伤 |
+| 2026-07-03 | 完成 SD VAE roundtrip 诊断 | `configs/s5_sd_vae_roundtrip_coco256_awgn.yaml`, `scripts/s5_sd_vae_roundtrip_eval.py`, `outputs/EXP-S4-003/` | `py_compile`、`--dry-run`、清空代理变量后运行 `python3 scripts/s5_sd_vae_roundtrip_eval.py --device cuda:0` 成功；生成 5 个 SNR、每个 SNR 8 张图的 M0-VAE/original-VAE 往返图、metrics/CSV/样例拼图 | 不运行 UNet denoise、不使用 prompt 时，M0-VAE 相对 M0 仍损失约 3.49-7.33 dB PSNR，LPIPS 变差约 0.009-0.058；高 SNR 下 VAE 将 M0 质量压到约 27 dB，确认通用 SD VAE 是当前 SD img2img 路线的重要瓶颈 |
+
+## 下一步
+
+1. 第一版不要继续把通用 Stable Diffusion img2img 作为正向主方法；`EXP-S4-003` 已显示 VAE roundtrip 本身会破坏高 SNR M0，高保真修复需要避开或替换这个瓶颈。
+2. 若继续 diffusion/restoration 路线，应转向更贴近 image restoration 的模型或 latent-free/像素域保守模块，并把 SD img2img 保留为负例和 semantic failure handling 动机；所有结果必须继续记录 semantic drift。
+3. 继续收敛正式主语义指标：当前 COCO 上仍是 pseudo-label/CLIP/caption 辅助诊断；若需要严格 clean-correct 分类统计，应引入带标签 Imagenette/ImageNet subset 作为补充，而不是把 COCO pseudo-label 当作最终主指标。
+4. 后续正式流程一律使用 `outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt` 和 `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/`，不要使用 `latest.pt`。
+5. 后续下载大模型或数据仍必须清空代理变量，默认走服务器直连；官方 Hugging Face 直连当前超时，`hf-mirror.com` 服务器直连可用。

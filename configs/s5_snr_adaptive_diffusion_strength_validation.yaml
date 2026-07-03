@@ -1,0 +1,72 @@
+phase: S5
+experiment_id: EXP-S4-002
+method: SNRAdaptiveDiffusionStrengthValidation
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  m0_export_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export
+  original_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/exports/original
+  checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+diffusion:
+  model_id: runwayml/stable-diffusion-v1-5
+  pipeline: StableDiffusionImg2ImgPipeline
+  prompt: ""
+  negative_prompt: ""
+  num_inference_steps: 15
+  guidance_scale: 1.0
+  batch_size: 2
+  local_files_only: true
+  disable_safety_checker: true
+  cache_dir: outputs/cache/huggingface
+
+candidates:
+  - name: fixed_0p05
+    method: M1-LowStrengthFixedDiffusion
+    note: Fixed low-strength blind diffusion validation baseline.
+    strengths:
+      "1": 0.05
+      "4": 0.05
+      "7": 0.05
+      "13": 0.05
+      "19": 0.05
+  - name: snr_adaptive_0p10_to_0p05
+    method: M2-SNRAdaptiveDiffusion
+    note: Conservative schedule; strength does not increase as SNR rises.
+    strengths:
+      "1": 0.10
+      "4": 0.08
+      "7": 0.06
+      "13": 0.05
+      "19": 0.05
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 16
+  topk: 5
+
+failure_handling:
+  detector: top1_agreement_with_m0
+  accept_when: refined_classifier_top1_equals_m0_classifier_top1
+  fallback_output: m0_reconstruction
+  uses_original_for_detection: false
+
+evaluation:
+  num_samples: 8
+  sample_grid_count: 4
+  pseudo_clean_conf_thresholds: [0.20, 0.30]
+  metrics: [psnr, ssim, ms_ssim, lpips_optional, pseudo_drift, pseudo_final_failure, accept_rate]
+
+outputs:
+  output_dir: outputs/EXP-S4-002

@@ -1,0 +1,15 @@
+# Metrics, semantic evaluation, and diffusion/CLIP tooling used after the S1 baseline.
+pytorch-msssim
+lpips
+torchmetrics
+torch-fidelity
+scipy
+scikit-image
+scikit-learn
+pandas
+diffusers
+transformers
+accelerate
+safetensors
+open_clip_torch
+clean-fid

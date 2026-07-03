@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+wget-log*
+
+data/*
+!data/README.md
+
+outputs/*
+!outputs/README.md
+
+third_party/*
+!third_party/README.md

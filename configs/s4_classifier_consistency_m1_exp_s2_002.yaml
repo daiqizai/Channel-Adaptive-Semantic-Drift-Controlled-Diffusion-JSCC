@@ -1,0 +1,35 @@
+phase: S4
+experiment_id: EXP-S3-002
+method: Frozen classifier pseudo-label consistency diagnostic
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 7, 19]
+cbr: 0.17
+seed: 42
+
+inputs:
+  m0_export_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export
+  original_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/exports/original
+  m1_output_dir: outputs/EXP-S2-002
+  m1_metrics: outputs/EXP-S2-002/metrics.json
+  source_manifest: outputs/EXP-S2-002/source_manifest.json
+  checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 16
+  topk: 5
+
+evaluation:
+  num_samples: 16
+  pseudo_clean_conf_thresholds: [0.20, 0.30]
+  top_failure_count: 8
+
+outputs:
+  output_dir: outputs/EXP-S3-002

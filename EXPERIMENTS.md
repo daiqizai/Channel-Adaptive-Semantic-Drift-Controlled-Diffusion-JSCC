@@ -1,0 +1,1021 @@
+# 实验记录
+
+## ID 规则
+
+每个实验必须有唯一 ID。
+
+格式如下：
+
+- `EXP-S1-001`：阶段1，DeepJSCC baseline
+- `EXP-S2-001`：阶段3，Blind diffusion refinement
+- `EXP-S3-001`：阶段4，Semantic drift metric
+- `EXP-S4-001`：阶段5，Channel-adaptive semantic guidance
+- `EXP-S5-001`：阶段6，完整实验
+
+即使实验失败，也不能复用 ID。
+
+## 实验索引
+
+| ID | 日期 | 项目版本 | 方法 | 数据集 | 信道 | SNR | CBR | 指标 | 状态 | 输出路径 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| EXP-S1-001 | 2026-06-29 | N/A (not a project git repo) | M0-DeepJSCC | CIFAR-10 test subset, 1024 images | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | MSE, PSNR, SSIM | 完成 | `outputs/EXP-S1-001/` |
+| EXP-S2HR-001 | 2026-06-30 | N/A (not a project git repo) | M0-DeepJSCC-HR-pilot | COCO2017 val split pilot, 4500 train / 500 val | AWGN | 7 dB | 0.17 | MSE, PSNR, SSIM | 完成（非正式 pilot） | `outputs/train/s2_deepjscc_coco_val256_awgn_snr7_cbr017_pilot/` |
+| EXP-S2HR-002 | 2026-06-30 | N/A (not a project git repo) | M0-DeepJSCC-HR-pilot export | COCO2017 val split pilot, 500 val | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | MSE, PSNR, SSIM, MS-SSIM, inference time | 完成（非正式 pilot） | `outputs/eval/s2_deepjscc_coco_val256_awgn_pilot_m0_export/` |
+| EXP-S2HR-003 | 2026-07-01 | N/A (not a project git repo) | M0-DeepJSCC-HR formal train | COCO2017 train2017 / val2017 | AWGN | 7 dB | 0.17 | MSE, PSNR, SSIM | 完成（best 可用，latest NaN） | `outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/` |
+| EXP-S2HR-004 | 2026-07-01 | N/A (not a project git repo) | M0-DeepJSCC-HR formal export | COCO2017 val2017 subset, 512 images | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | MSE, PSNR, SSIM, MS-SSIM, inference time | 完成 | `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/` |
+| EXP-S2-001 | 2026-07-01 | N/A (not a project git repo) | M1-BlindDiffusion preflight/run attempt | COCO2017 val2017 export subset, 16 images/SNR planned | AWGN | [1, 7, 19] dB | 0.17 | 未生成 | 阻塞（模型权重缺失；提权下载/GPU 运行被拒绝） | 未创建 |
+| EXP-S2-002 | 2026-07-01 | N/A (not a project git repo) | M1-BlindDiffusion | COCO2017 val2017 export subset, 16 images/SNR | AWGN | [1, 7, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, diffusion time | 完成（负结果） | `outputs/EXP-S2-002/` |
+| EXP-S3-001 | 2026-07-02 | N/A (not a project git repo) | CLIP image-image consistency diagnostic | COCO2017 val2017 export subset, 16 images/SNR | AWGN | [1, 7, 19] dB | 0.17 | CLIP cosine similarity, CLIP drop rate | 完成（辅助语义诊断；负结果） | `outputs/EXP-S3-001/` |
+| EXP-S3-002 | 2026-07-02 | N/A (not a project git repo) | Frozen classifier pseudo-label consistency diagnostic | COCO2017 val2017 export subset, 16 images/SNR | AWGN | [1, 7, 19] dB | 0.17 | Pseudo-label prediction consistency, pseudo drift-origin, refinement drift | 完成（辅助分类器诊断；负结果） | `outputs/EXP-S3-002/` |
+| EXP-S3-003 | 2026-07-02 | N/A (not a project git repo) | COCO caption CLIP text consistency diagnostic | COCO2017 val2017 export subset, 16 images/SNR | AWGN | [1, 7, 19] dB | 0.17 | COCO caption CLIP image-text similarity, caption drop rate | 完成（辅助 caption 语义诊断；负结果） | `outputs/EXP-S3-003/` |
+| EXP-S4-001 | 2026-07-03 | N/A (not a project git repo) | M3-PseudoClassifierFallbackPilot | COCO2017 val2017 export subset, 16 images/SNR | AWGN | [1, 7, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo Final-Failure, accept/reject, false accept/reject | 完成（S5 fallback pilot；非完整 M3） | `outputs/EXP-S4-001/` |
+| EXP-S4-002 | 2026-07-03 | N/A (local directory is not yet a git repo) | SNRAdaptiveDiffusionStrengthValidation | COCO2017 val2017 export subset, 8 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure, accept/reject | 完成（S5 strength validation；负/部分结果） | `outputs/EXP-S4-002/` |
+| EXP-S4-003 | 2026-07-03 | N/A (local directory is not yet a git repo) | SD VAE roundtrip diagnostic | COCO2017 val2017 export subset, 8 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure | 完成（S5 VAE 诊断；负/瓶颈确认） | `outputs/EXP-S4-003/` |
+
+`项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
+
+## 指标要求
+
+### 图像质量
+
+- PSNR
+- MS-SSIM
+- LPIPS
+- FID，可选
+
+### 语义可靠性
+
+- Classification accuracy
+- Prediction consistency
+- Semantic drift rate
+- Semantic failure rate
+- Detector accept / reject rate，若使用 failure detector
+- CLIP similarity，可选
+
+### 系统开销
+
+- Diffusion steps
+- Inference time
+- 参数量
+- FLOPs
+
+## 单实验模板
+
+### EXP-Sx-000：标题
+
+- 日期：
+- 项目版本：
+- 第三方 commit：
+- 阶段：
+- 方法：
+- 数据集：
+- 数据 split / 样本 ID：
+- 信道：
+- SNR：
+- CBR：
+- 随机种子：
+- checkpoint：
+- config：
+- 运行命令：
+- 关键源码：
+- 输出路径：
+- 状态：
+
+#### 指标
+
+- PSNR：
+- MS-SSIM：
+- LPIPS：
+- FID：
+- Classification accuracy：
+- Prediction consistency：
+- Semantic drift rate：
+- Semantic failure rate：
+- Detector accept rate：
+- Detector reject rate：
+- CLIP similarity：
+- Diffusion steps：
+- Inference time：
+- 参数量：
+- FLOPs：
+
+#### 结果总结
+
+-
+
+#### Semantic drift 观察
+
+-
+
+#### 失败案例
+
+-
+
+#### 复现备注
+
+-
+
+#### 下一步
+
+-
+
+## 正式实验要求
+
+正式实验必须满足：
+
+- 使用唯一 `EXP-*` ID 和唯一输出目录。
+- 保存 config 副本、metrics 文件和样例图。
+- 记录项目版本；如果没有项目 git commit，必须记录脚本、配置和关键源码路径。
+- 记录第三方 baseline commit。
+- 记录数据 split、随机种子、checkpoint、SNR、CBR 和信道模型。
+- smoke test 不写入正式实验索引，但可以写入 `PROGRESS.md`。
+
+### EXP-S1-001：DeepJSCC CIFAR-10 AWGN baseline
+
+- 日期：2026-06-29
+- 项目版本：N/A (not a project git repo)
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S1 DeepJSCC baseline
+- 方法：M0-DeepJSCC
+- 数据集：CIFAR-10 test subset, 1024 images
+- 数据 split / 样本 ID：`outputs/EXP-S1-001/subset_indices.json`
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- 随机种子：42；subset seed 42
+- checkpoint：`third_party/Deep-JSCC-PyTorch/out/checkpoints/CIFAR10_8_13.0_0.17_AWGN_22h13m53s_on_Jun_07_2024/epoch_999.pkl`
+- config：`outputs/EXP-S1-001/config.yaml`
+- 运行命令：`python3 scripts/s1_deepjscc_mini_eval.py --device cpu --num-samples 1024 --batch-size 64 --output-dir outputs/EXP-S1-001 --formal`
+- 关键源码：`scripts/s1_deepjscc_mini_eval.py`, `src/cadsd_jscc/deepjscc_adapter.py`, `src/cadsd_jscc/metrics.py`
+- 输出路径：`outputs/EXP-S1-001/`
+- 状态：完成
+
+#### 指标
+
+| SNR(dB) | MSE | PSNR(dB) | SSIM | MS-SSIM |
+|---:|---:|---:|---:|---|
+| 1 | 0.004698 | 23.5428 | 0.8216 | N/A |
+| 4 | 0.002464 | 26.3794 | 0.8927 | N/A |
+| 7 | 0.001371 | 28.9857 | 0.9350 | N/A |
+| 13 | 0.000584 | 32.8612 | 0.9696 | N/A |
+| 19 | 0.000390 | 34.7994 | 0.9785 | N/A |
+
+- PSNR：见上表
+- MS-SSIM：未计算；CIFAR-10 为 32x32，`pytorch-msssim` 默认 4 次下采样要求图像边长大于 160
+- LPIPS：未计算，后续接入 perceptual metric 时补
+- FID：未计算
+- Classification accuracy：未计算
+- Prediction consistency：未计算
+- Semantic drift rate：未计算
+- Semantic failure rate：未计算
+- Detector accept rate：不适用
+- Detector reject rate：不适用
+- CLIP similarity：未计算
+- Diffusion steps：不适用
+- Inference time：未单独统计
+- 参数量：未单独统计
+- FLOPs：未单独统计
+
+#### 结果总结
+
+M0-DeepJSCC baseline 在固定 CIFAR-10 test subset 上跑通。PSNR 和 SSIM 随 SNR 升高单调提升，可作为后续 M1/M2/M3 的 pre-diffusion 对照。
+
+#### Semantic drift 观察
+
+本实验不包含 diffusion refinement，尚未统计 semantic drift。下一步需要冻结 `T_cls` 并实现 classifier consistency 指标。
+
+#### 失败案例
+
+本实验仅保存每个 SNR 的样例对比图，尚未整理 semantic failure case。
+
+#### 复现备注
+
+当前项目目录不是 git 仓库，因此项目版本记为 `N/A (not a project git repo)`。正式复现依赖第三方 commit、配置副本、脚本路径和固定 subset indices。
+
+#### 下一步
+
+实现 semantic drift metric 的最小版本，或开始接入 M1-BlindDiffusion 的后处理接口。
+
+### EXP-S2HR-001：DeepJSCC COCO-val 256x256 AWGN pilot
+
+- 日期：2026-06-30
+- 项目版本：N/A (not a project git repo)
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S2-HR High-resolution DeepJSCC pilot
+- 方法：M0-DeepJSCC-HR-pilot
+- 数据集：COCO2017 `val2017` 固定切分，4500 train / 500 val
+- 数据 split / 样本 ID：`data/coco_val_split/split_manifest.json`
+- 信道：AWGN
+- SNR：7 dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco_val256_awgn_snr7_cbr017_pilot/checkpoints/best.pt`
+- config：`outputs/train/s2_deepjscc_coco_val256_awgn_snr7_cbr017_pilot/config.yaml`
+- 运行命令：`python3 scripts/train_deepjscc_highres.py --config configs/s2_deepjscc_coco_val256_awgn_pilot.yaml --device cuda:0`
+- 关键源码：`scripts/train_deepjscc_highres.py`, `scripts/prepare_image_symlink_split.py`, `src/cadsd_jscc/datasets.py`, `src/cadsd_jscc/deepjscc_adapter.py`, `src/cadsd_jscc/metrics.py`
+- 输出路径：`outputs/train/s2_deepjscc_coco_val256_awgn_snr7_cbr017_pilot/`
+- 状态：完成；非正式 pilot，不替代 COCO2017 train/val 主实验
+
+#### 指标
+
+- PSNR：26.6647 dB
+- MS-SSIM：未计算；当前训练脚本记录 SSIM
+- SSIM：0.7837
+- MSE：0.002548
+- LPIPS：未计算
+- FID：未计算
+- Classification accuracy：未计算
+- Prediction consistency：未计算
+- Semantic drift rate：未计算
+- Semantic failure rate：未计算
+- Detector accept rate：不适用
+- Detector reject rate：不适用
+- CLIP similarity：未计算
+- Diffusion steps：不适用
+- Inference time：未单独统计
+- 参数量：未单独统计
+- FLOPs：未单独统计
+
+#### 结果总结
+
+使用已下载的 COCO2017 `val2017` 生成不重叠 4500/500 pilot split，并训练 50 epoch 得到可用的 256x256 DeepJSCC checkpoint。该 checkpoint 适合后续 high-res inference、diffusion refinement 接口和样例流程调试。
+
+#### Semantic drift 观察
+
+本实验不包含 diffusion refinement，尚未统计 semantic drift。样例图显示重建能保留主要物体和场景结构，但细节明显模糊，适合作为后续 diffusion semantic drift 控制的调试输入。
+
+#### 失败案例
+
+尚未整理。
+
+#### 复现备注
+
+这是非正式 pilot 实验，训练和验证都来自 COCO2017 `val2017` 的固定不重叠切分。正式论文主实验仍必须等待 COCO2017 `train2017` 下载完成后重新训练。
+
+#### 下一步
+
+用该 checkpoint 调试 high-res inference/export 和 M1-BlindDiffusion 接口；COCO2017 `train2017` 完成后重新训练正式 `M0-HR`。
+
+### EXP-S2HR-002：DeepJSCC COCO-val 256x256 pilot SNR sweep export
+
+- 日期：2026-06-30
+- 项目版本：N/A (not a project git repo)
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S2-HR High-resolution DeepJSCC pilot export
+- 方法：M0-DeepJSCC-HR-pilot export
+- 数据集：COCO2017 `val2017` pilot validation split, 500 images
+- 数据 split / 样本 ID：`data/coco_val_split/split_manifest.json`; evaluated paths copied to `outputs/eval/s2_deepjscc_coco_val256_awgn_pilot_m0_export/source_manifest.json`
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco_val256_awgn_snr7_cbr017_pilot/checkpoints/best.pt`
+- config：`outputs/eval/s2_deepjscc_coco_val256_awgn_pilot_m0_export/config.yaml`
+- 运行命令：`python3 scripts/s2_deepjscc_highres_export.py --config configs/s2_deepjscc_coco_val256_awgn_pilot.yaml --device cuda:0 --snrs 1,4,7,13,19 --batch-size 16 --num-workers 4 --export-count 32 --output-dir outputs/eval/s2_deepjscc_coco_val256_awgn_pilot_m0_export`
+- 关键源码：`scripts/s2_deepjscc_highres_export.py`, `src/cadsd_jscc/deepjscc_adapter.py`, `src/cadsd_jscc/datasets.py`, `src/cadsd_jscc/metrics.py`
+- 输出路径：`outputs/eval/s2_deepjscc_coco_val256_awgn_pilot_m0_export/`
+- 状态：完成；非正式 pilot，不替代 COCO2017 train/val 主实验
+
+#### 指标
+
+| SNR(dB) | MSE | PSNR(dB) | SSIM | MS-SSIM | Inference ms/image |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 0.003426 | 25.1263 | 0.7096 | 0.8991 | 0.7205 |
+| 4 | 0.002837 | 26.0905 | 0.7563 | 0.9280 | 0.1874 |
+| 7 | 0.002547 | 26.6680 | 0.7836 | 0.9441 | 0.1840 |
+| 13 | 0.002333 | 27.1678 | 0.8064 | 0.9572 | 0.1849 |
+| 19 | 0.002279 | 27.3030 | 0.8125 | 0.9607 | 0.1830 |
+
+- LPIPS：未计算
+- FID：未计算
+- Classification accuracy：未计算
+- Prediction consistency：未计算
+- Semantic drift rate：未计算
+- Semantic failure rate：未计算
+- Detector accept rate：不适用
+- Detector reject rate：不适用
+- CLIP similarity：未计算
+- Diffusion steps：不适用
+
+#### 结果总结
+
+pilot checkpoint 在高分辨率 COCO-val validation split 上完成 SNR sweep。PSNR、SSIM 和 MS-SSIM 随 SNR 升高整体提升。脚本同时导出 32 张原图和各 SNR 的 DeepJSCC 重建图，用于后续 `M1-BlindDiffusion` 输入。
+
+#### Semantic drift 观察
+
+本实验只导出 pre-diffusion `x_hat`，尚未统计 semantic drift。低 SNR 样例显示纹理和边缘更模糊，但主要物体/场景仍可辨认，适合作为 diffusion hallucination 风险测试输入。
+
+#### 失败案例
+
+尚未整理。
+
+#### 复现备注
+
+这是非正式 pilot export。第一组 SNR 的 inference time 包含 CUDA warmup，计时仅供粗略参考。正式论文主实验仍需等待 COCO2017 `train2017` 完成后重新训练和评估。
+
+#### 下一步
+
+读取 `outputs/eval/s2_deepjscc_coco_val256_awgn_pilot_m0_export/exports/snr_XXdb/reconstruction/` 接入 `M1-BlindDiffusion`，并开始记录 refinement 后的视觉指标和初步 semantic drift。
+
+### EXP-S2HR-003：DeepJSCC COCO2017 256x256 AWGN formal train
+
+- 日期：2026-07-01
+- 项目版本：N/A (not a project git repo)
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S2-HR High-resolution DeepJSCC formal train
+- 方法：M0-DeepJSCC-HR formal train
+- 数据集：COCO2017 `train2017` / `val2017`
+- 数据 split / 样本 ID：`configs/s2_deepjscc_coco256_awgn.yaml`，验证集使用 config 中固定 val subset
+- 信道：AWGN
+- SNR：7 dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- config：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/config.yaml`
+- 运行命令：`python3 scripts/train_deepjscc_highres.py --config configs/s2_deepjscc_coco256_awgn.yaml --device cuda:0`
+- 关键源码：`scripts/train_deepjscc_highres.py`, `src/cadsd_jscc/datasets.py`, `src/cadsd_jscc/deepjscc_adapter.py`, `src/cadsd_jscc/metrics.py`
+- 输出路径：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/`
+- 状态：完成；`best.pt` 可用，`latest.pt` 不可用
+
+#### 指标
+
+- best epoch：73
+- best val MSE：0.0008254946042143274
+- best val PSNR：31.56180403754115 dB
+- best val SSIM：0.9054122059606016
+- latest epoch：99
+- latest metrics：NaN
+- latest 参数：NaN，不可用于后续实验
+- LPIPS：未计算
+- FID：未计算
+- Semantic drift rate：未计算
+- Semantic failure rate：未计算
+
+#### 结果总结
+
+COCO2017 `train2017` 和 `val2017` 已完整就位，正式 COCO-256 DeepJSCC 训练产出了可用 `best.pt`。训练在 epoch 0-88 指标有限，epoch 89-99 出现 NaN，因此本实验的正式 baseline 必须使用 epoch 73 的 `best.pt`，不能使用 `latest.pt` 或最终 `metrics.json` 中的 NaN final。
+
+#### Semantic drift 观察
+
+本实验只训练 pre-diffusion DeepJSCC，不包含 refinement，因此尚未统计 semantic drift。
+
+#### 失败案例
+
+epoch 89 后训练发散为 NaN。已在训练脚本中增加非有限 loss/metrics 防护，后续重训会提前停止并用 best checkpoint 评估 final metrics。
+
+#### 复现备注
+
+当前项目目录不是 git 仓库，因此项目版本记为 `N/A (not a project git repo)`。训练日志见 `outputs/logs/s2_coco256_awgn_train.direct.screen.log`。后续论文主实验和 diffusion 输入应固定使用 `outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`。
+
+#### 下一步
+
+基于 `best.pt` 跑正式 SNR sweep/export，并将导出的 `x_hat` 输入 `M1-BlindDiffusion`。
+
+### EXP-S2HR-004：DeepJSCC COCO2017 256x256 formal SNR sweep export
+
+- 日期：2026-07-01
+- 项目版本：N/A (not a project git repo)
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S2-HR High-resolution DeepJSCC formal export
+- 方法：M0-DeepJSCC-HR formal export
+- 数据集：COCO2017 `val2017` subset, 512 images
+- 数据 split / 样本 ID：`outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/source_manifest.json`
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- config：`outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/config.yaml`
+- 运行命令：`python3 scripts/s2_deepjscc_highres_export.py --config configs/s2_deepjscc_coco256_awgn.yaml --checkpoint outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt --device cuda:0 --snrs 1,4,7,13,19 --batch-size 16 --num-workers 4 --export-count 32 --output-dir outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export`
+- 关键源码：`scripts/s2_deepjscc_highres_export.py`, `src/cadsd_jscc/deepjscc_adapter.py`, `src/cadsd_jscc/datasets.py`, `src/cadsd_jscc/metrics.py`
+- 输出路径：`outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/`
+- 状态：完成
+
+#### 指标
+
+| SNR(dB) | MSE | PSNR(dB) | SSIM | MS-SSIM | Inference ms/image |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 0.0018173862 | 28.0189655945 | 0.8090499612 | 0.9363910668 | 0.6834 |
+| 4 | 0.0011532078 | 30.0470464826 | 0.8700513527 | 0.9622469177 | 0.1861 |
+| 7 | 0.0008255254 | 31.5589745864 | 0.9054089159 | 0.9763763894 | 0.1969 |
+| 13 | 0.0005807463 | 33.1954004802 | 0.9348068793 | 0.9876335945 | 0.1824 |
+| 19 | 0.0005199769 | 33.7264324129 | 0.9425818466 | 0.9905498993 | 0.1869 |
+
+- LPIPS：未计算
+- FID：未计算
+- Classification accuracy：未计算
+- Prediction consistency：未计算
+- Semantic drift rate：未计算
+- Semantic failure rate：未计算
+- Detector accept rate：不适用
+- Detector reject rate：不适用
+- CLIP similarity：未计算
+- Diffusion steps：不适用
+
+#### 结果总结
+
+正式 `best.pt` 在 COCO2017 val subset 上完成 SNR sweep。PSNR、SSIM 和 MS-SSIM 随 SNR 增加稳定提升，7 dB 结果与 best checkpoint 训练记录一致。导出目录包含 32 张 `exports/original/` 原图，以及每个 SNR 下 32 张 `exports/snr_XXdb/reconstruction/` 重建图，可直接作为 `M1-BlindDiffusion` 的输入。
+
+#### Semantic drift 观察
+
+本实验只导出 pre-diffusion `x_hat`，尚未统计 semantic drift。下一阶段需要比较 DeepJSCC 原始重建、blind diffusion refinement 和 semantic-controlled refinement 的分类一致性或 CLIP consistency。
+
+#### 失败案例
+
+尚未整理。当前低 SNR 样例应优先用于观察 diffusion 是否把主体语义修偏。
+
+#### 复现备注
+
+第一组 SNR 的 inference time 包含 CUDA warmup，计时仅供粗略参考。该实验是后续正式 high-resolution diffusion 实验的 M0 输入来源，优先级高于 COCO-val pilot export。
+
+#### 下一步
+
+读取 `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/exports/snr_XXdb/reconstruction/`，实现 `M1-BlindDiffusion` 的最小可复现后处理与 LPIPS/semantic drift 指标。
+
+### EXP-S2-001：M1-BlindDiffusion preflight/run attempt
+
+- 日期：2026-07-01
+- 项目版本：N/A (not a project git repo)
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S3 Blind Diffusion
+- 方法：M1-BlindDiffusion
+- 数据集：COCO2017 `val2017` subset export，计划每个 SNR 16 张图
+- 数据 split / 样本 ID：`outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/source_manifest.json`；样本名为 `sample_000000.png` 到 `sample_000015.png`
+- 信道：AWGN
+- SNR：`[1, 7, 19]` dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- config：`configs/s3_m1_blind_diffusion_coco256_awgn.yaml`
+- 运行命令：
+  - `python3 scripts/s3_blind_diffusion_refine.py --dry-run`
+  - `python3 scripts/s3_blind_diffusion_refine.py --device cuda:0 --allow-download`
+  - `python3 scripts/s3_blind_diffusion_refine.py --device cpu`
+- 关键源码：`scripts/s3_blind_diffusion_refine.py`, `src/cadsd_jscc/metrics.py`
+- 输出路径：未创建；`outputs/EXP-S2-001/` 不存在
+- 状态：阻塞 / 未生成正式结果
+
+#### 指标
+
+- PSNR：未生成
+- MS-SSIM：未生成
+- LPIPS：未生成
+- Diffusion steps：计划值 25，未执行
+- Inference time：未生成
+
+#### 结果总结
+
+已完成 M1 脚本、配置和输入样本对齐 preflight。dry-run 确认正式 M0 export 中 1/7/19 dB 各有 16 张匹配样本可用，且 checkpoint 指向 `best.pt` 而非 `latest.pt`。
+
+正式 diffusion 运行未完成：提权命令因审批层拒绝，无法使用 GPU 和网络下载 Stable Diffusion 权重；local-only CPU 命令在 `local_files_only=true` 下报错，原因是 `runwayml/stable-diffusion-v1-5` 不在本地 Hugging Face cache。
+
+#### Semantic drift 观察
+
+未生成 refinement 图像，不能报告 semantic drift 或视觉提升。
+
+#### 失败案例
+
+本次失败属于环境/模型权重阻塞，不是方法结果失败。不能把该尝试写成 M1 的有效实验。
+
+#### 复现备注
+
+后续若用户显式允许下载并使用 GPU，使用当前配置默认输出 `outputs/EXP-S2-002/`，避免复用本次失败 ID。也可以预先把 diffusion 权重放入 `outputs/cache/huggingface/` 后去掉 `--allow-download` 运行。
+
+#### 下一步
+
+获得 Stable Diffusion img2img 权重和 GPU 运行许可后，运行 `python3 scripts/s3_blind_diffusion_refine.py --device cuda:0 --allow-download`，生成 refined 图、`metrics.json` 和样例图。
+
+### EXP-S2-002：M1-BlindDiffusion COCO-256 small-scale refinement
+
+- 日期：2026-07-01
+- 项目版本：N/A (not a project git repo)
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S3 Blind Diffusion
+- 方法：M1-BlindDiffusion
+- 数据集：COCO2017 `val2017` subset export，每个 SNR 16 张图
+- 数据 split / 样本 ID：`outputs/EXP-S2-002/source_manifest.json`；样本名为 `sample_000000.png` 到 `sample_000015.png`
+- 信道：AWGN
+- SNR：`[1, 7, 19]` dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- config：`outputs/EXP-S2-002/config.yaml`
+- 运行命令：`env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy HF_ENDPOINT=https://hf-mirror.com python3 scripts/s3_blind_diffusion_refine.py --device cuda:0`
+- 关键源码：`scripts/s3_blind_diffusion_refine.py`, `src/cadsd_jscc/metrics.py`
+- 输出路径：`outputs/EXP-S2-002/`
+- 状态：完成；负结果
+
+#### 指标
+
+| SNR(dB) | M0 PSNR(dB) | M1 PSNR(dB) | M0 SSIM | M1 SSIM | M0 MS-SSIM | M1 MS-SSIM | M0 LPIPS | M1 LPIPS | Diffusion ms/image |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 28.1746 | 16.2229 | 0.8107 | 0.3204 | 0.9398 | 0.5421 | 0.1747 | 0.5025 | 107.27 |
+| 7 | 31.8274 | 16.7812 | 0.9088 | 0.3795 | 0.9779 | 0.5843 | 0.0542 | 0.4600 | 82.42 |
+| 19 | 34.1357 | 16.8880 | 0.9470 | 0.4065 | 0.9915 | 0.5959 | 0.0254 | 0.4549 | 81.57 |
+
+- Diffusion steps：25
+- Strength：0.25
+- Guidance scale：1.0
+- Prompt：空字符串
+- LPIPS：成功计算，AlexNet 权重缓存到 `outputs/cache/torch/`
+- Classification accuracy：未计算
+- Prediction consistency：未计算
+- Semantic drift rate：未计算
+- Semantic failure rate：未计算
+- CLIP similarity：已由 `EXP-S3-001` 作为辅助语义诊断计算
+
+#### 结果总结
+
+当前固定强度 blind SD img2img 不是有效 refinement。相对 M0，M1 在所有 SNR 下 PSNR、SSIM、MS-SSIM 大幅下降，LPIPS 也显著变差。高 SNR 下 M0 已很接近原图，但 blind diffusion 仍强行改写结构，说明该设置不适合作为正向视觉增强。
+
+#### Semantic drift 观察
+
+尚未用冻结分类器或 CLIP 计算正式 semantic drift 指标，但样例图已经显示明显 hallucination / semantic drift 风险：甜甜圈纹理被改成不稳定的杂乱结构，花瓶和花朵被重新生成，狗和车内猫/座椅场景出现主体和背景结构错乱。该结果应作为后续 semantic control / failure handling 的负例动机，不能包装成提升。
+
+#### 失败案例
+
+样例拼图：
+
+- `outputs/EXP-S2-002/samples/snr_01db_original_reconstruction_refined.png`
+- `outputs/EXP-S2-002/samples/snr_07db_original_reconstruction_refined.png`
+- `outputs/EXP-S2-002/samples/snr_19db_original_reconstruction_refined.png`
+
+这些图的第三行均为 M1 refined 输出，显示 diffusion 对主体结构的强烈改写。
+
+#### 复现备注
+
+大模型下载按用户要求走服务器直连，不走 `127.0.0.1:17890` 代理。官方 `huggingface.co` 服务器直连在本机超时，改用 `HF_ENDPOINT=https://hf-mirror.com`。由于 diffusers 多线程下载在 UNet 大文件上不稳定，本次用临时 range downloader 补齐 `unet/diffusion_pytorch_model.safetensors`，并把完整 blob 链接回 `outputs/cache/huggingface/`。该下载过程不改变实验方法，实际运行时脚本使用 local cache。
+
+#### 下一步
+
+实现 semantic drift / CLIP consistency 的初步评估，并把当前样例整理为 failure case。若继续探索 M1，应新建实验 ID，先做更低 `strength` 的 validation 小网格，不能覆盖本实验输出。
+
+### EXP-S3-001：M1-BlindDiffusion CLIP image consistency diagnostic
+
+- 日期：2026-07-02
+- 项目版本：N/A (not a project git repo)
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S4 Semantic drift metric
+- 方法：CLIP image-image consistency diagnostic
+- 数据集：COCO2017 `val2017` subset export，每个 SNR 16 张图
+- 数据 split / 样本 ID：`outputs/EXP-S3-001/source_manifest.json`；样本名为 `sample_000000.png` 到 `sample_000015.png`
+- 信道：AWGN
+- SNR：`[1, 7, 19]` dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- config：`outputs/EXP-S3-001/config.yaml`
+- 运行命令：`env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s4_clip_consistency_eval.py --device cuda:0`
+- 关键源码：`scripts/s4_clip_consistency_eval.py`, `scripts/s4_make_clip_failure_gallery.py`
+- 输出路径：`outputs/EXP-S3-001/`
+- 状态：完成；辅助语义诊断，负结果
+
+#### 指标
+
+| SNR(dB) | CLIP sim(original, M0) | CLIP sim(original, M1) | CLIP drop M0-M1 | M1 lower than M0 | Drop >= 0.10 |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 0.9022 | 0.6619 | 0.2402 | 1.0000 | 0.9375 |
+| 7 | 0.9587 | 0.6867 | 0.2720 | 1.0000 | 1.0000 |
+| 19 | 0.9848 | 0.6954 | 0.2895 | 1.0000 | 1.0000 |
+
+- CLIP backbone：OpenAI CLIP `ViT-B/32` via `open_clip`
+- CLIP checkpoint：`outputs/cache/open_clip/ViT-B-32.pt`
+- CLIP checkpoint SHA256：`40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af`
+- PSNR / MS-SSIM / LPIPS：本实验不重复计算；见 `EXP-S2-002`
+- Classification accuracy：未计算
+- Prediction consistency：未计算
+- Semantic drift rate：未计算正式阈值版；当前以 CLIP drop rate 作辅助诊断
+- Semantic failure rate：未计算正式阈值版
+- Detector accept rate：不适用
+- Detector reject rate：不适用
+
+#### 结果总结
+
+CLIP image-image consistency 进一步确认 `EXP-S2-002` 的 blind diffusion refinement 明显不可靠。所有 48 个样本中，M1 refined 相对原图的 CLIP cosine similarity 都低于 M0 reconstruction；7 dB 和 19 dB 下所有样本的 drop 都大于 0.10。高 SNR 下 M0 已非常接近原图，但 M1 仍把图像改写到 CLIP 空间显著远离原图的位置。
+
+#### Semantic drift 观察
+
+该实验不是最终的分类一致性 semantic drift 指标，但它把视觉样例中的 hallucination 风险量化出来：M0 的 CLIP 相似度随 SNR 升高从 0.9022 增至 0.9848，而 M1 基本停留在 0.66 到 0.70，说明 blind diffusion 并没有利用高 SNR 下更可靠的 JSCC 重建，反而引入额外语义漂移。
+
+#### 失败案例
+
+每个 SNR 的 top failure case 已写入 `outputs/EXP-S3-001/metrics.json`，逐样本指标见 `outputs/EXP-S3-001/per_sample.csv`。按 CLIP drop 排名前列的样本包括：
+
+- 1 dB：`sample_000004.png`, `sample_000013.png`, `sample_000000.png`
+- 7 dB：`sample_000005.png`, `sample_000009.png`, `sample_000013.png`
+- 19 dB：`sample_000013.png`, `sample_000004.png`, `sample_000008.png`
+
+已用 `scripts/s4_make_clip_failure_gallery.py` 从 `per_sample.csv` 生成 failure case gallery：
+
+- 全局 top sheet：`outputs/EXP-S3-001/failure_cases/sheets/global_top_clip_drop.png`
+- 分 SNR sheets：`outputs/EXP-S3-001/failure_cases/sheets/snr_01db_top_clip_drop.png`, `outputs/EXP-S3-001/failure_cases/sheets/snr_07db_top_clip_drop.png`, `outputs/EXP-S3-001/failure_cases/sheets/snr_19db_top_clip_drop.png`
+- triptych 目录：`outputs/EXP-S3-001/failure_cases/triptychs/`
+- 索引：`outputs/EXP-S3-001/failure_cases/index.json`, `outputs/EXP-S3-001/failure_cases/global_top_clip_drop.csv`
+
+gallery 共包含 18 个不重复 triptych：全局 top 12 和每个 SNR top 6。抽查全局最大失败样本 `snr_19db/sample_000013.png` 时，M0 与原图接近，但 M1 refined 出现明显主体纹理和背景结构改写，符合 CLIP drop 0.4026 的诊断。
+
+#### 复现备注
+
+open_clip 3.3.0 对 `ViT-B-32/openai` 默认优先尝试 Hugging Face Hub；本机服务器直连 `huggingface.co` HEAD 请求超时，因此本实验改为从 OpenAI 官方 URL 直连下载 `ViT-B-32.pt` 到项目缓存，并在配置中显式使用本地权重路径。该 `.pt` 是 TorchScript archive，PyTorch 2.6+ 默认 `weights_only=True` 会拒绝加载；由于文件来源为 OpenAI 官方 URL 且 SHA256 校验完全匹配，本实验配置中对该权重设置 `weights_only: false`。
+
+#### 下一步
+
+补充更正式的 semantic drift metric，例如冻结分类器 prediction consistency 或 object-level / CLIP text consistency。后续如果继续试更保守的 blind diffusion strength，应先用本诊断脚本和 failure gallery 筛查是否仍然破坏语义。
+
+### EXP-S3-002：M1-BlindDiffusion frozen classifier pseudo-label consistency diagnostic
+
+- 日期：2026-07-02
+- 项目版本：N/A (not a project git repo)
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S4 Semantic drift metric
+- 方法：Frozen classifier pseudo-label consistency diagnostic
+- 数据集：COCO2017 `val2017` subset export，每个 SNR 16 张图
+- 数据 split / 样本 ID：`outputs/EXP-S3-002/source_manifest.json`；样本名为 `sample_000000.png` 到 `sample_000015.png`
+- 信道：AWGN
+- SNR：`[1, 7, 19]` dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- config：`outputs/EXP-S3-002/config.yaml`
+- 运行命令：`env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s4_classifier_consistency_eval.py --device cuda:0`
+- 关键源码：`scripts/s4_classifier_consistency_eval.py`, `scripts/s4_make_classifier_failure_gallery.py`
+- 输出路径：`outputs/EXP-S3-002/`
+- 状态：完成；辅助分类器诊断，负结果
+
+#### 指标
+
+All-subset，使用原图 ImageNet top-1 作为 pseudo-label：
+
+| SNR(dB) | M0 matches original top-1 | M1 matches original top-1 | M0 pseudo drift-origin | M1 pseudo drift-origin | M1 refinement drift |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 0.5000 | 0.1250 | 0.5000 | 0.8750 | 0.8750 |
+| 7 | 0.6875 | 0.0625 | 0.3125 | 0.9375 | 0.9375 |
+| 19 | 0.9375 | 0.1250 | 0.0625 | 0.8750 | 0.8750 |
+
+原图 top-1 confidence >= 0.30 的 pseudo-clean subset：
+
+| SNR(dB) | subset n | M0 matches original top-1 | M1 matches original top-1 | M0 pseudo drift-origin | M1 pseudo drift-origin |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 9 | 0.8889 | 0.2222 | 0.1111 | 0.7778 |
+| 7 | 9 | 1.0000 | 0.1111 | 0.0000 | 0.8889 |
+| 19 | 9 | 1.0000 | 0.2222 | 0.0000 | 0.7778 |
+
+- Frozen classifier：torchvision AlexNet `IMAGENET1K_V1`
+- Classifier checkpoint：`outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth`
+- Classification accuracy：未计算；COCO GT 标签未用于本实验
+- Prediction consistency：见上表的 matches original top-1
+- Semantic drift rate：未计算正式 clean-correct 版本；当前为 pseudo-label drift diagnostic
+- Semantic failure rate：未计算正式版本
+- Detector accept rate：不适用
+- Detector reject rate：不适用
+
+#### 结果总结
+
+冻结分类器诊断与 CLIP 诊断一致：M0 随 SNR 升高越来越保持原图分类器 top-1，而 M1 refined 在所有 SNR 下都明显偏离原图 pseudo-label。尤其在原图置信度 >= 0.30 的 subset 上，7 dB 和 19 dB 的 M0 一致率为 1.0，但 M1 只有 0.1111 和 0.2222，说明 blind diffusion 会在高质量 DeepJSCC 输入上仍然强行改写语义线索。
+
+#### Semantic drift 观察
+
+该实验比 CLIP 更接近 `MILESTONES.md` 中要求的冻结分类器路线，但仍不是最终 clean-correct 指标，因为 COCO 图像没有使用分类 GT，ImageNet AlexNet top-1 只能作为 pseudo-label。它适合作为当前 M1 负结果的第二条证据，以及后续 failure detector / fallback 规则的调试信号。
+
+#### 失败案例
+
+`outputs/EXP-S3-002/metrics.json` 中保存了每个 SNR 的 top failure cases，筛选条件为 M0 与原图 top-1 一致但 M1 不一致。典型样本包括：
+
+- 1 dB：`sample_000002.png`，原图/M0 为 `Pomeranian`，M1 为 `shoe shop`
+- 7 dB：`sample_000002.png`，原图/M0 为 `Pomeranian`，M1 为 `dogsled`
+- 19 dB：`sample_000002.png`，原图/M0 为 `Pomeranian`，M1 为 `gondola`
+- 19 dB：`sample_000015.png`，原图/M0 为 `broccoli`，M1 为 `indigo bunting`
+
+逐样本预测见 `outputs/EXP-S3-002/per_sample.csv`。
+
+已用 `scripts/s4_make_classifier_failure_gallery.py` 从 `per_sample.csv` 生成 classifier failure case gallery：
+
+- 全局 top sheet：`outputs/EXP-S3-002/failure_cases/sheets/global_top_classifier_drift.png`
+- 分 SNR sheets：`outputs/EXP-S3-002/failure_cases/sheets/snr_01db_top_classifier_drift.png`, `outputs/EXP-S3-002/failure_cases/sheets/snr_07db_top_classifier_drift.png`, `outputs/EXP-S3-002/failure_cases/sheets/snr_19db_top_classifier_drift.png`
+- triptych 目录：`outputs/EXP-S3-002/failure_cases/triptychs/`
+- 索引：`outputs/EXP-S3-002/failure_cases/index.json`, `outputs/EXP-S3-002/failure_cases/global_top_classifier_drift.csv`
+
+gallery 共包含 18 个不重复 triptych：全局 top 12 和每个 SNR top 6。抽查全局最大失败样本 `snr_19db/sample_000002.png` 时，原图和 M0 均被分类为 `Pomeranian`，M1 refined 被分类为 `gondola`，图像中主体结构也明显被破坏。
+
+#### 复现备注
+
+本实验没有联网下载。AlexNet ImageNet 权重已由 LPIPS/torch cache 路径提供，脚本在 `--allow-download` 未开启时会要求 `outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth` 已存在。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。
+
+#### 下一步
+
+确定正式 semantic drift 主指标的语义模型选择：若继续 COCO 主线，优先考虑 object detector / CLIP-text / caption-based consistency；若需要严格分类 clean-correct 统计，可引入带 ImageNet 标签的 Imagenette/ImageNet subset 作为补充，而不是把当前 pseudo-label 诊断包装成最终指标。
+
+### EXP-S3-003：M1-BlindDiffusion COCO caption CLIP text consistency diagnostic
+
+- 日期：2026-07-02
+- 项目版本：N/A (not a project git repo)
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S4 Semantic drift metric
+- 方法：COCO caption CLIP image-text consistency diagnostic
+- 数据集：COCO2017 `val2017` subset export，每个 SNR 16 张图
+- 数据 split / 样本 ID：`outputs/EXP-S3-003/source_manifest.json`；样本名为 `sample_000000.png` 到 `sample_000015.png`
+- COCO 标注：`data/coco/annotations/captions_val2017.json`，来自官方 `annotations_trainval2017.zip`
+- 信道：AWGN
+- SNR：`[1, 7, 19]` dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- config：`outputs/EXP-S3-003/config.yaml`
+- 运行命令：`env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s4_coco_caption_clip_eval.py --device cuda:0`
+- 关键源码：`scripts/s4_coco_caption_clip_eval.py`, `scripts/s4_make_coco_caption_failure_gallery.py`
+- 输出路径：`outputs/EXP-S3-003/`
+- 状态：完成；辅助 caption 语义诊断，负结果
+
+#### 指标
+
+使用每张 COCO val 图的 5 条人工 caption，计算每张图像与其 caption 集合的 CLIP image-text cosine similarity；表中 `caption-max` 表示取 5 条 caption 中最高相似度。
+
+| SNR(dB) | Original caption-max | M0 caption-max | M1 caption-max | Drop M0-M1 | M1 max lower than M0 | Drop >= 0.05 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0.3292 | 0.3306 | 0.2816 | 0.0490 | 1.0000 | 0.6250 |
+| 7 | 0.3292 | 0.3305 | 0.2815 | 0.0490 | 0.8125 | 0.5000 |
+| 19 | 0.3292 | 0.3263 | 0.2877 | 0.0386 | 0.8125 | 0.3125 |
+
+caption-mean 辅助结果：
+
+| SNR(dB) | M0 caption-mean | M1 caption-mean | Drop M0-M1 | M1 mean lower than M0 | Drop >= 0.05 |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 0.3054 | 0.2568 | 0.0486 | 0.9375 | 0.6250 |
+| 7 | 0.3063 | 0.2559 | 0.0504 | 0.8125 | 0.5000 |
+| 19 | 0.3022 | 0.2605 | 0.0417 | 0.8125 | 0.3125 |
+
+- CLIP backbone：OpenAI CLIP `ViT-B/32` via `open_clip`
+- CLIP checkpoint：`outputs/cache/open_clip/ViT-B-32.pt`
+- CLIP checkpoint SHA256：`40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af`
+- Classification accuracy：未计算；COCO caption 不是分类 GT
+- Prediction consistency：未计算冻结分类器版本；见 `EXP-S3-002`
+- Semantic drift rate：未计算正式 clean-correct 版本；当前为 caption CLIP drop diagnostic
+- Semantic failure rate：未计算正式版本
+- Detector accept rate：不适用
+- Detector reject rate：不适用
+
+#### 结果总结
+
+COCO caption image-text consistency 与 CLIP image-image 和冻结分类器 pseudo-label 诊断方向一致：M0 reconstruction 与原图 captions 的对齐基本保持在 original 附近，而 M1 refined 在所有 SNR 下都明显下降。尤其 1 dB 下 16/16 个样本的 M1 caption-max 低于 M0；7 dB 和 19 dB 下也有 13/16 个样本低于 M0。
+
+#### Semantic drift 观察
+
+该实验把 COCO 主数据集的人工 captions 接入了 S4 诊断，解决了此前只有 image-image CLIP 或 ImageNet pseudo-label 的局限。它仍是辅助指标，不能替代 `MILESTONES.md` 要求的正式 clean-correct 冻结分类器统计，但能更直接说明 blind diffusion 会把图像从 COCO caption 描述的语义内容上拉开。
+
+#### 失败案例
+
+`outputs/EXP-S3-003/metrics.json` 中保存了每个 SNR 的 top caption drop cases。典型样本包括：
+
+- 1 dB：`sample_000002.png`，caption 为小狗，caption-max drop 0.0957
+- 7 dB：`sample_000008.png`，caption 为 car / clock / flowers，caption-max drop 0.1198
+- 19 dB：`sample_000003.png`，caption 为 car 中的黑猫，caption-max drop 0.0951
+
+已用 `scripts/s4_make_coco_caption_failure_gallery.py` 从 `per_sample.csv` 生成 caption failure case gallery：
+
+- 全局 top sheet：`outputs/EXP-S3-003/failure_cases/sheets/global_top_caption_clip_drop.png`
+- 分 SNR sheets：`outputs/EXP-S3-003/failure_cases/sheets/snr_01db_top_caption_clip_drop.png`, `outputs/EXP-S3-003/failure_cases/sheets/snr_07db_top_caption_clip_drop.png`, `outputs/EXP-S3-003/failure_cases/sheets/snr_19db_top_caption_clip_drop.png`
+- triptych 目录：`outputs/EXP-S3-003/failure_cases/triptychs/`
+- 索引：`outputs/EXP-S3-003/failure_cases/index.json`, `outputs/EXP-S3-003/failure_cases/global_top_caption_clip_drop.csv`, `outputs/EXP-S3-003/failure_cases/README.md`
+
+gallery 共包含全局 top 12 和每个 SNR top 6 的 triptych。抽查全局最大失败样本 `snr_07db/sample_000008.png` 时，原图/M0 都保留 car、clock 和 flowers 场景，M1 refined 出现明显纹理和结构改写。
+
+#### 复现备注
+
+本实验没有联网下载模型权重，使用已缓存的 OpenAI CLIP 权重。COCO annotations 下载发生在实验前，来源为 `http://images.cocodataset.org/annotations/annotations_trainval2017.zip`，大小 252907541 bytes；下载时清空代理变量并使用服务器直连，`unzip -t` 验证无错误。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。
+
+#### 下一步
+
+结合 `EXP-S3-001`、`EXP-S3-002` 和 `EXP-S3-003` 设计最小 semantic failure handling：优先实现一个可复现的 fallback 规则，统计 detector accept/reject 和 Final-Failure，再进入 M3/Ours。
+
+### EXP-S4-001：M3 pseudo-classifier semantic fallback pilot
+
+- 日期：2026-07-03
+- 项目版本：N/A (not a project git repo)
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S5 Adaptive Control / Semantic Failure Handling pilot
+- 方法：M3-PseudoClassifierFallbackPilot
+- 数据集：COCO2017 `val2017` subset export，每个 SNR 16 张图
+- 数据 split / 样本 ID：`outputs/EXP-S4-001/source_manifest.json`；样本名为 `sample_000000.png` 到 `sample_000015.png`
+- 信道：AWGN
+- SNR：`[1, 7, 19]` dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- config：`outputs/EXP-S4-001/config.yaml`
+- 运行命令：`python3 scripts/s5_semantic_fallback_eval.py --device cuda:0`
+- 关键源码：`scripts/s5_semantic_fallback_eval.py`, `src/cadsd_jscc/metrics.py`, `scripts/s4_classifier_consistency_eval.py`
+- 输入实验：M0 export `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/`；M1 output `outputs/EXP-S2-002/`；classifier CSV `outputs/EXP-S3-002/per_sample.csv`
+- 输出路径：`outputs/EXP-S4-001/`
+- 状态：完成；S5 fallback pilot，不是完整 M3/Ours
+
+#### 指标
+
+All-subset，使用原图 ImageNet top-1 作为离线 pseudo-label 评价；detector 决策只看 `c(M1) == c(M0)`，不使用原图。
+
+| SNR(dB) | Accept | Reject | M0 PSNR | M1 PSNR | M3 PSNR | M0 LPIPS | M1 LPIPS | M3 LPIPS | M0 Final-Failure | M1 Final-Failure | M3 Final-Failure | False Accept | False Reject |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0.1250 | 0.8750 | 28.1746 | 16.2229 | 26.8313 | 0.1747 | 0.5025 | 0.2123 | 0.5000 | 0.8750 | 0.5000 | 0.0000 | 0.0000 |
+| 7 | 0.0625 | 0.9375 | 31.8274 | 16.7812 | 30.9141 | 0.0542 | 0.4600 | 0.0782 | 0.3125 | 0.9375 | 0.3125 | 0.0000 | 0.0000 |
+| 19 | 0.1250 | 0.8750 | 34.1357 | 16.8880 | 32.0135 | 0.0254 | 0.4549 | 0.0733 | 0.0625 | 0.8750 | 0.0625 | 0.0000 | 0.0000 |
+
+Pseudo-clean subset，原图 top-1 confidence >= 0.30：
+
+| SNR(dB) | subset n | Accept | M0 Final-Failure | M1 Final-Failure | M3 Final-Failure | M3 Prediction-Consistency |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 9 | 0.2222 | 0.1111 | 0.7778 | 0.1111 | 0.8889 |
+| 7 | 9 | 0.1111 | 0.0000 | 0.8889 | 0.0000 | 1.0000 |
+| 19 | 9 | 0.2222 | 0.0000 | 0.7778 | 0.0000 | 1.0000 |
+
+- Detector：frozen AlexNet top-1 agreement between M0 and M1
+- Final output：若 `c(M1) == c(M0)`，输出 M1；否则 fallback 到 M0
+- Diffusion steps：沿用 `EXP-S2-002` 的 25 steps
+- Strength：沿用 `EXP-S2-002` 的 0.25
+- Guidance scale：沿用 `EXP-S2-002` 的 1.0
+- Prompt：空字符串
+- CLIP similarity：本实验不重新计算；见 `EXP-S3-001` 和 `EXP-S3-003`
+
+#### 结果总结
+
+该 pilot 验证了最小 semantic failure handling 的可复现流程：在不看原图的接收端规则下，detector 拒绝大多数会改变冻结分类器 top-1 的 M1 refined 输出，使 M3 pseudo Final-Failure 回到 M0 水平。相对 M1，M3 在 all-subset 上将 Final-Failure 分别降低 `0.3750/0.6250/0.8125`。
+
+但这不是完整 M3/Ours：底层 diffusion 仍是 `EXP-S2-002` 的固定强度负结果。少量 accepted M1 虽然没有造成 pseudo-label failure，却仍降低 PSNR、MS-SSIM 和 LPIPS，因此 fallback 只能控制语义风险，不能把一个过强的 blind diffusion 设置变成视觉增强。
+
+#### Semantic drift 观察
+
+M3 的 `m3_refinement_drift` 在该 detector 下为 0，因为最终输出要么与 M0 分类一致，要么直接回退到 M0。这个结果说明 top-1 agreement 是一个强保守规则，但也意味着它几乎不接受 diffusion；后续必须配合更弱 diffusion strength 或 SNR-aware strength 才可能获得感知收益。
+
+#### 失败案例
+
+样例拼图：
+
+- `outputs/EXP-S4-001/samples/snr_01db_original_m0_m1_m3final.png`
+- `outputs/EXP-S4-001/samples/snr_07db_original_m0_m1_m3final.png`
+- `outputs/EXP-S4-001/samples/snr_19db_original_m0_m1_m3final.png`
+
+逐样本 detector 决策、final 输出路径、pseudo-label 和 false accept/reject 标记见 `outputs/EXP-S4-001/per_sample.csv`。
+
+#### 复现备注
+
+本实验不联网、不下载模型、不重新运行 diffusion，只读取已有 M0/M1 图像和 `EXP-S3-002` 的冻结分类器 CSV。LPIPS 使用已缓存 AlexNet 权重。输出目录存在时脚本会拒绝覆盖。
+
+#### 下一步
+
+新建实验 ID 做保守 diffusion strength validation 网格，例如 `strength <= 0.10` 和更少 steps，并把本 fallback 脚本接到新 M1/M2 输出上。只有当 M3 相比 blind diffusion 降低 Final-Failure、且相比 M0 保留可观感知收益时，才能进入正式 M3/Ours 结论。
+
+### EXP-S4-002：SNR-aware low-strength diffusion validation
+
+- 日期：2026-07-03
+- 项目版本：N/A (local directory is not yet a git repo)
+- 仓库地址：`https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git`
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S5 Adaptive Control / diffusion strength validation
+- 方法：SNRAdaptiveDiffusionStrengthValidation
+- 数据集：COCO2017 `val2017` subset export，每个 SNR 8 张图
+- 数据 split / 样本 ID：`outputs/EXP-S4-002/source_manifest.json`；样本名为 `sample_000000.png` 到 `sample_000007.png`
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- config：`outputs/EXP-S4-002/config.yaml`
+- 运行命令：`env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_snr_adaptive_diffusion_validation.py --device cuda:0`
+- 关键源码：`scripts/s5_snr_adaptive_diffusion_validation.py`, `src/cadsd_jscc/metrics.py`
+- 输出路径：`outputs/EXP-S4-002/`
+- 状态：完成；S5 validation，负/部分结果，不是完整 M3/Ours
+
+#### 候选设置
+
+| Candidate | Method | Strength schedule | Steps | Guidance |
+|---|---|---|---:|---:|
+| `fixed_0p05` | M1-LowStrengthFixedDiffusion | 1/4/7/13/19 dB: `0.05/0.05/0.05/0.05/0.05` | 15 | 1.0 |
+| `snr_adaptive_0p10_to_0p05` | M2-SNRAdaptiveDiffusion | 1/4/7/13/19 dB: `0.10/0.08/0.06/0.05/0.05` | 15 | 1.0 |
+
+两个 schedule 都满足 strength 随 SNR 升高不增加。failure handling 使用 `EXP-S4-001` 同类规则：若 `c(refined) == c(M0)` 则接受 refined，否则 fallback 到 M0。
+
+#### 指标
+
+All-subset，使用原图 ImageNet top-1 作为离线 pseudo-label 评价；detector 不使用原图。
+
+| Candidate | SNR(dB) | Strength | M0 PSNR | Refined PSNR | M3 PSNR | M0 LPIPS | Refined LPIPS | M3 LPIPS | Refined Failure | M3 Failure | Accept | False Accept | False Reject |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fixed_0p05 | 1 | 0.05 | 28.7285 | 25.1163 | 26.9112 | 0.1885 | 0.1989 | 0.1922 | 0.6250 | 0.3750 | 0.5000 | 0.1250 | 0.0000 |
+| fixed_0p05 | 4 | 0.05 | 30.7464 | 26.0170 | 26.8029 | 0.1040 | 0.1367 | 0.1313 | 0.3750 | 0.2500 | 0.8750 | 0.2500 | 0.0000 |
+| fixed_0p05 | 7 | 0.05 | 32.3475 | 26.5848 | 27.6615 | 0.0606 | 0.1089 | 0.1050 | 0.0000 | 0.2500 | 0.7500 | 0.0000 | 0.2500 |
+| fixed_0p05 | 13 | 0.05 | 34.0785 | 26.9924 | 29.1365 | 0.0308 | 0.0871 | 0.0657 | 0.2500 | 0.0000 | 0.7500 | 0.0000 | 0.0000 |
+| fixed_0p05 | 19 | 0.05 | 34.6217 | 27.0938 | 28.3947 | 0.0282 | 0.0889 | 0.0791 | 0.1250 | 0.0000 | 0.8750 | 0.0000 | 0.0000 |
+| snr_adaptive_0p10_to_0p05 | 1 | 0.10 | 28.7285 | 22.1567 | 26.2416 | 0.1885 | 0.2759 | 0.2244 | 0.6250 | 0.3750 | 0.3750 | 0.0000 | 0.0000 |
+| snr_adaptive_0p10_to_0p05 | 4 | 0.08 | 30.7464 | 22.7259 | 26.8134 | 0.1040 | 0.2180 | 0.1649 | 0.5000 | 0.2500 | 0.5000 | 0.0000 | 0.0000 |
+| snr_adaptive_0p10_to_0p05 | 7 | 0.06 | 32.3475 | 26.5599 | 27.6566 | 0.0606 | 0.1065 | 0.1034 | 0.0000 | 0.2500 | 0.7500 | 0.0000 | 0.2500 |
+| snr_adaptive_0p10_to_0p05 | 13 | 0.05 | 34.0785 | 27.0258 | 29.1664 | 0.0308 | 0.0877 | 0.0660 | 0.2500 | 0.0000 | 0.7500 | 0.0000 | 0.0000 |
+| snr_adaptive_0p10_to_0p05 | 19 | 0.05 | 34.6217 | 27.1297 | 28.4295 | 0.0282 | 0.0888 | 0.0789 | 0.1250 | 0.0000 | 0.8750 | 0.0000 | 0.0000 |
+
+#### 结果总结
+
+相比 `EXP-S2-002` 的 `strength=0.25`，低强度和 SNR-aware schedule 的 semantic drift 明显缓和，高 SNR 下 fallback 后的 M3 Failure 可回到 M0 水平。但两个候选都没有获得有效视觉收益：即使 `strength=0.05`，refined PSNR 和 LPIPS 仍明显差于 M0，且高 SNR 下损伤更突出。
+
+这说明当前 Stable Diffusion img2img 后处理并不只是 strength 过强的问题。VAE encode/decode、最小 denoise step 或 prompt-free generative prior 都可能对高保真 DeepJSCC 重建造成结构/纹理改写。该结果应记录为负/部分结果，不能包装为 M2 或 M3 的成功。
+
+#### Semantic drift 观察
+
+`snr_adaptive_0p10_to_0p05` 在 1/4 dB 使用更高 strength，语义 failure 并没有比 `fixed_0p05` 更好，图像质量反而更差。当前证据不支持“简单增大低 SNR diffusion strength”作为有效 SNR-aware 策略。semantic fallback 仍能压低 final failure，但如果 refined 图像本身没有视觉收益，fallback 只是在做风险控制，不构成主要贡献。
+
+#### 失败案例
+
+样例拼图位于：
+
+- `outputs/EXP-S4-002/candidates/fixed_0p05/samples/`
+- `outputs/EXP-S4-002/candidates/snr_adaptive_0p10_to_0p05/samples/`
+
+每张拼图为 original / M0 / refined / M3-final 四行。逐样本 detector 决策、pseudo-label 和 false accept/reject 标记见 `outputs/EXP-S4-002/per_sample.csv`。
+
+#### 复现备注
+
+本实验使用已缓存的 `runwayml/stable-diffusion-v1-5` 和 AlexNet/LPIPS 权重，不下载模型。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。本地目录当前尚未初始化为 git 仓库，因此项目版本仍不能填写 commit；用户提供的 GitHub URL 已写入 config 和 metrics metadata。
+
+#### 下一步
+
+优先做 VAE/latent roundtrip 诊断，分离以下因素：
+
+- SD VAE encode/decode 本身相对 M0 的失真。
+- 最小 denoise step 在极低 strength 下是否仍改写结构。
+- prompt-free prior 是否比 restoration-aware diffusion 更容易 hallucinate。
+
+若 roundtrip 本身已显著损伤 PSNR/LPIPS，则第一版不应继续把通用 SD img2img 当作主正向 refinement，而应转向更保守的 restoration 模块或把 diffusion 结果仅作为负例和 failure handling 动机。
+
+### EXP-S4-003：Stable Diffusion VAE roundtrip diagnostic
+
+- 日期：2026-07-03
+- 项目版本：N/A (local directory is not yet a git repo)
+- 仓库地址：`https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git`
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S5 Adaptive Control / VAE bottleneck diagnostic
+- 方法：SDVAERoundtripDiagnostic
+- 数据集：COCO2017 `val2017` subset export，每个 SNR 8 张图
+- 数据 split / 样本 ID：`outputs/EXP-S4-003/source_manifest.json`；样本名为 `sample_000000.png` 到 `sample_000007.png`
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- config：`outputs/EXP-S4-003/config.yaml`
+- 运行命令：`env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_sd_vae_roundtrip_eval.py --device cuda:0`
+- 关键源码：`scripts/s5_sd_vae_roundtrip_eval.py`, `src/cadsd_jscc/metrics.py`
+- 输出路径：`outputs/EXP-S4-003/`
+- 状态：完成；S5 VAE roundtrip 诊断，负/瓶颈确认，不是完整 M2/M3/Ours
+
+#### 设置
+
+- SD 组件：`runwayml/stable-diffusion-v1-5` 的 `vae` subfolder
+- VAE latent：使用 `latent_dist.mode()`，deterministic roundtrip
+- VAE scaling factor：0.18215
+- UNet denoise：不运行
+- diffusion prompt：不使用；本实验没有文本条件、没有 guidance、没有 denoising step
+- 对照：
+  - `M0 reconstruction vs original`
+  - `M0-VAE roundtrip vs original`
+  - `M0-VAE roundtrip vs M0 reconstruction`
+  - `Original-VAE roundtrip vs original`
+
+#### 指标
+
+All-subset，使用原图 ImageNet top-1 作为离线 pseudo-label 评价。
+
+| SNR(dB) | M0 PSNR | M0-VAE PSNR | Delta | M0 LPIPS | M0-VAE LPIPS | Delta | M0-VAE vs M0 PSNR | M0 Failure | M0-VAE Failure | M0-VAE Refinement Drift |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 28.7285 | 25.2433 | -3.4852 | 0.1885 | 0.1975 | +0.0090 | 25.6506 | 0.3750 | 0.6250 | 0.5000 |
+| 4 | 30.7464 | 26.1930 | -4.5534 | 0.1040 | 0.1335 | +0.0295 | 26.7426 | 0.2500 | 0.3750 | 0.1250 |
+| 7 | 32.3475 | 26.7550 | -5.5926 | 0.0606 | 0.1049 | +0.0443 | 27.4579 | 0.2500 | 0.1250 | 0.1250 |
+| 13 | 34.0785 | 27.1925 | -6.8861 | 0.0308 | 0.0853 | +0.0545 | 27.9958 | 0.0000 | 0.2500 | 0.2500 |
+| 19 | 34.6217 | 27.2957 | -7.3260 | 0.0282 | 0.0860 | +0.0578 | 28.1307 | 0.0000 | 0.1250 | 0.1250 |
+
+Original-VAE roundtrip 相对原图在这 8 张样本上固定为 PSNR `26.8097` dB、LPIPS `0.0605`，pseudo failure 为 `0.1250`。这说明即使输入是干净原图，SD VAE 往返也会引入可观失真；当输入是高 SNR M0 时，该瓶颈会把 `34+` dB 的重建压到约 `27` dB。
+
+#### 结果总结
+
+该实验把 `EXP-S4-002` 中的质量下降拆开验证：不运行 UNet、不使用 prompt、不做任何 diffusion denoise，仅 SD VAE encode/decode 已足以解释大部分高保真损伤。M0-VAE 相对 M0 的 PSNR 损失随 SNR 升高变大，从 1 dB 的 `-3.4852` dB 扩大到 19 dB 的 `-7.3260` dB；LPIPS 也从 `+0.0090` 恶化到 `+0.0578`。
+
+因此，当前通用 Stable Diffusion img2img 路线不是简单调低 `strength` 就能成为正向视觉增强。VAE roundtrip 本身已经破坏了 DeepJSCC high-SNR reconstruction 的细节和分类线索，后续若继续使用 diffusion，应优先考虑 restoration-aware 或 latent-free/像素域保守方法。
+
+#### Semantic drift 观察
+
+M0-VAE 不只是低层指标下降，也会改变冻结 AlexNet pseudo-label。All-subset 中，1 dB 的 M0-VAE pseudo Final-Failure 为 `0.6250`，高于 M0 的 `0.3750`；13/19 dB 中 M0 本身 failure 为 0，但 M0-VAE 分别引入 `0.2500/0.1250` 的 pseudo failure。该结果继续支持本项目主线：任何“看起来更自然”的 generative/latent 重建都必须接受 semantic drift 检查。
+
+#### 失败案例
+
+样例拼图位于：
+
+- `outputs/EXP-S4-003/samples/snr_01db_original_m0_m0vae_originalvae.png`
+- `outputs/EXP-S4-003/samples/snr_04db_original_m0_m0vae_originalvae.png`
+- `outputs/EXP-S4-003/samples/snr_07db_original_m0_m0vae_originalvae.png`
+- `outputs/EXP-S4-003/samples/snr_13db_original_m0_m0vae_originalvae.png`
+- `outputs/EXP-S4-003/samples/snr_19db_original_m0_m0vae_originalvae.png`
+
+每张拼图为 original / M0 / M0-VAE / original-VAE 四行。逐样本路径、top-1 pseudo-label 和一致性标记见 `outputs/EXP-S4-003/per_sample.csv`。
+
+#### 复现备注
+
+本实验使用已缓存的 `runwayml/stable-diffusion-v1-5` VAE 和 AlexNet/LPIPS 权重，不下载模型。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。本地目录运行时尚未初始化为 git 仓库，因此项目版本仍不能填写 commit；用户提供的 GitHub URL 已写入 config 和 metrics metadata。
+
+#### 下一步
+
+第一版不建议继续把通用 SD img2img 当作 M2/M3 正向主路线。更稳妥的推进方向是把 SD img2img 负结果和 VAE bottleneck 作为 semantic failure handling 的动机，同时探索更贴近 restoration 的保守模块；若仍使用 diffusion，需要优先验证无 VAE 高保真瓶颈的实现。

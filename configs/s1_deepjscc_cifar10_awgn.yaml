@@ -1,0 +1,28 @@
+phase: S1
+method: DeepJSCC baseline
+dataset: CIFAR-10
+image_size: 32
+channel: AWGN
+snr_sweep_db: [1, 4, 7, 13, 19]
+cbr: 0.17
+inner_channel: 8
+seed: 42
+
+data:
+  root: data/cifar10
+  mini_eval:
+    num_samples: 64
+    batch_size: 16
+    num_workers: 0
+    subset_seed: 42
+
+baseline:
+  repo: third_party/Deep-JSCC-PyTorch
+  source_url: https://github.com/chunbaobao/Deep-JSCC-PyTorch
+  commit: 2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06
+  checkpoint: third_party/Deep-JSCC-PyTorch/out/checkpoints/CIFAR10_8_13.0_0.17_AWGN_22h13m53s_on_Jun_07_2024/epoch_999.pkl
+
+outputs:
+  smoke_test: outputs/smoke/s1_deepjscc
+  mini_eval: outputs/mini/s1_deepjscc_cifar10_awgn
+  experiment_pattern: outputs/EXP-S1-001

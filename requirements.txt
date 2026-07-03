@@ -1,0 +1,9 @@
+# Phase 1 non-torch dependencies.
+# Install PyTorch separately through requirements-torch-cpu.txt or a CUDA-specific command.
+tensorboardX
+PyYAML
+tqdm
+numpy
+pillow
+matplotlib
+
