@@ -11,11 +11,11 @@
 - 阶段6：完整实验
 - 阶段7：论文整理
 
-当前处于：阶段5 validation，已基于 `EXP-S2-002` 完成 CLIP image-image consistency、冻结 ImageNet 分类器 pseudo-label consistency、COCO caption CLIP image-text consistency 三条辅助语义诊断，并用冻结分类器 top-1 agreement 实现了最小 semantic fallback。`EXP-S4-002` 已完成低强度固定 diffusion 与保守 SNR-aware schedule 的小规模验证，`EXP-S4-003` 进一步确认 SD VAE encode/decode roundtrip 在不运行 UNet denoise、不使用 prompt 的情况下已显著损伤高保真 M0。当前不能把通用 Stable Diffusion img2img 作为正向视觉增强主线。
+当前处于：阶段5 validation，已基于 `EXP-S2-002` 完成 CLIP image-image consistency、冻结 ImageNet 分类器 pseudo-label consistency、COCO caption CLIP image-text consistency 三条辅助语义诊断，并用冻结分类器 top-1 agreement 实现了最小 semantic fallback。`EXP-S4-002` 已完成低强度固定 diffusion 与保守 SNR-aware schedule 的小规模验证，`EXP-S4-003` 进一步确认 SD VAE encode/decode roundtrip 在不运行 UNet denoise、不使用 prompt 的情况下已显著损伤高保真 M0。`EXP-S4-005` 作为避开 SD VAE 的 pixel-domain residual restoration pilot，在 5 个 SNR 上均小幅提升 PSNR，且没有增加 pseudo final failure，说明后续应优先沿 latent-free/restoration-aware 方向推进。
 
 ## 当前任务
 
-- 状态：阶段1 DeepJSCC sanity baseline 已完成；COCO2017 `train2017/val2017` 和官方 annotations 已完成；COCO-256 正式训练已产生可用 `best.pt`，但 epoch 89 后出现 NaN，`latest.pt` 不可用；`M1-BlindDiffusion` 已在 1/7/19 dB、每个 SNR 16 张图上完成，结果为明显负向；`EXP-S3-001` 已完成 CLIP image-image consistency 辅助诊断和 failure case gallery；`EXP-S3-002` 已完成冻结 AlexNet pseudo-label consistency 诊断；`EXP-S3-003` 已完成 COCO caption CLIP image-text consistency 诊断；`EXP-S4-001` 已完成 receiver-side semantic fallback pilot；`EXP-S4-002` 已完成 `[1,4,7,13,19]` dB、每个 SNR 8 张图的低强度/SNR-aware diffusion validation，结果仍不满足视觉收益要求；`EXP-S4-003` 已完成 SD VAE roundtrip 诊断，确认 VAE 重编码本身会带来约 3.49-7.33 dB 的 M0 PSNR 损失
+- 状态：阶段1 DeepJSCC sanity baseline 已完成；COCO2017 `train2017/val2017` 和官方 annotations 已完成；COCO-256 正式训练已产生可用 `best.pt`，但 epoch 89 后出现 NaN，`latest.pt` 不可用；`M1-BlindDiffusion` 已在 1/7/19 dB、每个 SNR 16 张图上完成，结果为明显负向；`EXP-S3-001` 已完成 CLIP image-image consistency 辅助诊断和 failure case gallery；`EXP-S3-002` 已完成冻结 AlexNet pseudo-label consistency 诊断；`EXP-S3-003` 已完成 COCO caption CLIP image-text consistency 诊断；`EXP-S4-001` 已完成 receiver-side semantic fallback pilot；`EXP-S4-002` 已完成 `[1,4,7,13,19]` dB、每个 SNR 8 张图的低强度/SNR-aware diffusion validation，结果仍不满足视觉收益要求；`EXP-S4-003` 已完成 SD VAE roundtrip 诊断，确认 VAE 重编码本身会带来约 3.49-7.33 dB 的 M0 PSNR 损失；`EXP-S4-004` 因 CSV 记录 bug 失败并保留；`EXP-S4-005` 完成 SNR-conditioned pixel residual refiner pilot，5 个 SNR 上 refined PSNR 相比 M0 提升约 `0.09-0.39` dB
 - 负责人/对话：liulu + Codex
 - 开始日期：2026-06-29
 - 相关代码：`configs/`, `data/`, `src/`, `scripts/`, `outputs/`, `tests/`, `references/`, `third_party/`
@@ -80,11 +80,14 @@
 | 2026-07-03 | 完成最小 semantic fallback pilot | `configs/s5_semantic_fallback_m1_exp_s2_002.yaml`, `scripts/s5_semantic_fallback_eval.py`, `outputs/EXP-S4-001/` | `py_compile`、`--dry-run`、`python3 scripts/s5_semantic_fallback_eval.py --device cuda:0` 成功；生成 `metrics.json`、`per_sample.csv`、`REPORT.md`、M3 final 图和 3 张 original/M0/M1/M3 拼图 | receiver-side top-1 agreement detector 不看原图即可拒绝大多数 M1 漂移，M3 pseudo final failure 回到 M0 水平；但少量 accepted M1 仍降低 PSNR/LPIPS，说明固定强度 M1 太激进，下一步必须做更弱的 SNR-aware strength 网格 |
 | 2026-07-03 | 完成低强度 SNR-aware diffusion validation | `configs/s5_snr_adaptive_diffusion_strength_validation.yaml`, `scripts/s5_snr_adaptive_diffusion_validation.py`, `outputs/EXP-S4-002/` | `py_compile`、`--dry-run`、清空代理变量后运行 `python3 scripts/s5_snr_adaptive_diffusion_validation.py --device cuda:0` 成功；生成 2 个候选、5 个 SNR、每个 SNR 8 张图的 metrics/CSV/样例拼图 | `fixed_0p05` 和 `snr_adaptive_0p10_to_0p05` 均比 0.25 语义更稳，但 refined PSNR/LPIPS 仍明显差于 M0；fallback 可把 final failure 压回 M0 附近，却不能弥补 SD img2img 对高保真重建的质量损伤 |
 | 2026-07-03 | 完成 SD VAE roundtrip 诊断 | `configs/s5_sd_vae_roundtrip_coco256_awgn.yaml`, `scripts/s5_sd_vae_roundtrip_eval.py`, `outputs/EXP-S4-003/` | `py_compile`、`--dry-run`、清空代理变量后运行 `python3 scripts/s5_sd_vae_roundtrip_eval.py --device cuda:0` 成功；生成 5 个 SNR、每个 SNR 8 张图的 M0-VAE/original-VAE 往返图、metrics/CSV/样例拼图 | 不运行 UNet denoise、不使用 prompt 时，M0-VAE 相对 M0 仍损失约 3.49-7.33 dB PSNR，LPIPS 变差约 0.009-0.058；高 SNR 下 VAE 将 M0 质量压到约 27 dB，确认通用 SD VAE 是当前 SD img2img 路线的重要瓶颈 |
+| 2026-07-03 | 记录失败的 residual refiner 初跑 | `configs/s5_residual_refiner_pilot_coco256_awgn.yaml`, `scripts/s5_residual_refiner_pilot.py`, `outputs/EXP-S4-004/` | 训练 80 epoch 完成后，写 `train_history.csv` 时因 CSV 字段只取首行而失败；保留 `config.yaml`、`source_manifest.json` 和 checkpoint | 这是失败实验，不能复用 `EXP-S4-004`；已修复 CSV 字段合并逻辑并新建 `EXP-S4-005` |
+| 2026-07-03 | 完成 SNR-conditioned pixel residual refiner pilot | `configs/s5_residual_refiner_pilot_coco256_awgn.yaml`, `scripts/s5_residual_refiner_pilot.py`, `outputs/EXP-S4-005/` | `py_compile`、`--dry-run`、清空代理变量后运行 `python3 scripts/s5_residual_refiner_pilot.py --device cuda:0` 成功；训练样本为 `sample_000008`-`sample_000031`，评估样本为 `sample_000000`-`sample_000007` | 避开 SD VAE 后，像素域 residual 在 1/4/7/13/19 dB 上 PSNR 分别提升 `+0.3866/+0.1868/+0.0905/+0.1248/+0.1682` dB；LPIPS 除 7 dB 基本持平外均改善；pseudo final failure 未高于 M0 |
 
 ## 下一步
 
-1. 第一版不要继续把通用 Stable Diffusion img2img 作为正向主方法；`EXP-S4-003` 已显示 VAE roundtrip 本身会破坏高 SNR M0，高保真修复需要避开或替换这个瓶颈。
-2. 若继续 diffusion/restoration 路线，应转向更贴近 image restoration 的模型或 latent-free/像素域保守模块，并把 SD img2img 保留为负例和 semantic failure handling 动机；所有结果必须继续记录 semantic drift。
-3. 继续收敛正式主语义指标：当前 COCO 上仍是 pseudo-label/CLIP/caption 辅助诊断；若需要严格 clean-correct 分类统计，应引入带标签 Imagenette/ImageNet subset 作为补充，而不是把 COCO pseudo-label 当作最终主指标。
-4. 后续正式流程一律使用 `outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt` 和 `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/`，不要使用 `latest.pt`。
-5. 后续下载大模型或数据仍必须清空代理变量，默认走服务器直连；官方 Hugging Face 直连当前超时，`hf-mirror.com` 服务器直连可用。
+1. 将 `EXP-S4-005` 扩大为正式 validation：用更多 COCO val export 或重新导出更大 fixed split，检验 pixel residual refiner 的收益是否稳定，而不是只依赖 24/8 张小样本 pilot。
+2. 第一版不要继续把通用 Stable Diffusion img2img 作为正向主方法；`EXP-S4-003` 已显示 VAE roundtrip 本身会破坏高 SNR M0，高保真修复需要避开或替换这个瓶颈。
+3. 若继续 diffusion/restoration 路线，应转向更贴近 image restoration 的模型或 latent-free/像素域保守模块，并把 SD img2img 保留为负例和 semantic failure handling 动机；所有结果必须继续记录 semantic drift。
+4. 继续收敛正式主语义指标：当前 COCO 上仍是 pseudo-label/CLIP/caption 辅助诊断；若需要严格 clean-correct 分类统计，应引入带标签 Imagenette/ImageNet subset 作为补充，而不是把 COCO pseudo-label 当作最终主指标。
+5. 后续正式流程一律使用 `outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt` 和 `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/`，不要使用 `latest.pt`。
+6. 后续下载大模型或数据仍必须清空代理变量，默认走服务器直连；官方 Hugging Face 直连当前超时，`hf-mirror.com` 服务器直连可用。

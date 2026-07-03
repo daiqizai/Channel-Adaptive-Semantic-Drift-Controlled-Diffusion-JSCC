@@ -31,6 +31,8 @@
 | EXP-S4-001 | 2026-07-03 | N/A (not a project git repo) | M3-PseudoClassifierFallbackPilot | COCO2017 val2017 export subset, 16 images/SNR | AWGN | [1, 7, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo Final-Failure, accept/reject, false accept/reject | 完成（S5 fallback pilot；非完整 M3） | `outputs/EXP-S4-001/` |
 | EXP-S4-002 | 2026-07-03 | N/A (local directory is not yet a git repo) | SNRAdaptiveDiffusionStrengthValidation | COCO2017 val2017 export subset, 8 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure, accept/reject | 完成（S5 strength validation；负/部分结果） | `outputs/EXP-S4-002/` |
 | EXP-S4-003 | 2026-07-03 | N/A (local directory is not yet a git repo) | SD VAE roundtrip diagnostic | COCO2017 val2017 export subset, 8 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure | 完成（S5 VAE 诊断；负/瓶颈确认） | `outputs/EXP-S4-003/` |
+| EXP-S4-004 | 2026-07-03 | 401d4bd + uncommitted local changes at run time | SNR-conditioned pixel residual refiner pilot attempt | COCO2017 val2017 export subset, train 24 images/SNR, eval planned 8 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | training loss only; final metrics not written | 失败（CSV 写入字段 bug；保留输出，不复用） | `outputs/EXP-S4-004/` |
+| EXP-S4-005 | 2026-07-03 | 401d4bd + uncommitted local changes at run time | SNR-conditioned pixel residual refiner pilot | COCO2017 val2017 export subset, train 24 images/SNR, eval 8 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure, accept/reject | 完成（S5 latent-free restoration pilot；正向小样本结果） | `outputs/EXP-S4-005/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -1019,3 +1021,114 @@ M0-VAE 不只是低层指标下降，也会改变冻结 AlexNet pseudo-label。A
 #### 下一步
 
 第一版不建议继续把通用 SD img2img 当作 M2/M3 正向主路线。更稳妥的推进方向是把 SD img2img 负结果和 VAE bottleneck 作为 semantic failure handling 的动机，同时探索更贴近 restoration 的保守模块；若仍使用 diffusion，需要优先验证无 VAE 高保真瓶颈的实现。
+
+### EXP-S4-004：SNR-conditioned pixel residual refiner pilot attempt
+
+- 日期：2026-07-03
+- 项目版本：`401d4bdda6ff52602093e978ad8c1c34c6f939ac` + uncommitted local changes at run time
+- 仓库地址：`https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git`
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S5 Adaptive Control / latent-free restoration pilot
+- 方法：SNRConditionedPixelResidualRefinerPilot attempt
+- 数据集：COCO2017 `val2017` subset export
+- 数据 split / 样本 ID：训练 `sample_000008.png` 到 `sample_000031.png`；评估计划为 `sample_000000.png` 到 `sample_000007.png`
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- config：`outputs/EXP-S4-004/config.yaml`
+- 运行命令：`env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_pilot.py --device cuda:0`
+- 关键源码：`scripts/s5_residual_refiner_pilot.py`, `src/cadsd_jscc/metrics.py`
+- 输出路径：`outputs/EXP-S4-004/`
+- 状态：失败；训练完成后 CSV 写入失败，未生成最终 metrics，实验 ID 不复用
+
+#### 失败原因
+
+初版 `write_csv` 只用第一行 `train_history` 的字段作为 CSV header；但 `eval_mse` 和 `eval_psnr_db` 只在每 10 个 epoch 验证时出现，导致写入后续行时报错：
+
+```text
+ValueError: dict contains fields not in fieldnames: 'eval_mse', 'eval_psnr_db'
+```
+
+该失败发生在训练 80 epoch 和 checkpoint 写入之后、最终评估之前。输出目录保留了 `config.yaml`、`source_manifest.json`、`checkpoints/best.pt` 和 `checkpoints/latest.pt`。随后已修复 CSV 字段合并逻辑，并用新实验 ID `EXP-S4-005` 重新完整运行。
+
+#### 复现备注
+
+本实验不下载模型或数据，运行命令显式清空代理变量。由于这是失败实验，不能把 checkpoint 或中间训练 loss 包装成正式结果。
+
+### EXP-S4-005：SNR-conditioned pixel residual refiner pilot
+
+- 日期：2026-07-03
+- 项目版本：`401d4bdda6ff52602093e978ad8c1c34c6f939ac` + uncommitted local changes at run time
+- 仓库地址：`https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git`
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S5 Adaptive Control / latent-free restoration pilot
+- 方法：SNRConditionedPixelResidualRefinerPilot
+- 数据集：COCO2017 `val2017` subset export
+- 数据 split / 样本 ID：
+  - train：`sample_000008.png` 到 `sample_000031.png`，每个 SNR 24 张，共 120 对 M0/original
+  - eval：`sample_000000.png` 到 `sample_000007.png`，每个 SNR 8 张，共 40 对 M0/original
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- refiner checkpoint：`outputs/EXP-S4-005/checkpoints/best.pt`
+- config：`outputs/EXP-S4-005/config.yaml`
+- 运行命令：`env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_pilot.py --device cuda:0`
+- 关键源码：`scripts/s5_residual_refiner_pilot.py`, `src/cadsd_jscc/metrics.py`
+- 输出路径：`outputs/EXP-S4-005/`
+- 状态：完成；S5 latent-free restoration pilot，小样本正向结果，不是最终 M2/M3/Ours
+
+#### 方法设置
+
+- 模型：小型 SNR-conditioned residual CNN
+- 输入：`M0 reconstruction` + 1 通道 SNR map
+- 输出：pixel-domain residual 后的 `x_refined`
+- 初始化：最后一层零初始化，初始输出接近 M0
+- residual gate：1/4/7/13/19 dB 使用 `0.12/0.10/0.08/0.05/0.04`，随 SNR 升高不增加
+- 训练：80 epoch，batch size 8，128x128 random crop，MSE + 0.1 L1
+- semantic failure handling：与 `EXP-S4-001` 类似，若 `c(refined) == c(M0)` 则接受，否则 fallback 到 M0；detector 不看原图
+
+#### 指标
+
+All-subset，使用原图 ImageNet top-1 作为离线 pseudo-label 评价。
+
+| SNR(dB) | Gate | M0 PSNR | Refined PSNR | Delta | M0 LPIPS | Refined LPIPS | Delta | M0 Failure | Refined Failure | M3 Failure | Accept |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0.12 | 28.7285 | 29.1151 | +0.3866 | 0.1885 | 0.1703 | -0.0183 | 0.3750 | 0.2500 | 0.3750 | 0.8750 |
+| 4 | 0.10 | 30.7464 | 30.9332 | +0.1868 | 0.1040 | 0.0995 | -0.0044 | 0.2500 | 0.2500 | 0.2500 | 1.0000 |
+| 7 | 0.08 | 32.3475 | 32.4380 | +0.0905 | 0.0606 | 0.0607 | +0.0000 | 0.2500 | 0.2500 | 0.2500 | 1.0000 |
+| 13 | 0.05 | 34.0785 | 34.2034 | +0.1248 | 0.0308 | 0.0299 | -0.0010 | 0.0000 | 0.0000 | 0.0000 | 1.0000 |
+| 19 | 0.04 | 34.6217 | 34.7899 | +0.1682 | 0.0282 | 0.0254 | -0.0028 | 0.0000 | 0.0000 | 0.0000 | 1.0000 |
+
+#### 结果总结
+
+该 pilot 初步回答了 `EXP-S4-003` 后的关键问题：避开 Stable Diffusion VAE 后，保守 pixel-domain residual refinement 可以在不牺牲语义可靠性的情况下带来小幅质量收益。5 个 SNR 上 refined PSNR 均高于 M0，提升范围为 `+0.0905` 到 `+0.3866` dB；LPIPS 在 1/4/13/19 dB 改善，在 7 dB 基本持平。
+
+语义侧没有出现 `EXP-S2-002` 那种系统性 drift。All-subset 下，13/19 dB 的 refined failure 仍为 0；1 dB refined failure 从 M0 的 `0.3750` 降到 `0.2500`，但经过 top-1 agreement fallback 后 M3 final failure 回到 M0 的 `0.3750`，说明当前 detector 对“修正了原错误分类”的情况较保守。
+
+#### Semantic drift 观察
+
+`refined_vs_m0_reconstruction` 的 PSNR 在 1/4/7/13/19 dB 分别为约 `40.57/45.16/48.06/49.36/48.37` dB，说明 residual 改动很小。除 1 dB 有 1 个样本改变 M0 top-1 外，其他 SNR 的 `refined_refinement_drift` 均为 0。与 SD img2img 的强 hallucination 相比，pixel residual 更符合 semantic drift control 的第一版方向。
+
+#### 失败案例和样例
+
+样例拼图位于：
+
+- `outputs/EXP-S4-005/samples/snr_01db_original_m0_refined_m3final.png`
+- `outputs/EXP-S4-005/samples/snr_04db_original_m0_refined_m3final.png`
+- `outputs/EXP-S4-005/samples/snr_07db_original_m0_refined_m3final.png`
+- `outputs/EXP-S4-005/samples/snr_13db_original_m0_refined_m3final.png`
+- `outputs/EXP-S4-005/samples/snr_19db_original_m0_refined_m3final.png`
+
+逐样本 detector 决策、pseudo-label 和 false accept/reject 标记见 `outputs/EXP-S4-005/per_sample.csv`。
+
+#### 复现备注
+
+本实验不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。运行时仓库 HEAD 是 `401d4bd`，但脚本和配置处于未提交状态；因此本记录额外列出脚本、配置和输出副本路径。
+
+#### 下一步
+
+将该 pilot 扩大到更稳定的 validation split：重新导出更多 COCO val M0 样本，训练/验证/测试三分，并比较 `M0`、`SD img2img negative M1`、`pixel residual M2` 和 `semantic fallback M3`。只有在更大 split 上稳定保持质量收益且不增加 semantic failure，才能把它作为第一版替代通用 SD img2img 的主路线。

@@ -666,6 +666,51 @@ outputs/EXP-S4-003/samples/
 
 结论：SD VAE roundtrip 本身已经显著损伤高保真 M0。M0-VAE 相对 M0 的 PSNR 损失从 1 dB 的 `-3.4852` dB 扩大到 19 dB 的 `-7.3260` dB，LPIPS 也变差 `+0.0090` 到 `+0.0578`。这说明当前通用 Stable Diffusion img2img 路线不是简单调低 `strength` 就能变成有效视觉增强；后续应优先考虑 restoration-aware 或 latent-free/像素域保守模块，并继续记录 semantic drift。
 
+## S5 Pixel Residual Restoration Pilot
+
+当前已完成 `EXP-S4-005`：避开 Stable Diffusion 和 SD VAE，只在像素域训练一个小型 SNR-conditioned residual refiner。
+
+配置：
+
+```text
+configs/s5_residual_refiner_pilot_coco256_awgn.yaml
+```
+
+切分：
+
+- train：`sample_000008.png` 到 `sample_000031.png`，每个 SNR 24 张
+- eval：`sample_000000.png` 到 `sample_000007.png`，每个 SNR 8 张
+
+先检查输入和切分：
+
+```bash
+python3 scripts/s5_residual_refiner_pilot.py --dry-run
+```
+
+运行 pilot。该命令不下载模型或数据；如环境里有代理变量，建议清空代理变量运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_pilot.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/EXP-S4-005/checkpoints/best.pt
+outputs/EXP-S4-005/train_history.csv
+outputs/EXP-S4-005/metrics.json
+outputs/EXP-S4-005/summary.csv
+outputs/EXP-S4-005/per_sample.csv
+outputs/EXP-S4-005/REPORT.md
+outputs/EXP-S4-005/exports/snr_XXdb/refined/
+outputs/EXP-S4-005/exports/snr_XXdb/final/
+outputs/EXP-S4-005/samples/
+```
+
+结论：这是小样本 pilot，不是最终 M2/M3/Ours，但方向明显比通用 SD img2img 更健康。1/4/7/13/19 dB 上 refined PSNR 相比 M0 分别提升 `+0.3866/+0.1868/+0.0905/+0.1248/+0.1682` dB；LPIPS 除 7 dB 基本持平外均改善；pseudo final failure 没有高于 M0。
+
+注意：`EXP-S4-004` 是同一 pilot 的失败尝试，训练完成后因 `train_history.csv` 字段写入 bug 中断，保留在 `outputs/EXP-S4-004/`，不要复用该实验 ID。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：
