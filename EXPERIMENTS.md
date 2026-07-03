@@ -1248,6 +1248,42 @@ All-subset，使用原图 ImageNet top-1 作为离线 pseudo-label 评价。`Ref
 
 逐样本 detector 决策、pseudo-label 和 false accept/reject 标记见 `outputs/EXP-S4-006/per_sample.csv`。后续应优先从 1/4 dB 的 false reject 和 false accept 样本中整理 detector failure gallery。
 
+#### 派生 gate error analysis
+
+已运行：
+
+```bash
+python3 scripts/s5_analyze_residual_gate_errors.py
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_gate_error_analysis/summary.csv
+outputs/analysis/exp_s4_006_gate_error_analysis/per_sample_with_case_type.csv
+outputs/analysis/exp_s4_006_gate_error_analysis/index.json
+outputs/analysis/exp_s4_006_gate_error_analysis/REPORT.md
+outputs/analysis/exp_s4_006_gate_error_analysis/*/sheets/
+outputs/analysis/exp_s4_006_gate_error_analysis/*/quads/
+```
+
+该分析不跑模型、不联网，只读取 `outputs/EXP-S4-006/per_sample.csv` 和已有 PNG。它把 top-1 agreement gate 的结果拆成四类：
+
+- `protective_reject`：M0 与原图 pseudo-label 一致，refined 改变了 top-1，gate 拒绝 refined。
+- `missed_semantic_repair`：M0 与原图 pseudo-label 不一致，refined 与原图 pseudo-label 一致，但 gate 因 refined 不等于 M0 而拒绝。
+- `accepted_wrong_same_as_m0`：refined 与 M0 一致，但二者都不等于原图 pseudo-label。
+- `rejected_both_wrong`：M0/refined 都不等于原图 pseudo-label，且二者互不一致。
+
+| SNR(dB) | N | Accept | Protective Reject | Missed Repair | Accepted Wrong Same As M0 | Rejected Both Wrong |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 64 | 20 (0.3125) | 9 (0.1406) | 16 (0.2500) | 5 (0.0781) | 19 (0.2969) |
+| 4 | 64 | 32 (0.5000) | 7 (0.1094) | 12 (0.1875) | 3 (0.0469) | 13 (0.2031) |
+| 7 | 64 | 46 (0.7188) | 7 (0.1094) | 4 (0.0625) | 6 (0.0938) | 7 (0.1094) |
+| 13 | 64 | 54 (0.8438) | 3 (0.0469) | 2 (0.0312) | 10 (0.1562) | 5 (0.0781) |
+| 19 | 64 | 53 (0.8281) | 2 (0.0312) | 7 (0.1094) | 9 (0.1406) | 2 (0.0312) |
+
+关键解释：当前 gate 接受 refined 的条件是 `c(refined) == c(M0)`，因此在同一个冻结分类器口径下，M3 top-1 final failure 不会超过 M0 top-1 failure 是结构性保证。这是保守 gate 的优点，但还不能证明独立语义可靠性。分析显示 gate 保护了 28/320 个 M0-correct/refined-wrong 样本，同时错过了 41/320 个 refined 修复 M0 pseudo-label 的样本。下一版应考虑 top-k agreement、confidence margin 或 CLIP/caption 辅助，以减少 `missed_semantic_repair`，同时保留 `protective_reject`。
+
 #### 复现备注
 
 本实验不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。`summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。

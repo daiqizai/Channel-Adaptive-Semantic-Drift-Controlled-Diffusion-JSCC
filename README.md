@@ -766,6 +766,35 @@ outputs/EXP-S4-006/samples/
 
 结论：pure refined 在 1/4/7/13/19 dB 上 PSNR 分别提升 `+1.1323/+0.7837/+0.5859/+0.5504/+0.5654` dB，LPIPS 全部改善；经过 top-1 agreement fallback 后，M3 final PSNR 仍提升 `+0.3313/+0.3812/+0.3815/+0.4557/+0.4561` dB，且 pseudo final failure 未高于 M0。低 SNR 下 accept rate 较低，后续应做 detector error analysis，而不能把 pure refined 直接当最终方法。
 
+## S5 Semantic Gate Error Analysis
+
+当前已完成 `EXP-S4-006` 的派生 gate error analysis。该流程不跑模型、不联网，只读取：
+
+```text
+outputs/EXP-S4-006/per_sample.csv
+outputs/EXP-S4-006/exports/
+outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256/exports/
+```
+
+运行：
+
+```bash
+python3 scripts/s5_analyze_residual_gate_errors.py
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_gate_error_analysis/summary.csv
+outputs/analysis/exp_s4_006_gate_error_analysis/per_sample_with_case_type.csv
+outputs/analysis/exp_s4_006_gate_error_analysis/index.json
+outputs/analysis/exp_s4_006_gate_error_analysis/REPORT.md
+outputs/analysis/exp_s4_006_gate_error_analysis/*/sheets/
+outputs/analysis/exp_s4_006_gate_error_analysis/*/quads/
+```
+
+核心结论：当前 gate 是 `c(refined) == c(M0)` 的 top-1 agreement，因此在同一个冻结分类器口径下，M3 final failure 不会超过 M0 是结构性保证；这还不是独立语义可靠性证明。分析中 `protective_reject` 有 28/320 个，说明 gate 确实阻止了一批 refined 改坏 pseudo-label 的情况；`missed_semantic_repair` 有 41/320 个，说明 gate 也拒绝了不少 refined 把 M0 pseudo-label 修回原图 pseudo-label 的样本。下一版 gate 应考虑 top-k、confidence margin 或 CLIP/caption 辅助，允许可信修复，同时保留保护性拒绝。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：
