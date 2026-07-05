@@ -1,0 +1,34 @@
+phase: S5
+analysis_id: exp_s4_006_conf_gain_gate_candidate_outputs
+source_experiment: EXP-S4-006
+method: MaterializeResidualConfidenceGainGateCandidate
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+
+inputs:
+  gate_predictions_csv: outputs/analysis/exp_s4_006_gate_policy_sweep/topk_predictions.csv
+  aux_audit_summary_csv: outputs/analysis/exp_s4_006_conf_gain_gate_aux_audit/summary.csv
+  checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+policy:
+  name: top1_equal_or_refined_conf_gain_ge_0p05
+  baseline: top1_equal
+  refined_conf_gain_margin: 0.05
+  decision_inputs:
+    - m0_top1_prob
+    - refined_top1_prob
+    - m0_top1_index
+    - refined_top1_index
+  uses_original_for_detection: false
+
+evaluation:
+  sample_grid_count: 4
+  warning: candidate is validation-tuned and not final M3
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_conf_gain_gate_candidate_outputs

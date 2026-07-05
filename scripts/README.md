@@ -24,6 +24,8 @@
 - `s4_make_coco_caption_failure_gallery.py`：读取 `EXP-S3-003/per_sample.csv`，按 caption CLIP drop 生成 original/M0/M1 triptych、全局和分 SNR failure sheets、CSV/JSON/README 索引；不跑模型、不联网。
 - `s4_summarize_m1_negative_result.py`：聚合 `EXP-S2-002` 图像指标、`EXP-S3-001` CLIP 诊断和 `EXP-S3-002` 分类器诊断，输出 M1 负结果的 `REPORT.md`、`summary.csv`、`summary.json`；不跑模型、不联网。
 - `s4_make_project_progress_visual_summary.py`：聚合已有正式 metrics、辅助语义诊断和 failure gallery，生成项目阶段进度图、M0/M1 指标图、语义诊断图、代表性可视化拼图和 `REPORT.md`；派生分析，不跑模型、不联网。
+- `s5_audit_residual_gate_aux_semantics.py`：读取 `EXP-S4-006` gate sweep 的 top-k 预测，使用本地 OpenCLIP 和 COCO captions 对 confidence-gain 候选 gate 做离线辅助语义审计。
+- `s5_materialize_residual_gate_policy.py`：读取 `EXP-S4-006` gate sweep 结果，按指定候选 gate 将 final PNG 从已有 M0/refined 图像中复制落盘，并保存 summary、per-sample CSV 和样例拼图。
 - `s5_residual_diffusion_pilot.py`：读取正式 256 张/SNR M0 export，训练一个小型 SNR-conditioned pixel residual DDPM；避开 Stable Diffusion、text prompt 和 SD VAE，用同一 pseudo semantic fallback 口径评估 residual diffusion。
 - `run_s2_coco256_awgn_train.sh`：长任务脚本；负责断点续传 COCO2017 train/val、解压、检查图片数量，并启动 COCO-256 AWGN DeepJSCC GPU 训练。
 - `prepare_image_symlink_split.py`：从一个图片目录按固定 seed 生成不重叠的 train/val 符号链接切分，用于 COCO-val pilot 等临时高分辨率训练。

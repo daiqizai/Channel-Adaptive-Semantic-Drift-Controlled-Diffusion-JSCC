@@ -1318,6 +1318,63 @@ outputs/analysis/exp_s4_006_gate_policy_sweep/REPORT.md
 
 解释：top-5 overlap 类策略能大幅减少 missed repair 并提高 PSNR，但 accepted new error 也显著增加，语义风险偏大。当前最均衡候选是 `top1_equal_or_refined_conf_gain_ge_0p05`：它在 1/4 dB 上明显降低 final failure，在 7/13/19 dB 上不明显恶化；但它仍产生 3 个 accepted new error，因此只能作为下一轮 gate 设计候选，不能直接作为最终 M3。
 
+#### 派生 confidence-gain gate auxiliary audit and candidate outputs
+
+已运行辅助语义审计：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_audit_residual_gate_aux_semantics.py --device cuda:0
+```
+
+已将候选 gate 的 final PNG 落盘：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_materialize_residual_gate_policy.py
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_conf_gain_gate_aux_audit/per_sample_audit.csv
+outputs/analysis/exp_s4_006_conf_gain_gate_aux_audit/summary.csv
+outputs/analysis/exp_s4_006_conf_gain_gate_aux_audit/new_accepts.csv
+outputs/analysis/exp_s4_006_conf_gain_gate_aux_audit/accepted_new_errors.csv
+outputs/analysis/exp_s4_006_conf_gain_gate_aux_audit/REPORT.md
+outputs/analysis/exp_s4_006_conf_gain_gate_aux_audit/galleries/
+outputs/analysis/exp_s4_006_conf_gain_gate_candidate_outputs/per_sample.csv
+outputs/analysis/exp_s4_006_conf_gain_gate_candidate_outputs/summary.csv
+outputs/analysis/exp_s4_006_conf_gain_gate_candidate_outputs/REPORT.md
+outputs/analysis/exp_s4_006_conf_gain_gate_candidate_outputs/exports/
+outputs/analysis/exp_s4_006_conf_gain_gate_candidate_outputs/samples/
+```
+
+该审计仍保持 decision-time gate 为 receiver-side：候选策略只看 M0/refined 的冻结分类器预测和置信度，不看 original/caption。original 图像与 COCO captions 只用于离线辅助审计。审计使用本地 `outputs/cache/open_clip/ViT-B-32.pt` 和 `data/coco/annotations/captions_val2017.json`，不下载数据或权重。
+
+全局关键结果：
+
+| Metric | Value |
+|---|---:|
+| Candidate accept rate | 0.7563 |
+| Newly accepted by candidate | 37 |
+| Candidate final failure | 0.3188 |
+| Baseline top-1 final failure | 0.3750 |
+| Candidate delta PSNR vs top-1 | +0.1153 dB |
+| Candidate delta PSNR vs M0 | +0.5164 dB |
+| Candidate delta CLIP image-image vs top-1 | +0.0016 |
+| Candidate delta caption CLIP vs top-1 | -0.0007 |
+| Accepted repairs | 21 |
+| Accepted new errors | 3 |
+
+新增接受样本拆分：
+
+| Subset | N | Delta PSNR | Delta CLIP | Delta caption | Aux both nonworse |
+|---|---:|---:|---:|---:|---:|
+| `new_accept_repair` | 21 | +1.0532 | +0.0205 | -0.0073 | 0.1429 |
+| `new_accept_new_error` | 3 | +0.9838 | +0.0121 | -0.0058 | 0.0000 |
+| `new_accept_both_wrong` | 13 | +0.9093 | +0.0038 | -0.0044 | 0.0769 |
+
+解释：confidence-gain candidate 比原始 top-1 agreement gate 更积极，能把 missed repair 从 41 降到 20，并额外接受 21 个 pseudo-label repair；但它也引入 3 个 accepted new error。辅助语义信号是混合的：CLIP image-image 均值略升，但 caption CLIP 均值略降，且 3 个 accepted new error 都没有同时通过 image-image 与 caption 的 nonworse 检查。因此该策略已经可以作为下一轮 M3 候选输出进行视觉/held-out 审查，但不能直接登记为最终 M3/Ours。
+
 #### 复现备注
 
 本实验不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。`summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。

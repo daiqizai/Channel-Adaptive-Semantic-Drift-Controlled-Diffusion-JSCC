@@ -860,6 +860,51 @@ outputs/analysis/exp_s4_006_gate_policy_sweep/REPORT.md
 
 核心结论：`top1_equal_or_refined_conf_gain_ge_0p05` 是当前最均衡的候选 gate。相对原始 top-1 agreement gate，全局 final failure 从 `0.3750` 降到 `0.3188`，final PSNR 提升 `+0.1153` dB，missed repair 从 `41` 降到 `20`；代价是 accepted new error 从 `0` 增到 `3`。top-5 overlap 类策略虽然 final PSNR 更高，但 accepted new error 明显更多，风险偏大。该 sweep 是 validation 派生分析，不能直接作为最终 M3 结论。
 
+## S5 Confidence-Gain Gate Auxiliary Audit
+
+当前已完成 `EXP-S4-006` 的 confidence-gain gate 辅助语义审计。该流程不训练、不下载，只读取已有 gate sweep 预测、本地 OpenCLIP ViT-B/32 权重和 COCO captions；gate decision 本身仍只使用 receiver-side 的 M0/refined 分类器预测。
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_audit_residual_gate_aux_semantics.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_conf_gain_gate_aux_audit/per_sample_audit.csv
+outputs/analysis/exp_s4_006_conf_gain_gate_aux_audit/summary.csv
+outputs/analysis/exp_s4_006_conf_gain_gate_aux_audit/new_accepts.csv
+outputs/analysis/exp_s4_006_conf_gain_gate_aux_audit/accepted_new_errors.csv
+outputs/analysis/exp_s4_006_conf_gain_gate_aux_audit/REPORT.md
+outputs/analysis/exp_s4_006_conf_gain_gate_aux_audit/galleries/
+```
+
+核心结论：`top1_equal_or_refined_conf_gain_ge_0p05` 新增接受 37/320 个样本，其中 21 个是 pseudo-label repair、3 个是 accepted new error。相对 top-1 gate，final failure 从 `0.3750` 降到 `0.3188`，PSNR 提升 `+0.1153` dB，CLIP image-image 均值略升 `+0.0016`，但 caption CLIP 均值略降 `-0.0007`。该结果支持把它作为下一轮候选 gate，但仍不能直接作为最终 M3。
+
+## S5 Confidence-Gain Gate Candidate Outputs
+
+已将 `top1_equal_or_refined_conf_gain_ge_0p05` 的候选 final PNG 从已有 M0/refined 图像中落盘，方便后续人工审查和 held-out 对照。该流程只复制/选择已有 PNG，不重新训练或生成图像。
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_materialize_residual_gate_policy.py
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_conf_gain_gate_candidate_outputs/per_sample.csv
+outputs/analysis/exp_s4_006_conf_gain_gate_candidate_outputs/summary.csv
+outputs/analysis/exp_s4_006_conf_gain_gate_candidate_outputs/REPORT.md
+outputs/analysis/exp_s4_006_conf_gain_gate_candidate_outputs/exports/snr_XXdb/final/
+outputs/analysis/exp_s4_006_conf_gain_gate_candidate_outputs/samples/
+```
+
+核心结论：候选 gate final failure 为 `0.3188`，top-1 baseline 为 `0.3750`；candidate final PSNR 为 `32.0966` dB，比 top-1 baseline 高 `+0.1153` dB，比 M0 高 `+0.5164` dB。`samples/accepted_new_error_quads.png` 固化了 3 个 accepted new error，后续必须优先复核。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：
