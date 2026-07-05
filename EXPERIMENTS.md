@@ -35,6 +35,7 @@
 | EXP-S4-004 | 2026-07-03 | 401d4bd + uncommitted local changes at run time | SNR-conditioned pixel residual refiner pilot attempt | COCO2017 val2017 export subset, train 24 images/SNR, eval planned 8 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | training loss only; final metrics not written | 失败（CSV 写入字段 bug；保留输出，不复用） | `outputs/EXP-S4-004/` |
 | EXP-S4-005 | 2026-07-03 | 401d4bd + uncommitted local changes at run time | SNR-conditioned pixel residual refiner pilot | COCO2017 val2017 export subset, train 24 images/SNR, eval 8 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure, accept/reject | 完成（S5 latent-free restoration pilot；正向小样本结果） | `outputs/EXP-S4-005/` |
 | EXP-S4-006 | 2026-07-03 | 709f1c6 | SNR-conditioned pixel residual refiner validation | COCO2017 val2017 export subset, train 160 images/SNR, eval 64 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure, accept/reject | 完成（S5 residual validation；正向但需 detector error analysis） | `outputs/EXP-S4-006/` |
+| EXP-S4-007 | 2026-07-06 | 4f4eefb | SNR-conditioned pixel residual diffusion pilot | COCO2017 val2017 export subset, train 80 images/SNR, eval 16 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure, accept/reject, sampling time | 完成（S5 residual diffusion pilot；负结果） | `outputs/EXP-S4-007/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -1324,3 +1325,80 @@ outputs/analysis/exp_s4_006_gate_policy_sweep/REPORT.md
 #### 下一步
 
 围绕 `EXP-S4-006` 做 detector error analysis 和门控收敛：检查 1/4 dB false reject 是否主要来自 AlexNet top-1 抖动，检查 7/13 dB false accept 是否会引入真实语义错误，并尝试更稳的 detector（top-k agreement、confidence margin、CLIP image-image 辅助或 ensemble）再决定第一版 M3 的正式口径。
+
+### EXP-S4-007：SNR-conditioned pixel residual diffusion pilot
+
+- 日期：2026-07-06
+- 项目版本：`4f4eefb5f08096e5efdd57d6019b97683ea7648b`
+- 仓库地址：`https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git`
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S5 Adaptive Control / latent-free residual diffusion design probe
+- 方法：SNRConditionedPixelResidualDiffusionPilot
+- 数据集：COCO2017 `val2017` subset export
+- 数据 split / 样本 ID：
+  - 输入 export：`outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256/`
+  - train：`sample_000032.png` 到 `sample_000111.png`，每个 SNR 80 张，共 400 对 M0/original
+  - eval：`sample_000192.png` 到 `sample_000207.png`，每个 SNR 16 张，共 80 对 M0/original
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- 随机种子：42；sampling seed 1234
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- diffusion checkpoint：`outputs/EXP-S4-007/checkpoints/best.pt`
+- config：`outputs/EXP-S4-007/config.yaml`
+- 运行命令：`env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_diffusion_pilot.py --device cuda:0`
+- 关键源码：`scripts/s5_residual_diffusion_pilot.py`, `scripts/s5_residual_refiner_pilot.py`, `src/cadsd_jscc/metrics.py`
+- 输出路径：`outputs/EXP-S4-007/`
+- 状态：完成；负结果；不是最终 M2/M3/Ours
+
+#### 方法设置
+
+- 模型：小型 SNR-conditioned pixel residual DDPM，参数量 77,187
+- 输入：noisy normalized residual + M0 reconstruction + SNR map + timestep map，共 8 通道
+- 目标：学习 `(original - M0) / residual_gate` 后 clamp 到 `[-1, 1]` 的 residual
+- diffusion：20 timesteps，linear beta `0.0001 -> 0.02`，epsilon prediction，deterministic DDIM sampling 20 steps
+- residual gate：1/4/7/13/19 dB 使用 `0.12/0.10/0.08/0.05/0.04`
+- 训练：20 epoch，batch size 16，128x128 random crop，epsilon loss + 0.1 x0 loss
+- semantic failure handling：若 `c(refined) == c(M0)` 则接受，否则 fallback 到 M0；detector 不看原图
+
+#### 指标
+
+All-subset，使用原图 ImageNet top-1 作为离线 pseudo-label 评价。`Refined Failure` 是 refined 相对原图 pseudo top-1 的 failure；`M3 Failure` 是 top-1 agreement fallback 后最终输出的 failure。
+
+| SNR(dB) | Gate | M0 PSNR | Refined PSNR | Refined Delta | M3 PSNR | M3 Delta | M0 LPIPS | Refined LPIPS | M3 LPIPS | M0 Failure | Refined Failure | M3 Failure | Accept |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0.12 | 28.6189 | 21.4555 | -7.1634 | 27.2033 | -1.4156 | 0.1893 | 0.5139 | 0.2472 | 0.6250 | 0.8750 | 0.6250 | 0.2500 |
+| 4 | 0.10 | 30.6216 | 23.1373 | -7.4843 | 28.9598 | -1.6618 | 0.1138 | 0.4236 | 0.1785 | 0.5625 | 0.8125 | 0.5625 | 0.2500 |
+| 7 | 0.08 | 32.0814 | 24.9932 | -7.0882 | 29.4795 | -2.6019 | 0.0673 | 0.3338 | 0.1641 | 0.4375 | 0.7500 | 0.4375 | 0.3750 |
+| 13 | 0.05 | 33.6698 | 28.2494 | -5.4204 | 31.5131 | -2.1567 | 0.0335 | 0.1999 | 0.1142 | 0.2500 | 0.6250 | 0.2500 | 0.4375 |
+| 19 | 0.04 | 34.1760 | 29.7543 | -4.4217 | 32.0758 | -2.1002 | 0.0284 | 0.1489 | 0.0969 | 0.1875 | 0.5000 | 0.1875 | 0.5625 |
+
+#### 结果总结
+
+该实验回答了“是否只要把 diffusion 挪到像素 residual 域就会变好”：当前朴素设计不成立。训练 loss 确实下降，eval epsilon loss 最低出现在 epoch 14，但最终 DDIM sampling 得到的 residual 噪声化很强，refined PSNR 在所有 SNR 上显著低于 M0，下降范围为 `-4.4217` 到 `-7.4843` dB；LPIPS 也全部变差。
+
+top-1 agreement fallback 仍有语义保护作用：同一冻结 AlexNet 口径下，M3 final failure 在每个 SNR 上都回到 M0 failure。但这不是有效增强，因为 M3 final PSNR 仍比 M0 低 `-1.4156/-1.6618/-2.6019/-2.1567/-2.1002` dB，M3 LPIPS 也全部高于 M0。
+
+#### Semantic drift 观察
+
+Pure refined 的 pseudo failure 明显高于 M0：1/4/7/13/19 dB 分别为 `0.8750/0.8125/0.7500/0.6250/0.5000`。`refined_refinement_drift` 也很高，分别为 `0.7500/0.7500/0.6250/0.5625/0.4375`，说明随机残差采样即使有 M0/SNR/timestep conditioning，也容易改变冻结分类器 top-1。当前 gate 把这些变化大多回退，但代价是 final 图像仍被 accepted refined 样本拖低。
+
+#### 失败案例和样例
+
+样例拼图位于：
+
+- `outputs/EXP-S4-007/samples/snr_01db_original_m0_refined_m3final.png`
+- `outputs/EXP-S4-007/samples/snr_04db_original_m0_refined_m3final.png`
+- `outputs/EXP-S4-007/samples/snr_07db_original_m0_refined_m3final.png`
+- `outputs/EXP-S4-007/samples/snr_13db_original_m0_refined_m3final.png`
+- `outputs/EXP-S4-007/samples/snr_19db_original_m0_refined_m3final.png`
+
+逐样本 detector 决策、pseudo-label 和 false accept/reject 标记见 `outputs/EXP-S4-007/per_sample.csv`。
+
+#### 复现备注
+
+本实验不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`、`download_note: No model or data download is required`、`git_dirty_state: clean`。`summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 80 个 eval 样本行，`train_history.csv` 有 20 个 epoch 行。
+
+#### 下一步
+
+不要把该 naive residual DDPM 作为正向 M2/M3 路线。若继续研究 diffusion，应改成 restoration-aware 的条件短链：从 M0 或 residual CNN 输出附近初始化，只做小幅 residual correction；或以 `EXP-S4-006` residual CNN 作为 mean / teacher，再训练低噪声 conditional diffusion。第一版论文闭环仍应优先收敛 `EXP-S4-006` 的 residual CNN + semantic gate。

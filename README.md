@@ -768,7 +768,7 @@ outputs/EXP-S4-006/samples/
 
 ## S5 Pixel Residual Diffusion Pilot
 
-当前新增 `EXP-S4-007`：避开 Stable Diffusion、text prompt 和 SD VAE，在像素残差空间训练一个小型 SNR-conditioned DDPM，用来回答“diffusion 是否需要换成 residual-domain 设计”。
+当前已完成 `EXP-S4-007`：避开 Stable Diffusion、text prompt 和 SD VAE，在像素残差空间训练一个小型 SNR-conditioned DDPM，用来回答“diffusion 是否需要换成 residual-domain 设计”。
 
 配置：
 
@@ -807,7 +807,7 @@ outputs/EXP-S4-007/exports/snr_XXdb/final/
 outputs/EXP-S4-007/samples/
 ```
 
-判读约束：这是 residual diffusion 设计探针，不是最终 M2/M3。只有在 refined 或 gated final 同时改善图像质量且不增加 pseudo semantic failure 时，才可以把它作为后续主方法候选；负结果也要记录，因为它能说明 diffusion 需要更强 conditioning、更多数据或不同残差参数化。
+结论：这是明确负结果。Naive DDPM 的 refined PSNR 在 1/4/7/13/19 dB 相比 M0 分别下降 `-7.1634/-7.4843/-7.0882/-5.4204/-4.4217` dB，LPIPS 全部变差；top-1 agreement gate 可把 M3 final failure 拉回 M0 水平，但 M3 final PSNR 仍下降 `-1.4156/-1.6618/-2.6019/-2.1567/-2.1002` dB。后续若继续做 diffusion，应改为从 M0 或 residual CNN 输出附近初始化的短链 conditional restoration diffusion，而不是从随机噪声采样完整残差。
 
 ## S5 Semantic Gate Error Analysis
 
