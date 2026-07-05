@@ -1284,6 +1284,39 @@ outputs/analysis/exp_s4_006_gate_error_analysis/*/quads/
 
 关键解释：当前 gate 接受 refined 的条件是 `c(refined) == c(M0)`，因此在同一个冻结分类器口径下，M3 top-1 final failure 不会超过 M0 top-1 failure 是结构性保证。这是保守 gate 的优点，但还不能证明独立语义可靠性。分析显示 gate 保护了 28/320 个 M0-correct/refined-wrong 样本，同时错过了 41/320 个 refined 修复 M0 pseudo-label 的样本。下一版应考虑 top-k agreement、confidence margin 或 CLIP/caption 辅助，以减少 `missed_semantic_repair`，同时保留 `protective_reject`。
 
+#### 派生 gate policy sweep
+
+已运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_sweep_residual_gate_policies.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_gate_policy_sweep/topk_predictions.csv
+outputs/analysis/exp_s4_006_gate_policy_sweep/policy_summary.csv
+outputs/analysis/exp_s4_006_gate_policy_sweep/policy_by_snr.csv
+outputs/analysis/exp_s4_006_gate_policy_sweep/metadata.json
+outputs/analysis/exp_s4_006_gate_policy_sweep/REPORT.md
+```
+
+该分析不训练模型、不下载数据或权重，使用本地 AlexNet 权重重新计算 original/M0/refined 的 top-5。被扫的 gate policy 只使用 M0/refined 的预测结果做 receiver-side decision；original pseudo top-1 只用于离线评价。
+
+全局关键结果：
+
+| Policy | Final Failure | Delta Failure vs top1 | Final PSNR | Delta PSNR vs top1 | Missed Repair | Accepted Repair | Accepted New Error | Accept |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `top1_equal` | 0.3750 | +0.0000 | 31.9814 | +0.0000 | 41 | 0 | 0 | 0.6406 |
+| `top1_equal_or_refined_conf_gain_ge_0p05` | 0.3188 | -0.0563 | 32.0966 | +0.1153 | 20 | 21 | 3 | 0.7563 |
+| `top1_equal_or_refined_conf_gain_ge_0p10` | 0.3406 | -0.0344 | 32.0532 | +0.0719 | 28 | 13 | 2 | 0.7156 |
+| `top1_equal_or_refined_conf_gain_ge_0p20` | 0.3563 | -0.0188 | 32.0037 | +0.0223 | 35 | 6 | 0 | 0.6656 |
+| `refined_top1_in_m0_top5` | 0.3406 | -0.0344 | 32.1944 | +0.2130 | 8 | 33 | 22 | 0.8938 |
+| `any_top5_overlap` | 0.3406 | -0.0344 | 32.2773 | +0.2960 | 2 | 39 | 28 | 0.9781 |
+
+解释：top-5 overlap 类策略能大幅减少 missed repair 并提高 PSNR，但 accepted new error 也显著增加，语义风险偏大。当前最均衡候选是 `top1_equal_or_refined_conf_gain_ge_0p05`：它在 1/4 dB 上明显降低 final failure，在 7/13/19 dB 上不明显恶化；但它仍产生 3 个 accepted new error，因此只能作为下一轮 gate 设计候选，不能直接作为最终 M3。
+
 #### 复现备注
 
 本实验不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。`summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。

@@ -795,6 +795,28 @@ outputs/analysis/exp_s4_006_gate_error_analysis/*/quads/
 
 核心结论：当前 gate 是 `c(refined) == c(M0)` 的 top-1 agreement，因此在同一个冻结分类器口径下，M3 final failure 不会超过 M0 是结构性保证；这还不是独立语义可靠性证明。分析中 `protective_reject` 有 28/320 个，说明 gate 确实阻止了一批 refined 改坏 pseudo-label 的情况；`missed_semantic_repair` 有 41/320 个，说明 gate 也拒绝了不少 refined 把 M0 pseudo-label 修回原图 pseudo-label 的样本。下一版 gate 应考虑 top-k、confidence margin 或 CLIP/caption 辅助，允许可信修复，同时保留保护性拒绝。
 
+## S5 Semantic Gate Policy Sweep
+
+当前已完成 `EXP-S4-006` 的派生 gate policy sweep。该流程不训练、不下载，只用本地 AlexNet 权重重新计算 original/M0/refined top-5，然后离线比较 receiver-side gate 策略。
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_sweep_residual_gate_policies.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_gate_policy_sweep/topk_predictions.csv
+outputs/analysis/exp_s4_006_gate_policy_sweep/policy_summary.csv
+outputs/analysis/exp_s4_006_gate_policy_sweep/policy_by_snr.csv
+outputs/analysis/exp_s4_006_gate_policy_sweep/metadata.json
+outputs/analysis/exp_s4_006_gate_policy_sweep/REPORT.md
+```
+
+核心结论：`top1_equal_or_refined_conf_gain_ge_0p05` 是当前最均衡的候选 gate。相对原始 top-1 agreement gate，全局 final failure 从 `0.3750` 降到 `0.3188`，final PSNR 提升 `+0.1153` dB，missed repair 从 `41` 降到 `20`；代价是 accepted new error 从 `0` 增到 `3`。top-5 overlap 类策略虽然 final PSNR 更高，但 accepted new error 明显更多，风险偏大。该 sweep 是 validation 派生分析，不能直接作为最终 M3 结论。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：
