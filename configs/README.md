@@ -22,3 +22,4 @@
 - `s4_clip_consistency_m1_exp_s2_002.yaml`：对 `EXP-S2-002` 的 M1 refined 输出做 CLIP image-image consistency 辅助语义诊断，固定读取正式 M0 export 和本地 OpenAI CLIP ViT-B/32 权重。
 - `s4_classifier_consistency_m1_exp_s2_002.yaml`：对 `EXP-S2-002` 的 M1 refined 输出做冻结 AlexNet/ImageNet pseudo-label consistency 辅助分类器诊断，固定读取正式 M0 export 和本地 torchvision AlexNet 权重。
 - `s4_coco_caption_clip_m1_exp_s2_002.yaml`：对 `EXP-S2-002` 的 M1 refined 输出做 COCO caption CLIP image-text consistency 辅助语义诊断，固定读取正式 M0 export、本地 OpenAI CLIP ViT-B/32 权重和 `data/coco/annotations/captions_val2017.json`。
+- `s5_residual_diffusion_pilot_coco256_awgn.yaml`：对正式 256 张/SNR M0 export 训练一个 latent-free pixel residual DDPM pilot，验证 diffusion 是否适合作为保守残差建模器。

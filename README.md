@@ -766,6 +766,49 @@ outputs/EXP-S4-006/samples/
 
 结论：pure refined 在 1/4/7/13/19 dB 上 PSNR 分别提升 `+1.1323/+0.7837/+0.5859/+0.5504/+0.5654` dB，LPIPS 全部改善；经过 top-1 agreement fallback 后，M3 final PSNR 仍提升 `+0.3313/+0.3812/+0.3815/+0.4557/+0.4561` dB，且 pseudo final failure 未高于 M0。低 SNR 下 accept rate 较低，后续应做 detector error analysis，而不能把 pure refined 直接当最终方法。
 
+## S5 Pixel Residual Diffusion Pilot
+
+当前新增 `EXP-S4-007`：避开 Stable Diffusion、text prompt 和 SD VAE，在像素残差空间训练一个小型 SNR-conditioned DDPM，用来回答“diffusion 是否需要换成 residual-domain 设计”。
+
+配置：
+
+```text
+configs/s5_residual_diffusion_pilot_coco256_awgn.yaml
+```
+
+切分：
+
+- train：`sample_000032.png` 到 `sample_000111.png`，每个 SNR 80 张
+- eval：`sample_000192.png` 到 `sample_000207.png`，每个 SNR 16 张
+
+先检查输入和切分：
+
+```bash
+python3 scripts/s5_residual_diffusion_pilot.py --dry-run
+```
+
+运行 pilot。该命令不下载模型或数据；如环境里有代理变量，建议清空代理变量运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_diffusion_pilot.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/EXP-S4-007/checkpoints/best.pt
+outputs/EXP-S4-007/train_history.csv
+outputs/EXP-S4-007/metrics.json
+outputs/EXP-S4-007/summary.csv
+outputs/EXP-S4-007/per_sample.csv
+outputs/EXP-S4-007/REPORT.md
+outputs/EXP-S4-007/exports/snr_XXdb/refined/
+outputs/EXP-S4-007/exports/snr_XXdb/final/
+outputs/EXP-S4-007/samples/
+```
+
+判读约束：这是 residual diffusion 设计探针，不是最终 M2/M3。只有在 refined 或 gated final 同时改善图像质量且不增加 pseudo semantic failure 时，才可以把它作为后续主方法候选；负结果也要记录，因为它能说明 diffusion 需要更强 conditioning、更多数据或不同残差参数化。
+
 ## S5 Semantic Gate Error Analysis
 
 当前已完成 `EXP-S4-006` 的派生 gate error analysis。该流程不跑模型、不联网，只读取：
