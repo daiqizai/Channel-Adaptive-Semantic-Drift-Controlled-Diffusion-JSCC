@@ -31,7 +31,7 @@
 - `s5_calibrate_conf_gain_clip_veto_by_snr.py`：读取已有 CLIP veto sweep CSV，在 validation 上校准 per-SNR CLIP veto schedule，并比较 independent 与 monotonic schedule 的 held-out 风险。
 - `s5_sweep_conf_gain_risk_rules.py`：读取已有 CLIP/top-k CSV，在 validation 上搜索透明 receiver-side risk rules，用 held-out 复核 confidence-gain gate 的 accepted-new-error 风险。
 - `s5_materialize_risk_rule_policy.py`：读取 risk-rule sweep 的 `policy_decisions.csv`，将 `selected_risk_rule` final PNG 从已有 M0/refined 图像复制落盘，并保存 summary、per-sample CSV、报告和样例 sheet。
-- `s5_audit_risk_rule_classifier_ensemble.py`：固定 `selected_risk_rule` 决策，用 AlexNet/ResNet18/MobileNetV3-Small 等冻结 ImageNet 分类器离线审计跨模型 semantic repair/new-error 风险。
+- `s5_audit_risk_rule_classifier_ensemble.py`：固定 `selected_risk_rule` 决策，用 AlexNet/ResNet18/MobileNetV3-Small 等冻结 ImageNet 分类器离线审计 validation/held-out/test-like 的跨模型 semantic repair/new-error 风险。
 - `s5_sweep_ensemble_risk_veto.py`：读取 selected risk-rule 决策和 classifier ensemble audit 投票，在 validation 上搜索透明 receiver-side 二级 veto，用 held-out 复核多数票 new-error 风险、repair 保留量和 PSNR 代价。
 - `s5_sweep_receiver_risk_score.py`：读取 selected risk-rule 决策和 ensemble audit 投票，扫描多个透明 receiver-side risk score 模板及阈值，用 held-out 检查少 veto 风险分数是否会漏多数票 new-error。
 - `s5_apply_testlike_risk_rules.py`：把 validation/held-out 阶段冻结的 `selected_risk_rule` 和保守 ensemble-risk veto 应用到 test-like split，重新计算本地 CLIP、输出决策表、final PNG 和风险样例。

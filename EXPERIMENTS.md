@@ -1881,13 +1881,54 @@ outputs/analysis/exp_s4_006_testlike_risk_rule_check/galleries/
 
 保守 ensemble-risk veto 在 test-like 上没有降低 accepted new error 或 final failure，却额外 veto 93 张、PSNR 相比 `selected_risk_rule` 回吐 `-0.1902` dB，说明它作为 safety upper-bound 太保守，不能直接作为第一版 M3。当前结论进一步支持：浅层 receiver-side 标量/规则已经接近瓶颈，下一步应转向更正式语义标签/ensemble test-like 审计，或在 residual CNN 训练/选择阶段加入 semantic-risk-aware 约束。
 
+#### 派生 test-like classifier-ensemble audit
+
+已运行：
+
+```bash
+python3 scripts/s5_audit_risk_rule_classifier_ensemble.py --config configs/s5_testlike_risk_rule_classifier_ensemble_audit_exp_s4_006.yaml --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_audit_risk_rule_classifier_ensemble.py --config configs/s5_testlike_risk_rule_classifier_ensemble_audit_exp_s4_006.yaml --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/per_model_per_sample.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/per_sample_votes.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/model_summary.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/vote_summary.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/REPORT.md
+outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/metadata.json
+outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/galleries/
+```
+
+该派生流程固定使用 test-like `selected_risk_rule` 决策，不重新搜索 gate，也不把 ensemble 用作 receiver-side decision。脚本从 `policy_decisions.csv` 中只抽取 `selected_risk_rule` 320 行，使用本地 AlexNet、ResNet18、MobileNetV3-Small 权重分别以各自 original top-1 pseudo-label 评价 M0/refined/selected-final 的 failure、repair 和 accepted-new-error 风险。本次不联网、不下载，正式运行前 dry-run 确认 3 个分类器权重均已在本地 cache。
+
+按分类器拆分：
+
+| Classifier | Split | Selected Failure | Delta vs M0 | Repair | New Error |
+|---|---|---:|---:|---:|---:|
+| AlexNet | testlike | 0.4437 | -0.0281 | 10 | 1 |
+| ResNet18 | testlike | 0.4344 | -0.0563 | 31 | 13 |
+| MobileNetV3-Small | testlike | 0.5406 | -0.0719 | 32 | 9 |
+
+按样本投票：
+
+| Split | Images | Any new-error vote | Majority new-error vote | Any repair vote | Majority repair vote |
+|---|---:|---:|---:|---:|---:|
+| testlike | 320 | 23 | 0 | 58 | 12 |
+
+按 SNR 的 any-new-error vote 为 1/4/7/13/19 dB `3/4/6/6/4`，majority new-error vote 全部为 0。23 个 any-new-error 都只有单模型投票，其中 ResNet18 13 个、MobileNetV3-Small 9 个、AlexNet 1 个；AlexNet 的唯一风险仍是 13 dB `sample_000312.png`。
+
+解释：test-like ensemble 审计比 validation/held-out 的跨模型结果更温和：没有 majority-vote accepted new error，说明 frozen `selected_risk_rule` 在 test-like 上没有暴露出明显多数票语义灾难；但 any-model new-error 仍有 23 张，且 ResNet18/MobileNetV3-Small 下 selected accepted new error 分别为 13/9 个。因此它只能说明当前 rule 有一定迁移性和辅助 repair 信号，不能说明跨模型安全。下一步更应该补带标签 clean-correct 评估或把 semantic-risk-aware 约束进入 residual CNN 训练/选择，而不是继续只在 AlexNet/CLIP/top-k 标量上调阈值。
+
 #### 复现备注
 
 `EXP-S4-006` 本体不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。本体 `summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。
 
 #### 下一步
 
-围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG、classifier ensemble audit、ensemble-risk 二级 veto sweep、receiver-side risk score sweep、raw confidence-gain test-like 复核和 frozen risk-rule test-like 复核都已完成。test-like 证据说明 raw confidence-gain 有 PSNR/repair 收益但会引入 accepted new error；`selected_risk_rule` 可挡掉其中 3/4 个 new error，但仍剩 1 个 pseudo-label 风险；保守 ensemble veto 则没有额外语义收益且明显回吐 PSNR。下一步应停止只在同一套浅层 receiver-side 标量上拧阈值，优先做 test-like classifier-ensemble 审计，或在 residual CNN 训练阶段加入 semantic-risk-aware 约束。当前证据显示 raw confidence-gain、全局 CLIP veto、SNR-calibrated scalar CLIP veto、当前 AlexNet-tuned selected rule、保守 ensemble-risk veto 和少 veto risk score 都不能直接定为第一版 M3。
+围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG、classifier ensemble audit、ensemble-risk 二级 veto sweep、receiver-side risk score sweep、raw confidence-gain test-like 复核、frozen risk-rule test-like 复核和 test-like classifier-ensemble audit 都已完成。test-like 证据说明 raw confidence-gain 有 PSNR/repair 收益但会引入 accepted new error；`selected_risk_rule` 可挡掉其中 3/4 个 AlexNet new error，且在 test-like ensemble 下没有 majority-vote new error，但仍有 23 个 any-model accepted new-error vote。下一步应停止只在同一套浅层 receiver-side 标量上拧阈值，优先做带标签 clean-correct 评估，或在 residual CNN 训练阶段加入 semantic-risk-aware 约束。当前证据显示 raw confidence-gain、全局 CLIP veto、SNR-calibrated scalar CLIP veto、当前 AlexNet-tuned selected rule、保守 ensemble-risk veto 和少 veto risk score 都不能直接定为第一版 M3。
 
 ### EXP-S4-007：SNR-conditioned pixel residual diffusion pilot
 

@@ -86,10 +86,27 @@ def read_csv(path: Path) -> list[dict[str, Any]]:
         return list(csv.DictReader(handle))
 
 
-def normalize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def normalize_rows(rows: list[dict[str, Any]], policy_name: str | None = None) -> list[dict[str, Any]]:
+    if policy_name and rows and "policy" in rows[0]:
+        rows = [row for row in rows if str(row.get("policy", "")) == policy_name]
+    if not rows:
+        raise RuntimeError(f"No rows found for policy: {policy_name or 'all'}")
+
     output: list[dict[str, Any]] = []
     for row in rows:
         out = dict(row)
+        aliases = {
+            "shadow_veto": ["selected_risk_rule_shadow_veto"],
+            "vetoed_candidate_accept": ["vetoed_raw_candidate_accept"],
+            "vetoed_candidate_repair": ["vetoed_raw_candidate_repair"],
+            "vetoed_candidate_new_error": ["vetoed_raw_candidate_new_error"],
+        }
+        for canonical, source_keys in aliases.items():
+            if canonical not in out or out[canonical] == "":
+                for source_key in source_keys:
+                    if source_key in out and out[source_key] != "":
+                        out[canonical] = out[source_key]
+                        break
         out["snr_db"] = float(out["snr_db"])
         for key in [
             "accept_refined",
@@ -574,12 +591,10 @@ def make_report(
     vote_summary_rows: list[dict[str, Any]],
     metadata: dict[str, Any],
 ) -> str:
-    split_rows = [
-        row for row in model_summary_rows if row["level"] == "classifier_split" and row["split"] in {"validation", "heldout"}
-    ]
+    split_rows = [row for row in model_summary_rows if row["level"] == "classifier_split"]
     vote_split_rows = [row for row in vote_summary_rows if row["level"] == "split"]
     lines = [
-        "# EXP-S4-006 Selected Risk-Rule Classifier Ensemble Audit",
+        f"# {metadata.get('analysis_id', 'Selected Risk-Rule Classifier Ensemble Audit')}",
         "",
         "This offline audit re-evaluates fixed `selected_risk_rule` decisions with multiple frozen ImageNet classifiers.",
         "",
@@ -645,7 +660,10 @@ def main() -> None:
     with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
     manifest = validate_inputs(config)
-    rows = normalize_rows(read_csv(resolve_project_path(config["inputs"]["selected_policy_per_sample_csv"])))
+    rows = normalize_rows(
+        read_csv(resolve_project_path(config["inputs"]["selected_policy_per_sample_csv"])),
+        str(config.get("policy", {}).get("name", "")) or None,
+    )
     missing = validate_source_images(rows)
     if missing:
         raise FileNotFoundError("Missing source images:\n" + "\n".join(missing[:20]))
@@ -720,6 +738,7 @@ def main() -> None:
     write_csv(model_summary_csv, model_summary_rows)
     write_csv(vote_summary_csv, vote_summary_rows)
     metadata = {
+        "analysis_id": config.get("analysis_id", "selected_risk_rule_classifier_ensemble_audit"),
         "project_version": get_project_version(),
         "git_dirty_state": get_git_dirty_state(),
         "config": project_relative(config_path),

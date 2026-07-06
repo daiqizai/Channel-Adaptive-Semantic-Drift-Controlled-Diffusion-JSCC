@@ -1270,6 +1270,41 @@ outputs/analysis/exp_s4_006_testlike_risk_rule_check/galleries/
 
 核心结论：`selected_risk_rule` 在 test-like 上把 raw confidence-gain 的 accepted new error 从 `4` 降到 `1`，保留 `10` 个 repair，PSNR 比 top-1 gate 高 `+0.0434` dB；但它没有清零风险。保守 ensemble veto 没有减少剩余 new error，且 PSNR 相比 `selected_risk_rule` 回吐 `-0.1902` dB。剩余风险样本是 13 dB `sample_000312.png`，也是 AlexNet pseudo-label 较吵的 case；当前浅层 receiver-side rule 仍不能写成最终 M3。
 
+## S5 Test-Like Classifier-Ensemble Audit
+
+已用 AlexNet、ResNet18 和 MobileNetV3-Small 三个冻结 ImageNet 分类器离线审计 test-like `selected_risk_rule`。该流程不训练、不联网、不下载，分类器权重来自本地 cache；ensemble 只用于离线风险审计，不参与 receiver-side decision。
+
+配置：
+
+```text
+configs/s5_testlike_risk_rule_classifier_ensemble_audit_exp_s4_006.yaml
+```
+
+先检查输入和本地权重：
+
+```bash
+python3 scripts/s5_audit_risk_rule_classifier_ensemble.py --config configs/s5_testlike_risk_rule_classifier_ensemble_audit_exp_s4_006.yaml --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_audit_risk_rule_classifier_ensemble.py --config configs/s5_testlike_risk_rule_classifier_ensemble_audit_exp_s4_006.yaml --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/per_model_per_sample.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/per_sample_votes.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/model_summary.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/vote_summary.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/REPORT.md
+outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/galleries/
+```
+
+核心结论：test-like 上 `selected_risk_rule` 没有 majority-vote accepted new error，优于 validation/held-out 审计中暴露的 `2/1` 多数票新错；但仍有 `23/320` 张被至少一个分类器标为 accepted new error。按分类器看，AlexNet/ResNet18/MobileNetV3-Small 的 selected failure 分别为 `0.4437/0.4344/0.5406`，repair 为 `10/31/32`，new error 为 `1/13/9`。因此该规则在 test-like 上不是多数票语义灾难，但也不是跨模型完全安全；下一步应转向带标签 clean-correct 评估或 semantic-risk-aware 训练，而不是继续只调浅层阈值。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：
