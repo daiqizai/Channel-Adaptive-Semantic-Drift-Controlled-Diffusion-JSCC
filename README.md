@@ -941,6 +941,48 @@ outputs/analysis/exp_s4_006_heldout_gate_check/samples/
 
 核心结论：held-out 上 candidate final failure 为 `0.2812`，top-1 baseline 为 `0.3250`；candidate final PSNR 比 top-1 baseline 高 `+0.1007` dB，比 M0 高 `+0.5460` dB。新增接受 19/160 个样本，其中 9 个是 repair，但仍有 2 个 accepted new error。`samples/accepted_new_error_review.png` 已固化这两个风险样本；候选 gate 方向复现，但还不能写成最终 M3。
 
+## S5 Test-Like Confidence-Gain Gate Check
+
+当前也已完成 `EXP-S4-006` 的 test-like confidence-gain gate 复核。该流程先把正式 M0 export 扩展到每个 SNR 384 张 PNG，然后加载同一个 `outputs/EXP-S4-006/checkpoints/best.pt`，在没有参与 `EXP-S4-006` train/eval/gate sweep 的 `sample_000256.png` 到 `sample_000319.png` 上重新生成 refined、top-1 final 和 candidate final。
+
+先生成不覆盖旧目录的新 M0 export：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s2_deepjscc_highres_export.py --config configs/s2_deepjscc_coco256_awgn.yaml --checkpoint outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt --device cuda:0 --snrs 1,4,7,13,19 --batch-size 16 --num-workers 4 --export-count 384 --output-dir outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384
+```
+
+配置：
+
+```text
+configs/s5_residual_refiner_testlike_gate_exp_s4_006.yaml
+```
+
+先检查输入和 split：
+
+```bash
+python3 scripts/s5_residual_refiner_heldout_gate_eval.py --config configs/s5_residual_refiner_testlike_gate_exp_s4_006.yaml --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_heldout_gate_eval.py --config configs/s5_residual_refiner_testlike_gate_exp_s4_006.yaml --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_testlike_gate_check/per_sample.csv
+outputs/analysis/exp_s4_006_testlike_gate_check/summary.csv
+outputs/analysis/exp_s4_006_testlike_gate_check/new_accepts.csv
+outputs/analysis/exp_s4_006_testlike_gate_check/accepted_new_errors.csv
+outputs/analysis/exp_s4_006_testlike_gate_check/REPORT.md
+outputs/analysis/exp_s4_006_testlike_gate_check/exports/
+outputs/analysis/exp_s4_006_testlike_gate_check/samples/
+```
+
+核心结论：test-like 上 candidate final failure 为 `0.4313`，top-1 baseline 为 `0.4719`；candidate final PSNR 比 top-1 baseline 高 `+0.0814` dB，比 M0 高 `+0.4927` dB。新增接受 26/320 个样本，其中 17 个是 repair，但仍有 4 个 accepted new error。`samples/accepted_new_error_review.png` 已固化这些风险样本；raw confidence-gain gate 的收益复现，但语义风险更明确，不能写成最终 M3。
+
 ## S5 Confidence-Gain CLIP Veto Sweep
 
 当前已完成 `EXP-S4-006` confidence-gain gate 的 receiver-side CLIP 二级 veto 扫描。该流程不训练、不下载，只读取 validation/held-out CSV、已有 M0/refined PNG 和本地 OpenCLIP ViT-B/32 权重；veto 决策只使用 `CLIP(M0, refined)`，不看 original 或 caption。

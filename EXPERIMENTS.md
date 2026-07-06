@@ -24,6 +24,7 @@
 | EXP-S2HR-003 | 2026-07-01 | N/A (not a project git repo) | M0-DeepJSCC-HR formal train | COCO2017 train2017 / val2017 | AWGN | 7 dB | 0.17 | MSE, PSNR, SSIM | 完成（best 可用，latest NaN） | `outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/` |
 | EXP-S2HR-004 | 2026-07-01 | N/A (not a project git repo) | M0-DeepJSCC-HR formal export | COCO2017 val2017 subset, 512 images | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | MSE, PSNR, SSIM, MS-SSIM, inference time | 完成 | `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/` |
 | EXP-S2HR-005 | 2026-07-03 | 8678e4f | M0-DeepJSCC-HR formal export 256 saved images | COCO2017 val2017 subset, 512 eval / 256 exported images | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | MSE, PSNR, SSIM, MS-SSIM, inference time | 完成（供 residual validation 使用） | `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256/` |
+| EXP-S2HR-006 | 2026-07-06 | 3bcf825 | M0-DeepJSCC-HR formal export 384 saved images | COCO2017 val2017 subset, 512 eval / 384 exported images | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | MSE, PSNR, SSIM, MS-SSIM, inference time | 完成（供 test-like split 复核使用） | `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384/` |
 | EXP-S2-001 | 2026-07-01 | N/A (not a project git repo) | M1-BlindDiffusion preflight/run attempt | COCO2017 val2017 export subset, 16 images/SNR planned | AWGN | [1, 7, 19] dB | 0.17 | 未生成 | 阻塞（模型权重缺失；提权下载/GPU 运行被拒绝） | 未创建 |
 | EXP-S2-002 | 2026-07-01 | N/A (not a project git repo) | M1-BlindDiffusion | COCO2017 val2017 export subset, 16 images/SNR | AWGN | [1, 7, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, diffusion time | 完成（负结果） | `outputs/EXP-S2-002/` |
 | EXP-S3-001 | 2026-07-02 | N/A (not a project git repo) | CLIP image-image consistency diagnostic | COCO2017 val2017 export subset, 16 images/SNR | AWGN | [1, 7, 19] dB | 0.17 | CLIP cosine similarity, CLIP drop rate | 完成（辅助语义诊断；负结果） | `outputs/EXP-S3-001/` |
@@ -480,6 +481,50 @@ epoch 89 后训练发散为 NaN。已在训练脚本中增加非有限 loss/metr
 #### 复现备注
 
 本实验不下载数据或模型，只读取本地 COCO、已有 `best.pt` checkpoint 和第三方 DeepJSCC 代码。运行命令显式清空代理变量；输出目录是新目录，不覆盖旧 32 张 formal export。
+
+### EXP-S2HR-006：DeepJSCC COCO2017 256x256 formal SNR sweep export 384 saved images
+
+- 日期：2026-07-06
+- 项目版本：`3bcf82525ca6760a66d3b9dfa4d846ec275451e7`
+- 第三方 commit：`2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06`
+- 阶段：S2-HR High-resolution DeepJSCC formal export
+- 方法：M0-DeepJSCC-HR formal export, 384 saved images per SNR
+- 数据集：COCO2017 `val2017` subset, 512 images evaluated, first 384 images exported
+- 数据 split / 样本 ID：`outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384/source_manifest.json`
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- 随机种子：42
+- checkpoint：`outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt`
+- config：`outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384/config.yaml`
+- 运行命令：`env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s2_deepjscc_highres_export.py --config configs/s2_deepjscc_coco256_awgn.yaml --checkpoint outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt --device cuda:0 --snrs 1,4,7,13,19 --batch-size 16 --num-workers 4 --export-count 384 --output-dir outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384`
+- 关键源码：`scripts/s2_deepjscc_highres_export.py`, `src/cadsd_jscc/deepjscc_adapter.py`, `src/cadsd_jscc/datasets.py`, `src/cadsd_jscc/metrics.py`
+- 输出路径：`outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384/`
+- 状态：完成；support export for `EXP-S4-006` test-like split check
+
+#### 指标
+
+该实验仍在同一 512 张 COCO val subset 上评估 M0，因此 MSE/PSNR/SSIM/MS-SSIM 与 `EXP-S2HR-004` 和 `EXP-S2HR-005` 的主指标一致；区别是保存的 PNG 从 256 张/SNR 扩大到 384 张/SNR。
+
+| SNR(dB) | MSE | PSNR(dB) | SSIM | MS-SSIM | Inference ms/image |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 0.0018173862 | 28.0189655945 | 0.8090499612 | 0.9363910668 | 0.6610 |
+| 4 | 0.0011532078 | 30.0470464826 | 0.8700513527 | 0.9622469177 | 0.1956 |
+| 7 | 0.0008255254 | 31.5589745864 | 0.9054089159 | 0.9763763894 | 0.1937 |
+| 13 | 0.0005807463 | 33.1954004802 | 0.9348068793 | 0.9876335945 | 0.1929 |
+| 19 | 0.0005199769 | 33.7264324129 | 0.9425818466 | 0.9905498993 | 0.1961 |
+
+#### 结果总结
+
+本实验用于给 `EXP-S4-006` 的更正式 test-like gate 复核提供额外 M0 PNG 输入，不代表新的 M0 模型。输出包含 `exports/original/sample_000000.png` 到 `sample_000383.png`，以及每个 SNR 对应的 `exports/snr_XXdb/reconstruction/`。后续 test-like 复核使用 `sample_000256` 到 `sample_000319`，该样本段不与 `EXP-S4-006` 的 train `sample_000032`-`sample_000191` 或 eval `sample_000192`-`sample_000255` 重叠。
+
+#### Semantic drift 观察
+
+本实验只导出 pre-refinement `x_hat`，未额外统计 semantic drift。语义可靠性在后续 `EXP-S4-006` test-like gate 复核中统计。
+
+#### 复现备注
+
+本实验不下载数据或模型，只读取本地 COCO、已有 `best.pt` checkpoint 和第三方 DeepJSCC 代码。运行命令显式清空代理变量；输出目录是新目录，不覆盖旧 256 张 formal export。
 
 ### EXP-S2-001：M1-BlindDiffusion preflight/run attempt
 
@@ -1426,6 +1471,64 @@ outputs/analysis/exp_s4_006_heldout_gate_check/samples/
 
 解释：held-out 复核支持 confidence-gain candidate 的方向，尤其在 1/4/7 dB 能额外接受一批 repair 并降低 pseudo final failure；但仍出现 2 个 accepted new error，位于 1 dB 和 4 dB。`samples/accepted_new_error_review.png` 已固化这两个样本的 original / M0 / refined / top-1 final / candidate final 对照。当前结论是“候选 gate 可继续收紧”，不是“候选 gate 已通过”。
 
+#### 派生 test-like confidence-gain gate check
+
+已先扩展 M0 export：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s2_deepjscc_highres_export.py --config configs/s2_deepjscc_coco256_awgn.yaml --checkpoint outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt --device cuda:0 --snrs 1,4,7,13,19 --batch-size 16 --num-workers 4 --export-count 384 --output-dir outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384
+```
+
+然后运行：
+
+```bash
+python3 scripts/s5_residual_refiner_heldout_gate_eval.py --config configs/s5_residual_refiner_testlike_gate_exp_s4_006.yaml --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_heldout_gate_eval.py --config configs/s5_residual_refiner_testlike_gate_exp_s4_006.yaml --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_testlike_gate_check/per_sample.csv
+outputs/analysis/exp_s4_006_testlike_gate_check/summary.csv
+outputs/analysis/exp_s4_006_testlike_gate_check/new_accepts.csv
+outputs/analysis/exp_s4_006_testlike_gate_check/accepted_new_errors.csv
+outputs/analysis/exp_s4_006_testlike_gate_check/REPORT.md
+outputs/analysis/exp_s4_006_testlike_gate_check/metadata.json
+outputs/analysis/exp_s4_006_testlike_gate_check/exports/
+outputs/analysis/exp_s4_006_testlike_gate_check/samples/
+```
+
+该复核不重训模型，只加载 `outputs/EXP-S4-006/checkpoints/best.pt`，在新导出的 `sample_000256.png` 到 `sample_000319.png` 上重新生成 refined、top-1 final 和 candidate final。该 split 没有参与 `EXP-S4-006` 的 refiner 训练、验证或此前 gate sweep；但仍属于同一个 COCO val subset 和同一个 pseudo-label 评价口径，因此只能作为 test-like 派生风险复核，不是最终 test 结论。
+
+全局关键结果：
+
+| Metric | Value |
+|---|---:|
+| Num images | 320 |
+| Candidate accept rate | 0.7063 |
+| Newly accepted by candidate | 26 |
+| Candidate final failure | 0.4313 |
+| Baseline top-1 final failure | 0.4719 |
+| Candidate minus baseline failure | -0.0406 |
+| Candidate final PSNR | 32.2374 dB |
+| Candidate delta PSNR vs top-1 | +0.0814 dB |
+| Candidate delta PSNR vs M0 | +0.4927 dB |
+| Accepted repairs | 17 |
+| Accepted new errors | 4 |
+
+分 SNR 关键结果：
+
+| SNR(dB) | M0 Failure | Refined Failure | Top-1 Failure | Candidate Failure | New Accept | Repair | New Error | Delta PSNR vs top-1 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0.6562 | 0.5000 | 0.6562 | 0.5938 | 11 | 6 | 2 | +0.2120 |
+| 4 | 0.5469 | 0.4375 | 0.5469 | 0.4375 | 11 | 8 | 1 | +0.1443 |
+| 7 | 0.4688 | 0.4062 | 0.4688 | 0.4375 | 2 | 2 | 0 | +0.0238 |
+| 13 | 0.3281 | 0.2500 | 0.3281 | 0.3281 | 2 | 1 | 1 | +0.0269 |
+| 19 | 0.3594 | 0.3125 | 0.3594 | 0.3594 | 0 | 0 | 0 | +0.0000 |
+
+解释：test-like split 上方向仍复现，candidate final failure 比 top-1 gate 低 `0.0406`，PSNR 高 `+0.0814` dB，并额外接受 17 个 pseudo-label repair；但 accepted new error 增至 4 个。`samples/accepted_new_error_review.png` 显示其中既有真实语义漂移风险，也有 AlexNet pseudo-label 本身较吵的样本。结论仍应保守：raw confidence-gain gate 是有收益但不安全的候选，不能写成最终 M3。
+
 #### 派生 confidence-gain CLIP veto sweep
 
 已运行：
@@ -1746,7 +1849,7 @@ threshold = 0.444446
 
 #### 下一步
 
-围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG、classifier ensemble audit、ensemble-risk 二级 veto sweep 和 receiver-side risk score sweep 都已完成。当前 shallow score 负/部分结果说明，单靠少量 AlexNet/CLIP/top-k receiver-side 标量仍不够稳；下一步应优先扩展更正式 split，或在 residual CNN 训练阶段加入 semantic-risk-aware 约束，而不是继续在同一批 validation 样本上加阈值。当前证据显示 raw confidence-gain、全局 CLIP veto、SNR-calibrated scalar CLIP veto、AlexNet-tuned selected rule、保守 ensemble-risk veto 和少 veto risk score 都不能直接定为第一版 M3。
+围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG、classifier ensemble audit、ensemble-risk 二级 veto sweep、receiver-side risk score sweep 和 raw confidence-gain 的 test-like split 复核都已完成。test-like 复核再次说明 raw confidence-gain 有 PSNR/repair 收益但会引入 accepted new error；shallow score 负/部分结果说明，单靠少量 AlexNet/CLIP/top-k receiver-side 标量仍不够稳。下一步应把当前 `selected_risk_rule`/保守 veto 放到 test-like split 上复核，或在 residual CNN 训练阶段加入 semantic-risk-aware 约束，而不是继续只在同一批 validation 样本上加阈值。当前证据显示 raw confidence-gain、全局 CLIP veto、SNR-calibrated scalar CLIP veto、当前 AlexNet-tuned selected rule、保守 ensemble-risk veto 和少 veto risk score 都不能直接定为第一版 M3。
 
 ### EXP-S4-007：SNR-conditioned pixel residual diffusion pilot
 

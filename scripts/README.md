@@ -26,7 +26,7 @@
 - `s4_make_project_progress_visual_summary.py`：聚合已有正式 metrics、辅助语义诊断和 failure gallery，生成项目阶段进度图、M0/M1 指标图、语义诊断图、代表性可视化拼图和 `REPORT.md`；派生分析，不跑模型、不联网。
 - `s5_audit_residual_gate_aux_semantics.py`：读取 `EXP-S4-006` gate sweep 的 top-k 预测，使用本地 OpenCLIP 和 COCO captions 对 confidence-gain 候选 gate 做离线辅助语义审计。
 - `s5_materialize_residual_gate_policy.py`：读取 `EXP-S4-006` gate sweep 结果，按指定候选 gate 将 final PNG 从已有 M0/refined 图像中复制落盘，并保存 summary、per-sample CSV 和样例拼图。
-- `s5_residual_refiner_heldout_gate_eval.py`：加载 `EXP-S4-006` residual refiner checkpoint，在 held-out 样本段上重新生成 refined/top-1/candidate final，并复核 confidence-gain gate 的 repair 与 accepted new error。
+- `s5_residual_refiner_heldout_gate_eval.py`：加载 `EXP-S4-006` residual refiner checkpoint，在 held-out 或 test-like 样本段上重新生成 refined/top-1/candidate final，并复核 confidence-gain gate 的 repair 与 accepted new error。
 - `s5_sweep_conf_gain_clip_veto.py`：读取 `EXP-S4-006` validation/held-out gate CSV，计算 receiver-side `CLIP(M0, refined)`，扫描 confidence-gain gate 的二级 veto 阈值并输出 policy summary、逐样本决策和 galleries。
 - `s5_calibrate_conf_gain_clip_veto_by_snr.py`：读取已有 CLIP veto sweep CSV，在 validation 上校准 per-SNR CLIP veto schedule，并比较 independent 与 monotonic schedule 的 held-out 风险。
 - `s5_sweep_conf_gain_risk_rules.py`：读取已有 CLIP/top-k CSV，在 validation 上搜索透明 receiver-side risk rules，用 held-out 复核 confidence-gain gate 的 accepted-new-error 风险。
