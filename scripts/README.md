@@ -35,6 +35,7 @@
 - `s5_sweep_ensemble_risk_veto.py`：读取 selected risk-rule 决策和 classifier ensemble audit 投票，在 validation 上搜索透明 receiver-side 二级 veto，用 held-out 复核多数票 new-error 风险、repair 保留量和 PSNR 代价。
 - `s5_sweep_receiver_risk_score.py`：读取 selected risk-rule 决策和 ensemble audit 投票，扫描多个透明 receiver-side risk score 模板及阈值，用 held-out 检查少 veto 风险分数是否会漏多数票 new-error。
 - `s5_apply_testlike_risk_rules.py`：把 validation/held-out 阶段冻结的 `selected_risk_rule` 和保守 ensemble-risk veto 应用到 test-like split，重新计算本地 CLIP、输出决策表、final PNG 和风险样例。
+- `s5_coco_object_clip_clean_eval.py`：读取 test-like gate 决策、COCO instance labels 和本地 OpenCLIP，按 dominant object label 构造辅助 clean-correct 子集，输出 policy-level GT-like semantic failure/repair/new-error 诊断。
 - `s5_residual_diffusion_pilot.py`：读取正式 256 张/SNR M0 export，训练一个小型 SNR-conditioned pixel residual DDPM；避开 Stable Diffusion、text prompt 和 SD VAE，用同一 pseudo semantic fallback 口径评估 residual diffusion。
 - `run_s2_coco256_awgn_train.sh`：长任务脚本；负责断点续传 COCO2017 train/val、解压、检查图片数量，并启动 COCO-256 AWGN DeepJSCC GPU 训练。
 - `prepare_image_symlink_split.py`：从一个图片目录按固定 seed 生成不重叠的 train/val 符号链接切分，用于 COCO-val pilot 等临时高分辨率训练。

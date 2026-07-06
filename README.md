@@ -1305,6 +1305,41 @@ outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/galleri
 
 核心结论：test-like 上 `selected_risk_rule` 没有 majority-vote accepted new error，优于 validation/held-out 审计中暴露的 `2/1` 多数票新错；但仍有 `23/320` 张被至少一个分类器标为 accepted new error。按分类器看，AlexNet/ResNet18/MobileNetV3-Small 的 selected failure 分别为 `0.4437/0.4344/0.5406`，repair 为 `10/31/32`，new error 为 `1/13/9`。因此该规则在 test-like 上不是多数票语义灾难，但也不是跨模型完全安全；下一步应转向带标签 clean-correct 评估或 semantic-risk-aware 训练，而不是继续只调浅层阈值。
 
+## S5 Test-Like COCO Object CLIP Clean-Correct Eval
+
+已完成 test-like split 上的 COCO object clean-correct 辅助诊断。该流程不训练、不联网、不下载，读取 test-like gate 决策、COCO `instances_val2017.json`、正式 M0 export manifest 和本地 OpenCLIP ViT-B/32 权重；先用 COCO instance 面积找每张图的 dominant object label，再要求 CLIP 对 original 的 80 类 COCO zero-shot top-1 与该 label 一致，形成辅助 clean-correct 子集。
+
+配置：
+
+```text
+configs/s5_testlike_coco_object_clip_clean_eval_exp_s4_006.yaml
+```
+
+先检查输入和样本规模：
+
+```bash
+python3 scripts/s5_coco_object_clip_clean_eval.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_coco_object_clip_clean_eval.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/per_sample.csv
+outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/summary.csv
+outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/by_snr.csv
+outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/label_audit.csv
+outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/REPORT.md
+outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/galleries/
+```
+
+核心结论：64 个 test-like 原图中有 55 个满足 dominant COCO object 面积规则，其中 27 个 original 通过 CLIP clean-correct 过滤，形成 135 行 clean-correct 统计。`selected_risk_rule` 在该子集上 final failure 与 top-1 gate 相同，均为 `0.0815`，PSNR 高 `+0.0257` dB，有 `1` 个 GT-like repair 和 `2` 个 GT-like new error；`selected_risk_rule_plus_ensemble_veto` 把 new error 降到 `0`，final failure 降到 `0.0741`，但 repair 也降到 `0`，PSNR 相比 top-1 低 `-0.1727` dB。这个结果继续支持当前判断：更保守的 veto 能保护语义，但会明显牺牲 restoration 收益；COCO object CLIP 只是辅助 clean-correct 诊断，不替代真正带标签 ImageNet/Imagenette 评估。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：

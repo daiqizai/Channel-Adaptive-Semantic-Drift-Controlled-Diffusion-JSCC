@@ -1,0 +1,59 @@
+phase: S5
+analysis_id: exp_s4_006_testlike_coco_object_clip_clean_eval
+source_experiment: EXP-S4-006
+method: TestLikeCocoObjectClipCleanCorrectEval
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  policy_decisions_csv: outputs/analysis/exp_s4_006_testlike_risk_rule_check/policy_decisions.csv
+  m0_source_manifest: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384/source_manifest.json
+  coco_instances: data/coco/annotations/instances_val2017.json
+  source_risk_rule_config: configs/s5_testlike_risk_rule_check_exp_s4_006.yaml
+  checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+labeling:
+  dominant_category_min_area_ratio: 0.03
+  dominant_category_min_share: 0.50
+  ignore_crowd: true
+  clean_correct_min_prob: 0.20
+  clean_correct_min_margin: 0.02
+  prompt_templates:
+    - "a photo of a {label}."
+    - "a cropped photo of a {label}."
+    - "a photo containing a {label}."
+
+clip:
+  backend: open_clip
+  model_name: ViT-B-32
+  pretrained: openai
+  pretrained_url: https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B-32.pt
+  pretrained_path: outputs/cache/open_clip/ViT-B-32.pt
+  cache_dir: outputs/cache/open_clip
+  batch_size: 64
+  precision: fp32
+  weights_only: false
+  force_quick_gelu: true
+  image_mean: [0.48145466, 0.4578275, 0.40821073]
+  image_std: [0.26862954, 0.26130258, 0.27577711]
+  image_interpolation: bicubic
+  image_resize_mode: shortest
+
+evaluation:
+  policies:
+    - top1_equal
+    - raw_conf_gain
+    - fixed_clip_ge_0p98
+    - selected_risk_rule
+    - selected_risk_rule_plus_ensemble_veto
+  gallery_rows: 12
+  warning: COCO object labels plus CLIP zero-shot classification are an auxiliary clean-correct diagnostic, not a replacement for a supervised ImageNet/Imagenette final metric
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval

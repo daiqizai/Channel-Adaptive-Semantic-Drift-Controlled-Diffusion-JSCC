@@ -1922,13 +1922,38 @@ outputs/analysis/exp_s4_006_testlike_risk_rule_classifier_ensemble_audit/galleri
 
 解释：test-like ensemble 审计比 validation/held-out 的跨模型结果更温和：没有 majority-vote accepted new error，说明 frozen `selected_risk_rule` 在 test-like 上没有暴露出明显多数票语义灾难；但 any-model new-error 仍有 23 张，且 ResNet18/MobileNetV3-Small 下 selected accepted new error 分别为 13/9 个。因此它只能说明当前 rule 有一定迁移性和辅助 repair 信号，不能说明跨模型安全。下一步更应该补带标签 clean-correct 评估或把 semantic-risk-aware 约束进入 residual CNN 训练/选择，而不是继续只在 AlexNet/CLIP/top-k 标量上调阈值。
 
+#### 派生 test-like COCO object CLIP clean-correct eval
+
+该派生流程不训练、不联网、不下载，读取 `outputs/analysis/exp_s4_006_testlike_risk_rule_check/policy_decisions.csv`、`outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384/source_manifest.json`、`data/coco/annotations/instances_val2017.json` 和本地 `outputs/cache/open_clip/ViT-B-32.pt`。它先用 COCO instance 面积得到 dominant object label，再用 OpenCLIP ViT-B/32 对 80 个 COCO object prompt 做 zero-shot 分类；只有 dominant label 面积占比满足阈值，且 original 的 CLIP top-1 与 dominant label 一致、prob/margin 过阈值的样本进入辅助 clean-correct 子集。
+
+运行命令：
+
+```bash
+python3 scripts/s5_coco_object_clip_clean_eval.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_coco_object_clip_clean_eval.py --device cuda:0
+```
+
+输出路径：`outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/`
+
+clean-correct 总表：
+
+| Policy | Rows | Final Failure GT | Delta vs Top1 | Final PSNR | Delta PSNR vs Top1 | Repair GT | New Error GT |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| top1_equal | 135 | 0.0815 | +0.0000 | 31.7925 | +0.0000 | 1 | 2 |
+| raw_conf_gain | 135 | 0.0815 | +0.0000 | 31.8457 | +0.0533 | 1 | 2 |
+| fixed_clip_ge_0p98 | 135 | 0.0815 | +0.0000 | 31.8042 | +0.0117 | 1 | 2 |
+| selected_risk_rule | 135 | 0.0815 | +0.0000 | 31.8182 | +0.0257 | 1 | 2 |
+| selected_risk_rule_plus_ensemble_veto | 135 | 0.0741 | -0.0074 | 31.6197 | -0.1727 | 0 | 0 |
+
+解释：64 个 test-like 原图中有 55 个满足 dominant object 面积规则，其中 27 个 original 被 CLIP 判为 clean-correct，形成每个 policy 135 行统计。该辅助 GT-like 口径下，`selected_risk_rule` 没有比 top-1 gate 降低 final failure，也没有减少 GT-like accepted new error，只提供小幅 PSNR 增益；保守 ensemble veto 可把 GT-like new error 清零并稍降 final failure，但也清掉 repair 且 PSNR 低于 top-1。这个结果进一步确认当前浅层 gate 的语义保护和 restoration 收益存在硬 tradeoff。它比 ImageNet pseudo-label 更贴 COCO 物体标注，但仍依赖 CLIP zero-shot 和 dominant-object 假设，不能包装成最终监督真值指标。
+
 #### 复现备注
 
 `EXP-S4-006` 本体不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。本体 `summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。
 
 #### 下一步
 
-围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG、classifier ensemble audit、ensemble-risk 二级 veto sweep、receiver-side risk score sweep、raw confidence-gain test-like 复核、frozen risk-rule test-like 复核和 test-like classifier-ensemble audit 都已完成。test-like 证据说明 raw confidence-gain 有 PSNR/repair 收益但会引入 accepted new error；`selected_risk_rule` 可挡掉其中 3/4 个 AlexNet new error，且在 test-like ensemble 下没有 majority-vote new error，但仍有 23 个 any-model accepted new-error vote。下一步应停止只在同一套浅层 receiver-side 标量上拧阈值，优先做带标签 clean-correct 评估，或在 residual CNN 训练阶段加入 semantic-risk-aware 约束。当前证据显示 raw confidence-gain、全局 CLIP veto、SNR-calibrated scalar CLIP veto、当前 AlexNet-tuned selected rule、保守 ensemble-risk veto 和少 veto risk score 都不能直接定为第一版 M3。
+围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG、classifier ensemble audit、ensemble-risk 二级 veto sweep、receiver-side risk score sweep、raw confidence-gain test-like 复核、frozen risk-rule test-like 复核、test-like classifier-ensemble audit 和 COCO object CLIP clean-correct 辅助诊断都已完成。test-like 证据说明 raw confidence-gain 有 PSNR/repair 收益但会引入 accepted new error；`selected_risk_rule` 可挡掉其中 3/4 个 AlexNet new error，且在 test-like ensemble 下没有 majority-vote new error，但仍有 23 个 any-model accepted new-error vote；在 COCO-object clean-correct 口径下它仍有 2 个 GT-like new error。下一步应停止只在同一套浅层 receiver-side 标量上拧阈值，优先做真正带监督标签的 clean-correct 评估，或在 residual CNN 训练阶段加入 semantic-risk-aware 约束。当前证据显示 raw confidence-gain、全局 CLIP veto、SNR-calibrated scalar CLIP veto、当前 AlexNet-tuned selected rule、保守 ensemble-risk veto 和少 veto risk score 都不能直接定为第一版 M3。
 
 ### EXP-S4-007：SNR-conditioned pixel residual diffusion pilot
 

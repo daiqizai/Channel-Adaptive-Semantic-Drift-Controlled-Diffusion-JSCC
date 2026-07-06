@@ -35,4 +35,5 @@
 - `s5_receiver_risk_score_sweep_exp_s4_006.yaml`：扫描多个透明 receiver-side risk score 模板及阈值，评估能否比保守二级 veto 少误杀 repair，同时保持 ensemble majority new-error 安全。
 - `s5_testlike_risk_rule_check_exp_s4_006.yaml`：把冻结的 `selected_risk_rule` 和保守 ensemble-risk veto 应用到 `sample_000256`-`sample_000319` test-like split，只做迁移复核不调参。
 - `s5_testlike_risk_rule_classifier_ensemble_audit_exp_s4_006.yaml`：用多个冻结 torchvision ImageNet 分类器离线审计 test-like `selected_risk_rule` 的跨模型 repair/new-error 风险。
+- `s5_testlike_coco_object_clip_clean_eval_exp_s4_006.yaml`：用 COCO instance dominant object labels 和本地 OpenCLIP ViT-B/32，在 test-like split 上构造辅助 clean-correct 子集并复核各 gate policy 的 GT-like semantic failure/repair/new-error。
 - `s5_residual_diffusion_pilot_coco256_awgn.yaml`：对正式 256 张/SNR M0 export 训练一个 latent-free pixel residual DDPM pilot，验证 diffusion 是否适合作为保守残差建模器。
