@@ -977,6 +977,41 @@ outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/galleries/
 
 核心结论：全局最保守可用阈值为 `CLIP(M0, refined) >= 0.98`。它在 validation 和 held-out 上都把 accepted new error 压到 0，但只保留 2 个 repair，总 PSNR 相比 top-1 gate 仅提升 `+0.0073` dB。该 veto 是安全参考，不是最终 M3；下一步应做 SNR-calibrated threshold、classifier ensemble 或轻量 receiver-side risk predictor。
 
+## S5 SNR-Calibrated CLIP Veto
+
+当前已完成 `EXP-S4-006` confidence-gain CLIP veto 的 SNR 校准派生分析。该流程不训练、不下载、不重算 CLIP，只读取上一节 sweep 生成的 `per_sample_with_clip.csv`，在 validation 上选择阈值 schedule，并在 held-out 上做风险复核。
+
+配置：
+
+```text
+configs/s5_conf_gain_clip_veto_snr_calibration_exp_s4_006.yaml
+```
+
+先检查输入：
+
+```bash
+python3 scripts/s5_calibrate_conf_gain_clip_veto_by_snr.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_calibrate_conf_gain_clip_veto_by_snr.py --overwrite
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/policy_summary.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/policy_by_snr.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/policy_decisions.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/calibrated_schedules.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/REPORT.md
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/galleries/
+```
+
+核心结论：validation-only independent schedule 为 `1/4/7/13/19 dB = 0.96/no_veto/0.98/no_veto/no_veto`，在 validation 上保留 10 个 repair 且 0 accepted new error，但 held-out 仍漏 1 个 new error。monotonic schedule 为 `0.98/0.98/0.98/no_veto/no_veto`，held-out 安全但只保留 1 个 repair，几乎退回全局 `0.98`。因此单一 `CLIP(M0, refined)` 标量阈值即使按 SNR 校准，也不足以作为最终 M3；下一步应转向 classifier ensemble 或轻量 receiver-side risk predictor。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：

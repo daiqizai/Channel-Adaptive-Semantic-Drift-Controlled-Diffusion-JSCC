@@ -1458,13 +1458,62 @@ outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/galleries/
 
 解释：`CLIP(M0, refined) >= 0.98` 是当前扫描中能在 validation 和 held-out 同时清零 accepted new error、且不完全退回 top-1 的最保守阈值。它挡掉了 raw confidence-gain 的 5 个 accepted new error，但也挡掉了 28/30 个 repair，因此收益几乎被压平。这个结果说明单一 CLIP image-image veto 可作安全参考，但不够作为最终 M3；下一步需要 SNR-calibrated threshold、classifier ensemble 或 receiver-side risk predictor。
 
+#### 派生 SNR-calibrated confidence-gain CLIP veto
+
+已运行：
+
+```bash
+python3 scripts/s5_calibrate_conf_gain_clip_veto_by_snr.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_calibrate_conf_gain_clip_veto_by_snr.py --overwrite
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/policy_summary.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/policy_by_snr.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/policy_decisions.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/calibrated_schedules.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/independent_threshold_candidates.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/monotonic_schedule_candidates.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/REPORT.md
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/galleries/
+```
+
+该派生分析只读取 `outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/per_sample_with_clip.csv`，不训练模型、不联网、不重算 CLIP。阈值只在 validation split 上选择，再到 held-out split 上做风险复核。扫描网格包含 `no_veto`、`0.90/0.92/0.94/0.96/0.97/0.98/0.985/0.99/0.995` 和 `top1_only`；monotonic schedule 额外约束 `threshold(1 dB) >= threshold(4 dB) >= threshold(7 dB) >= threshold(13 dB) >= threshold(19 dB)`，对应低 SNR 语义控制不弱于高 SNR。
+
+校准得到的 schedule：
+
+| Policy | 1 dB | 4 dB | 7 dB | 13 dB | 19 dB |
+|---|---:|---:|---:|---:|---:|
+| `fixed_clip_ge_0p98` | 0.98 | 0.98 | 0.98 | 0.98 | 0.98 |
+| `snr_independent_calibrated` | 0.96 | no_veto | 0.98 | no_veto | no_veto |
+| `snr_monotonic_calibrated` | 0.98 | 0.98 | 0.98 | no_veto | no_veto |
+
+全局关键结果：
+
+| Split | Policy | Final Failure | Delta Failure vs Top1 | Final PSNR | Delta PSNR vs Top1 | Repair | New Error |
+|---|---|---:|---:|---:|---:|---:|---:|
+| validation | `top1_equal` | 0.3750 | +0.0000 | 31.9814 | +0.0000 | 0 | 0 |
+| validation | `raw_conf_gain` | 0.3187 | -0.0563 | 32.0966 | +0.1153 | 21 | 3 |
+| validation | `fixed_clip_ge_0p98` | 0.3719 | -0.0031 | 31.9852 | +0.0038 | 1 | 0 |
+| validation | `snr_independent_calibrated` | 0.3438 | -0.0312 | 32.0346 | +0.0533 | 10 | 0 |
+| validation | `snr_monotonic_calibrated` | 0.3719 | -0.0031 | 31.9873 | +0.0059 | 1 | 0 |
+| heldout | `top1_equal` | 0.3250 | +0.0000 | 31.7602 | +0.0000 | 0 | 0 |
+| heldout | `raw_conf_gain` | 0.2812 | -0.0437 | 31.8609 | +0.1007 | 9 | 2 |
+| heldout | `fixed_clip_ge_0p98` | 0.3187 | -0.0062 | 31.7637 | +0.0035 | 1 | 0 |
+| heldout | `snr_independent_calibrated` | 0.3063 | -0.0187 | 31.7985 | +0.0383 | 4 | 1 |
+| heldout | `snr_monotonic_calibrated` | 0.3187 | -0.0062 | 31.7637 | +0.0035 | 1 | 0 |
+
+解释：independent per-SNR calibration 在 validation 上比全局 `0.98` 更有用，能在 0 accepted new error 条件下保留 10 个 repair；但它选择了 4 dB `no_veto`，既违反当前 SNR-aware semantic-control 的单调纪律，也在 held-out 上漏出 1 个 accepted new error。monotonic schedule 在 held-out 上安全，但只保留 1 个 repair，基本退回全局 `0.98` 的保守状态。因此，单一 `CLIP(M0, refined)` 标量阈值即使按 SNR 校准，也不足以作为最终 M3；后续应优先做 classifier ensemble 或 receiver-side risk predictor。
+
 #### 复现备注
 
 本实验不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。`summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。
 
 #### 下一步
 
-围绕 `EXP-S4-006` 做 detector error analysis 和门控收敛：检查 1/4 dB false reject 是否主要来自 AlexNet top-1 抖动，检查 7/13 dB false accept 是否会引入真实语义错误，并尝试更稳的 detector（top-k agreement、confidence margin、CLIP image-image 辅助或 ensemble）再决定第一版 M3 的正式口径。
+围绕 `EXP-S4-006` 做 detector error analysis 和门控收敛：检查 1/4 dB false reject 是否主要来自 AlexNet top-1 抖动，检查 confidence-gain accepted new error 是否可由多分类器一致性、confidence margin、caption/CLIP 辅助风险特征识别。当前证据显示 raw confidence-gain、全局 CLIP veto 和 SNR-calibrated scalar CLIP veto 都不能直接定为第一版 M3，下一步应实现更稳的 classifier ensemble 或轻量 receiver-side risk predictor。
 
 ### EXP-S4-007：SNR-conditioned pixel residual diffusion pilot
 

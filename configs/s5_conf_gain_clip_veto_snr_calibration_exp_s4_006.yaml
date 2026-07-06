@@ -1,0 +1,44 @@
+phase: S5
+analysis_id: exp_s4_006_conf_gain_clip_veto_snr_calibration
+source_experiment: EXP-S4-006
+source_analysis: exp_s4_006_conf_gain_clip_veto_sweep
+method: ResidualConfidenceGainSnrCalibratedClipVeto
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  per_sample_with_clip_csv: outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/per_sample_with_clip.csv
+  parent_report: outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/REPORT.md
+  validation_source: EXP-S4-006 eval split, sample_000192 to sample_000255
+  heldout_source: EXP-S4-006 unused split, sample_000000 to sample_000031
+
+policy:
+  baseline: top1_equal
+  candidate: top1_equal_or_refined_conf_gain_ge_0p05
+  refined_conf_gain_margin: 0.05
+  receiver_side_veto_feature: clip_sim_m0_refined
+  uses_original_for_detection: false
+  threshold_grid: [0.0, 0.90, 0.92, 0.94, 0.96, 0.97, 0.98, 0.985, 0.99, 0.995, 1.01]
+  fixed_reference_threshold: 0.98
+
+calibration:
+  calibration_split: validation
+  evaluation_splits: [validation, heldout]
+  accepted_new_error_budget: 0
+  objectives:
+    - independent_per_snr_zero_new_error
+    - monotonic_low_snr_not_weaker_zero_new_error
+  monotonic_constraint: threshold_1db_ge_4db_ge_7db_ge_13db_ge_19db
+  selection_rule: maximize_validation_repairs_then_validation_psnr_under_zero_accepted_new_error_budget
+
+evaluation:
+  gallery_rows: 12
+  warning: thresholds are selected on validation pseudo-labels only; held-out is for risk check and not used for calibration
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration
