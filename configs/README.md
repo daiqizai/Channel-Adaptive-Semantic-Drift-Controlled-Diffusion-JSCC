@@ -27,4 +27,5 @@
 - `s5_residual_refiner_heldout_gate_exp_s4_006.yaml`：加载 `EXP-S4-006` residual refiner checkpoint，在未参与该实验 train/eval 的样本段上复核 confidence-gain 候选 gate。
 - `s5_conf_gain_clip_veto_sweep_exp_s4_006.yaml`：对 `EXP-S4-006` confidence-gain gate 增加 receiver-side `CLIP(M0, refined)` 二级 veto 扫描，同时比较 validation 和 held-out 风险。
 - `s5_conf_gain_clip_veto_snr_calibration_exp_s4_006.yaml`：基于已有 CLIP veto sweep CSV，在 validation 上校准 per-SNR `CLIP(M0, refined)` veto 阈值，并在 held-out 上复核风险。
+- `s5_conf_gain_risk_rule_sweep_exp_s4_006.yaml`：基于已有 CLIP/top-k CSV，在 validation 上搜索 receiver-side confidence-gain risk rules，并在 held-out 上复核 accepted-new-error 风险。
 - `s5_residual_diffusion_pilot_coco256_awgn.yaml`：对正式 256 张/SNR M0 export 训练一个 latent-free pixel residual DDPM pilot，验证 diffusion 是否适合作为保守残差建模器。

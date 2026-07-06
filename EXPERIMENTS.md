@@ -1507,13 +1507,68 @@ outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/galleries/
 
 解释：independent per-SNR calibration 在 validation 上比全局 `0.98` 更有用，能在 0 accepted new error 条件下保留 10 个 repair；但它选择了 4 dB `no_veto`，既违反当前 SNR-aware semantic-control 的单调纪律，也在 held-out 上漏出 1 个 accepted new error。monotonic schedule 在 held-out 上安全，但只保留 1 个 repair，基本退回全局 `0.98` 的保守状态。因此，单一 `CLIP(M0, refined)` 标量阈值即使按 SNR 校准，也不足以作为最终 M3；后续应优先做 classifier ensemble 或 receiver-side risk predictor。
 
+#### 派生 receiver-side confidence-gain risk rule sweep
+
+已运行：
+
+```bash
+python3 scripts/s5_sweep_conf_gain_risk_rules.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_sweep_conf_gain_risk_rules.py --overwrite
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/rule_candidates.csv
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/policy_summary.csv
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/policy_by_snr.csv
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/policy_decisions.csv
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/selected_rule.json
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/REPORT.md
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/galleries/
+```
+
+该派生分析只读取已有 validation/held-out 的 `CLIP(M0, refined)` CSV 和 M0/refined top-k classifier CSV，不训练模型、不联网、不重算 CLIP。规则只使用 receiver-side 特征：`CLIP(M0, refined)`、M0/refined top-5 overlap、M0 top-1 在 refined top-5 中的 rank、M0 top-1 margin、refined top-1 margin。Original pseudo-label 仍只用于 validation 规则选择和离线 held-out 风险复核。
+
+选中的规则：
+
+```text
+baseline top-1 agreement 仍直接接受 refined。
+对 confidence-gain 新增接受样本：
+  要求 clip_sim_m0_refined >= 0.90；
+  无 top-5 overlap 最小要求；
+  若 m0_top1_rank_in_refined_top5 <= 2
+     且 m0_top1_margin <= 0.07
+     且 refined_top1_margin >= 0.05，
+     则触发 shadow veto，回退 M0。
+```
+
+直觉：当 M0 的 top-1 label 在 refined 中仍是非常靠前的候选，而 M0 自身 top-1 margin 很弱、refined top-1 margin 又明显变强时，这类“分类边界被推过头”的样本更容易是假修复或新错。该规则把这个 shadow pattern 作为风险信号。
+
+全局关键结果：
+
+| Split | Policy | Final Failure | Delta Failure vs Top1 | Final PSNR | Delta PSNR vs Top1 | Repair | New Error |
+|---|---|---:|---:|---:|---:|---:|---:|
+| validation | `top1_equal` | 0.3750 | +0.0000 | 31.9814 | +0.0000 | 0 | 0 |
+| validation | `raw_conf_gain` | 0.3187 | -0.0563 | 32.0966 | +0.1153 | 21 | 3 |
+| validation | `fixed_clip_ge_0p98` | 0.3719 | -0.0031 | 31.9852 | +0.0038 | 1 | 0 |
+| validation | `selected_risk_rule` | 0.3156 | -0.0594 | 32.0767 | +0.0953 | 19 | 0 |
+| heldout | `top1_equal` | 0.3250 | +0.0000 | 31.7602 | +0.0000 | 0 | 0 |
+| heldout | `raw_conf_gain` | 0.2812 | -0.0437 | 31.8609 | +0.1007 | 9 | 2 |
+| heldout | `fixed_clip_ge_0p98` | 0.3187 | -0.0062 | 31.7637 | +0.0035 | 1 | 0 |
+| heldout | `selected_risk_rule` | 0.2812 | -0.0437 | 31.8350 | +0.0748 | 7 | 0 |
+
+解释：这是目前最强的 gate 候选。相比 raw confidence-gain，它在 held-out 上保留同样的 final failure 改善，同时把 2 个 accepted new error 清零；相比全局 `CLIP >= 0.98`，它在 held-out 上从 1 个 repair 提升到 7 个 repair，并保留 `+0.0748` dB PSNR vs top-1 gate。`galleries/selected_risk_rule/heldout_vetoed_candidate_new_errors.png` 已固化被挡掉的两个 held-out 新错；`heldout_accepted_repairs.png` 固化 7 个被保留的 repair。
+
+限制：该规则仍在 COCO pseudo-label validation 上选择，held-out 也只是同一 COCO val export 的未用样本段，不是最终 test split。它可以作为下一版 M3 gate 候选，但不能直接写成最终结论。
+
 #### 复现备注
 
 本实验不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。`summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。
 
 #### 下一步
 
-围绕 `EXP-S4-006` 做 detector error analysis 和门控收敛：检查 1/4 dB false reject 是否主要来自 AlexNet top-1 抖动，检查 confidence-gain accepted new error 是否可由多分类器一致性、confidence margin、caption/CLIP 辅助风险特征识别。当前证据显示 raw confidence-gain、全局 CLIP veto 和 SNR-calibrated scalar CLIP veto 都不能直接定为第一版 M3，下一步应实现更稳的 classifier ensemble 或轻量 receiver-side risk predictor。
+围绕 `EXP-S4-006` 继续收敛 detector：优先 materialize `selected_risk_rule` final PNG，并在更正式的 test split 或更大 held-out 上复核；同时可尝试 classifier ensemble 验证该 shadow-margin pattern 是否对 AlexNet 以外的冻结分类器也成立。当前证据显示 raw confidence-gain、全局 CLIP veto 和 SNR-calibrated scalar CLIP veto 都不能直接定为第一版 M3；`selected_risk_rule` 是更强候选，但仍需冻结规则和正式复核。
 
 ### EXP-S4-007：SNR-conditioned pixel residual diffusion pilot
 

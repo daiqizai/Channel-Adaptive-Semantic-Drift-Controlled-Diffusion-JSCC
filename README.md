@@ -1012,6 +1012,42 @@ outputs/analysis/exp_s4_006_conf_gain_clip_veto_snr_calibration/galleries/
 
 核心结论：validation-only independent schedule 为 `1/4/7/13/19 dB = 0.96/no_veto/0.98/no_veto/no_veto`，在 validation 上保留 10 个 repair 且 0 accepted new error，但 held-out 仍漏 1 个 new error。monotonic schedule 为 `0.98/0.98/0.98/no_veto/no_veto`，held-out 安全但只保留 1 个 repair，几乎退回全局 `0.98`。因此单一 `CLIP(M0, refined)` 标量阈值即使按 SNR 校准，也不足以作为最终 M3；下一步应转向 classifier ensemble 或轻量 receiver-side risk predictor。
 
+## S5 Confidence-Gain Risk Rule Sweep
+
+当前已完成 `EXP-S4-006` confidence-gain gate 的 receiver-side risk-rule sweep。该流程不训练、不下载、不重算 CLIP，只读取已有 validation/held-out 的 CLIP sweep CSV 和 M0/refined top-k classifier CSV，在 validation 上搜索透明规则，并在 held-out 上做风险复核。
+
+配置：
+
+```text
+configs/s5_conf_gain_risk_rule_sweep_exp_s4_006.yaml
+```
+
+先检查输入和网格规模：
+
+```bash
+python3 scripts/s5_sweep_conf_gain_risk_rules.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_sweep_conf_gain_risk_rules.py --overwrite
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/rule_candidates.csv
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/policy_summary.csv
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/policy_by_snr.csv
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/policy_decisions.csv
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/selected_rule.json
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/REPORT.md
+outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/galleries/
+```
+
+核心结论：选中的 shadow-margin risk rule 在 validation 上 final failure `0.3156`、PSNR `+0.0953` dB vs top-1、19 repair、0 accepted new error；held-out 上 final failure `0.2812`、PSNR `+0.0748` dB vs top-1、7 repair、0 accepted new error。它挡掉 raw confidence-gain 的 held-out 2 个新错，同时比全局 `CLIP >= 0.98` 多保留 6 个 held-out repair。当前它是最强 M3 gate 候选，但仍需冻结规则并在正式 test split 或更大 held-out 上复核。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：
