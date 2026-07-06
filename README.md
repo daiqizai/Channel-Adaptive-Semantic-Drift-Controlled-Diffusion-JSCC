@@ -1234,6 +1234,42 @@ outputs/analysis/exp_s4_006_receiver_risk_score_sweep/galleries/
 
 核心结论：repair-pref validation 目标选择了 `low_overlap_rank` 分数，权重为 `low_top5_overlap + refined_top1_not_in_m0_safe_rank + low_clip`，阈值 `0.444446`。它在 validation 上只额外 veto `48` 张并清零多数票 new error，但 held-out 仍漏 `1` 个多数票 new error；validation/held-out 的 majority repair 也只剩 `4/2`，PSNR 相对 `selected_risk_rule` 回吐 `-0.1396/-0.1581` dB。候选表显示，若要求 validation 和 held-out 同时清零多数票 new error，最好的 score 模板需要额外 veto `143/81` 张，甚至比上一节的保守二级 veto 更重。因此轻量 risk score 暂不适合作为最终 gate，应转向更正式 split 或更强的语义风险模型。
 
+## S5 Test-Like Frozen Risk-Rule Check
+
+已把冻结的 `selected_risk_rule` 和保守 ensemble-risk veto 应用到 `sample_000256.png` 到 `sample_000319.png` test-like split。该流程不训练、不联网、不下载、不重新调阈值，只读取 test-like raw confidence-gain 复核 CSV、旧的 `selected_rule.json`、旧的保守 veto rule，并重新计算本地 `CLIP(M0, refined)`。
+
+配置：
+
+```text
+configs/s5_testlike_risk_rule_check_exp_s4_006.yaml
+```
+
+先检查输入：
+
+```bash
+python3 scripts/s5_apply_testlike_risk_rules.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_apply_testlike_risk_rules.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/per_sample_with_clip.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/policy_decisions.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/policy_summary.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/policy_by_snr.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/REPORT.md
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/exports/
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/galleries/
+```
+
+核心结论：`selected_risk_rule` 在 test-like 上把 raw confidence-gain 的 accepted new error 从 `4` 降到 `1`，保留 `10` 个 repair，PSNR 比 top-1 gate 高 `+0.0434` dB；但它没有清零风险。保守 ensemble veto 没有减少剩余 new error，且 PSNR 相比 `selected_risk_rule` 回吐 `-0.1902` dB。剩余风险样本是 13 dB `sample_000312.png`，也是 AlexNet pseudo-label 较吵的 case；当前浅层 receiver-side rule 仍不能写成最终 M3。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：

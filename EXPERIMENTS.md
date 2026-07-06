@@ -1843,13 +1843,51 @@ threshold = 0.444446
 
 解释：该 score 在 validation 上用更少 extra veto 清零多数票 new-error，但 held-out 漏掉 1 个多数票 new-error，即 19 dB `sample_000031.png`；该样本的 M0/refined AlexNet top-1 同为 `komondor`，且 top-k/CLIP 接收端分数很低风险，说明浅层 receiver-side score 很难覆盖所有跨模型语义风险。进一步查看 `score_candidates.csv`，若要求 validation 和 held-out 同时清零多数票 new-error，repair-pref 最好的 score 模板需要额外 veto validation/held-out `143/81` 张，PSNR held-out 相对 `selected_risk_rule` 回吐 `-0.3511` dB，比上一节的保守二级 veto 还重。因此这一步是负/部分结果：少 veto risk score 目前不够稳，不能作为最终 M3。
 
+#### 派生 test-like frozen risk-rule check
+
+已运行：
+
+```bash
+python3 scripts/s5_apply_testlike_risk_rules.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_apply_testlike_risk_rules.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/per_sample_with_clip.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/policy_decisions.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/policy_summary.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/policy_by_snr.csv
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/REPORT.md
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/metadata.json
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/exports/
+outputs/analysis/exp_s4_006_testlike_risk_rule_check/galleries/
+```
+
+该派生流程固定使用已经在 validation/held-out 阶段选出的 `selected_risk_rule` 和保守 ensemble-risk veto，不在 test-like split 上重新搜索阈值。它读取 `outputs/analysis/exp_s4_006_testlike_gate_check/per_sample.csv`，重新计算本地 `CLIP(M0, refined)`，并把 final PNG materialize 到 `outputs/analysis/exp_s4_006_testlike_risk_rule_check/exports/`。本次不联网、不下载，CLIP 权重来自本地 cache。
+
+全局关键结果：
+
+| Policy | Final Failure | Delta Failure vs Top1 | Final PSNR | Delta PSNR vs Top1 | Repair | New Error | New Accept | Vetoed Raw New Error |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `top1_equal` | 0.4719 | +0.0000 | 32.1560 | +0.0000 | 0 | 0 | 0 | 4 |
+| `raw_conf_gain` | 0.4313 | -0.0406 | 32.2374 | +0.0814 | 17 | 4 | 26 | 0 |
+| `fixed_clip_ge_0p98` | 0.4688 | -0.0031 | 32.1636 | +0.0076 | 2 | 1 | 3 | 3 |
+| `selected_risk_rule` | 0.4437 | -0.0281 | 32.1995 | +0.0434 | 10 | 1 | 15 | 3 |
+| `selected_risk_rule_plus_ensemble_veto` | 0.4437 | -0.0281 | 32.0092 | -0.1468 | 10 | 1 | 14 | 3 |
+
+解释：冻结的 `selected_risk_rule` 在 test-like split 上仍有迁移收益：相比 raw confidence-gain，它把 accepted new error 从 4 降到 1，同时保留 10 个 pseudo-label repair 和 `+0.0434` dB PSNR vs top-1 gate。但它没有清零风险。剩余 accepted new error 是 13 dB `sample_000312.png`：original/M0 AlexNet top-1 为 `ear`，refined 为 `seat belt`，`CLIP(M0, refined)=0.9950`，M0 top-1 在 refined top-k 中 rank=3，因此旧 shadow-margin 规则和保守 ensemble veto 都没有触发。视觉样例显示该 case 也包含明显 pseudo-label 噪声，因此它应被记录为辅助语义风险，而不是最终真值错误。
+
+保守 ensemble-risk veto 在 test-like 上没有降低 accepted new error 或 final failure，却额外 veto 93 张、PSNR 相比 `selected_risk_rule` 回吐 `-0.1902` dB，说明它作为 safety upper-bound 太保守，不能直接作为第一版 M3。当前结论进一步支持：浅层 receiver-side 标量/规则已经接近瓶颈，下一步应转向更正式语义标签/ensemble test-like 审计，或在 residual CNN 训练/选择阶段加入 semantic-risk-aware 约束。
+
 #### 复现备注
 
 `EXP-S4-006` 本体不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。本体 `summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。
 
 #### 下一步
 
-围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG、classifier ensemble audit、ensemble-risk 二级 veto sweep、receiver-side risk score sweep 和 raw confidence-gain 的 test-like split 复核都已完成。test-like 复核再次说明 raw confidence-gain 有 PSNR/repair 收益但会引入 accepted new error；shallow score 负/部分结果说明，单靠少量 AlexNet/CLIP/top-k receiver-side 标量仍不够稳。下一步应把当前 `selected_risk_rule`/保守 veto 放到 test-like split 上复核，或在 residual CNN 训练阶段加入 semantic-risk-aware 约束，而不是继续只在同一批 validation 样本上加阈值。当前证据显示 raw confidence-gain、全局 CLIP veto、SNR-calibrated scalar CLIP veto、当前 AlexNet-tuned selected rule、保守 ensemble-risk veto 和少 veto risk score 都不能直接定为第一版 M3。
+围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG、classifier ensemble audit、ensemble-risk 二级 veto sweep、receiver-side risk score sweep、raw confidence-gain test-like 复核和 frozen risk-rule test-like 复核都已完成。test-like 证据说明 raw confidence-gain 有 PSNR/repair 收益但会引入 accepted new error；`selected_risk_rule` 可挡掉其中 3/4 个 new error，但仍剩 1 个 pseudo-label 风险；保守 ensemble veto 则没有额外语义收益且明显回吐 PSNR。下一步应停止只在同一套浅层 receiver-side 标量上拧阈值，优先做 test-like classifier-ensemble 审计，或在 residual CNN 训练阶段加入 semantic-risk-aware 约束。当前证据显示 raw confidence-gain、全局 CLIP veto、SNR-calibrated scalar CLIP veto、当前 AlexNet-tuned selected rule、保守 ensemble-risk veto 和少 veto risk score 都不能直接定为第一版 M3。
 
 ### EXP-S4-007：SNR-conditioned pixel residual diffusion pilot
 
