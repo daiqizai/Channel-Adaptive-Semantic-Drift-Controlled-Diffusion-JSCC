@@ -1375,6 +1375,57 @@ outputs/analysis/exp_s4_006_conf_gain_gate_candidate_outputs/samples/
 
 解释：confidence-gain candidate 比原始 top-1 agreement gate 更积极，能把 missed repair 从 41 降到 20，并额外接受 21 个 pseudo-label repair；但它也引入 3 个 accepted new error。辅助语义信号是混合的：CLIP image-image 均值略升，但 caption CLIP 均值略降，且 3 个 accepted new error 都没有同时通过 image-image 与 caption 的 nonworse 检查。因此该策略已经可以作为下一轮 M3 候选输出进行视觉/held-out 审查，但不能直接登记为最终 M3/Ours。
 
+#### 派生 held-out confidence-gain gate check
+
+已运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_heldout_gate_eval.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_heldout_gate_check/per_sample.csv
+outputs/analysis/exp_s4_006_heldout_gate_check/summary.csv
+outputs/analysis/exp_s4_006_heldout_gate_check/new_accepts.csv
+outputs/analysis/exp_s4_006_heldout_gate_check/accepted_new_errors.csv
+outputs/analysis/exp_s4_006_heldout_gate_check/REPORT.md
+outputs/analysis/exp_s4_006_heldout_gate_check/metadata.json
+outputs/analysis/exp_s4_006_heldout_gate_check/exports/
+outputs/analysis/exp_s4_006_heldout_gate_check/samples/
+```
+
+该复核不重训模型，只加载 `outputs/EXP-S4-006/checkpoints/best.pt`，在 `EXP-S4-006` 未使用的 `sample_000000.png` 到 `sample_000031.png` 上重新生成 refined、top-1 final 和 candidate final。该 split 对 `EXP-S4-006` 的 residual refiner 和 gate sweep 是 held-out，但仍属于同一个 COCO val export 和同一个 pseudo-label 评价口径，因此只能作为派生风险复核，不是最终 test 结论。
+
+全局关键结果：
+
+| Metric | Value |
+|---|---:|
+| Num images | 160 |
+| Candidate accept rate | 0.7875 |
+| Newly accepted by candidate | 19 |
+| Candidate final failure | 0.2812 |
+| Baseline top-1 final failure | 0.3250 |
+| Candidate minus baseline failure | -0.0437 |
+| Candidate final PSNR | 31.8609 dB |
+| Candidate delta PSNR vs top-1 | +0.1007 dB |
+| Candidate delta PSNR vs M0 | +0.5460 dB |
+| Accepted repairs | 9 |
+| Accepted new errors | 2 |
+
+分 SNR 关键结果：
+
+| SNR(dB) | M0 Failure | Refined Failure | Top-1 Failure | Candidate Failure | New Accept | Repair | New Error | Delta PSNR vs top-1 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0.5312 | 0.3750 | 0.5312 | 0.4688 | 9 | 3 | 1 | +0.3132 |
+| 4 | 0.4375 | 0.1875 | 0.4375 | 0.3750 | 6 | 3 | 1 | +0.1248 |
+| 7 | 0.3750 | 0.2500 | 0.3750 | 0.2812 | 4 | 3 | 0 | +0.0654 |
+| 13 | 0.1250 | 0.1875 | 0.1250 | 0.1250 | 0 | 0 | 0 | +0.0000 |
+| 19 | 0.1562 | 0.1250 | 0.1562 | 0.1562 | 0 | 0 | 0 | +0.0000 |
+
+解释：held-out 复核支持 confidence-gain candidate 的方向，尤其在 1/4/7 dB 能额外接受一批 repair 并降低 pseudo final failure；但仍出现 2 个 accepted new error，位于 1 dB 和 4 dB。`samples/accepted_new_error_review.png` 已固化这两个样本的 original / M0 / refined / top-1 final / candidate final 对照。当前结论是“候选 gate 可继续收紧”，不是“候选 gate 已通过”。
+
 #### 复现备注
 
 本实验不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。`summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。

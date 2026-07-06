@@ -905,6 +905,42 @@ outputs/analysis/exp_s4_006_conf_gain_gate_candidate_outputs/samples/
 
 核心结论：候选 gate final failure 为 `0.3188`，top-1 baseline 为 `0.3750`；candidate final PSNR 为 `32.0966` dB，比 top-1 baseline 高 `+0.1153` dB，比 M0 高 `+0.5164` dB。`samples/accepted_new_error_quads.png` 固化了 3 个 accepted new error，后续必须优先复核。
 
+## S5 Held-Out Confidence-Gain Gate Check
+
+当前也已完成 `EXP-S4-006` 的 held-out confidence-gain gate 复核。该流程不重训模型、不下载数据或权重，只加载 `outputs/EXP-S4-006/checkpoints/best.pt`，在没有参与 `EXP-S4-006` train/eval 的 `sample_000000.png` 到 `sample_000031.png` 上重新生成 refined、top-1 final 和 candidate final。
+
+配置：
+
+```text
+configs/s5_residual_refiner_heldout_gate_exp_s4_006.yaml
+```
+
+先检查输入和 split：
+
+```bash
+python3 scripts/s5_residual_refiner_heldout_gate_eval.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_heldout_gate_eval.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_heldout_gate_check/per_sample.csv
+outputs/analysis/exp_s4_006_heldout_gate_check/summary.csv
+outputs/analysis/exp_s4_006_heldout_gate_check/new_accepts.csv
+outputs/analysis/exp_s4_006_heldout_gate_check/accepted_new_errors.csv
+outputs/analysis/exp_s4_006_heldout_gate_check/REPORT.md
+outputs/analysis/exp_s4_006_heldout_gate_check/exports/
+outputs/analysis/exp_s4_006_heldout_gate_check/samples/
+```
+
+核心结论：held-out 上 candidate final failure 为 `0.2812`，top-1 baseline 为 `0.3250`；candidate final PSNR 比 top-1 baseline 高 `+0.1007` dB，比 M0 高 `+0.5460` dB。新增接受 19/160 个样本，其中 9 个是 repair，但仍有 2 个 accepted new error。`samples/accepted_new_error_review.png` 已固化这两个风险样本；候选 gate 方向复现，但还不能写成最终 M3。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：

@@ -24,4 +24,5 @@
 - `s4_coco_caption_clip_m1_exp_s2_002.yaml`：对 `EXP-S2-002` 的 M1 refined 输出做 COCO caption CLIP image-text consistency 辅助语义诊断，固定读取正式 M0 export、本地 OpenAI CLIP ViT-B/32 权重和 `data/coco/annotations/captions_val2017.json`。
 - `s5_residual_gate_aux_audit_exp_s4_006.yaml`：对 `EXP-S4-006` 的 confidence-gain 候选 gate 做 CLIP image-image 和 COCO caption CLIP 辅助审计，只用于离线风险复核。
 - `s5_materialize_conf_gain_gate_exp_s4_006.yaml`：把 `EXP-S4-006` 中 `top1_equal_or_refined_conf_gain_ge_0p05` 候选 gate 的 final PNG 从已有 M0/refined 输出中落盘。
+- `s5_residual_refiner_heldout_gate_exp_s4_006.yaml`：加载 `EXP-S4-006` residual refiner checkpoint，在未参与该实验 train/eval 的样本段上复核 confidence-gain 候选 gate。
 - `s5_residual_diffusion_pilot_coco256_awgn.yaml`：对正式 256 张/SNR M0 export 训练一个 latent-free pixel residual DDPM pilot，验证 diffusion 是否适合作为保守残差建模器。
