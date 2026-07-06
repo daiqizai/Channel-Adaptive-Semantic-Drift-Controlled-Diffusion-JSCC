@@ -1593,13 +1593,58 @@ outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/samples/
 
 说明：这是 risk-rule sweep 的 artifact 固化，不是新实验结论；作用是把当前最强 M3 gate 候选变成可复查的 final PNG/CSV/report，为后续正式 split 或更大 held-out 复核做准备。
 
+#### 派生 selected risk-rule classifier ensemble audit
+
+已检查代理变量，当前环境存在 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY=http://127.0.0.1:17890`。本次按项目流量规则清空代理变量，从 PyTorch/torchvision 官方 model zoo 直连下载缺失的 ResNet18 和 MobileNetV3-Small ImageNet 权重，规模约 `44.7MB + 9.83MB`；未下载数据集或 diffusion 模型。
+
+已运行：
+
+```bash
+python3 scripts/s5_audit_risk_rule_classifier_ensemble.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_audit_risk_rule_classifier_ensemble.py --device cuda:0 --allow-download
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_audit_risk_rule_classifier_ensemble.py --device cuda:0 --overwrite
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/per_model_per_sample.csv
+outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/per_sample_votes.csv
+outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/model_summary.csv
+outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/vote_summary.csv
+outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/REPORT.md
+outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/galleries/
+```
+
+该派生流程固定使用已经 materialize 的 `selected_risk_rule` 决策，不重新搜索 gate，也不把 ensemble 用作 receiver-side decision。它只用 AlexNet、ResNet18、MobileNetV3-Small 各自的 original top-1 pseudo-label 重新评价 M0/refined/selected-final 的 failure、repair 和 accepted-new-error 风险。
+
+按分类器拆分：
+
+| Classifier | Split | Selected Failure | Delta vs M0 | Repair | New Error |
+|---|---|---:|---:|---:|---:|
+| AlexNet | validation | 0.3156 | -0.0594 | 19 | 0 |
+| AlexNet | heldout | 0.2812 | -0.0437 | 7 | 0 |
+| ResNet18 | validation | 0.3688 | -0.0187 | 24 | 18 |
+| ResNet18 | heldout | 0.4000 | -0.0062 | 8 | 7 |
+| MobileNetV3-Small | validation | 0.4313 | -0.0563 | 28 | 10 |
+| MobileNetV3-Small | heldout | 0.3562 | +0.0125 | 7 | 9 |
+
+按样本投票：
+
+| Split | Images | Any new-error vote | Majority new-error vote | Any repair vote | Majority repair vote |
+|---|---:|---:|---:|---:|---:|
+| validation | 320 | 26 | 2 | 64 | 7 |
+| heldout | 160 | 15 | 1 | 17 | 4 |
+
+解释：这个结果把边界说清楚了。`selected_risk_rule` 在 AlexNet pseudo-label 口径下确实是当前最强 gate 候选，但并非跨语义模型安全：ResNet18 和 MobileNetV3-Small 都能发现额外 accepted-new-error 风险，且有 3 个样本得到多数票 new-error。它仍可作为候选，但后续必须加入 ensemble-aware veto、辅助语义 veto 或更正式 split 复核，不能把它直接写成最终 M3。
+
 #### 复现备注
 
 `EXP-S4-006` 本体不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。本体 `summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。
 
 #### 下一步
 
-围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG 已 materialize，下一步是在更正式的 test split 或更大 held-out 上复核；同时可尝试 classifier ensemble 验证该 shadow-margin pattern 是否对 AlexNet 以外的冻结分类器也成立。当前证据显示 raw confidence-gain、全局 CLIP veto 和 SNR-calibrated scalar CLIP veto 都不能直接定为第一版 M3；`selected_risk_rule` 是更强候选，但仍需冻结规则和正式复核。
+围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG 和 classifier ensemble audit 都已完成。下一步应基于 ensemble 暴露的 new-error 样本收紧 gate，例如加入 ensemble-aware veto、辅助语义 veto 或轻量 receiver-side risk predictor，并在更正式的 test split 或更大 held-out 上复核。当前证据显示 raw confidence-gain、全局 CLIP veto、SNR-calibrated scalar CLIP veto 和当前 AlexNet-tuned selected rule 都不能直接定为第一版 M3。
 
 ### EXP-S4-007：SNR-conditioned pixel residual diffusion pilot
 

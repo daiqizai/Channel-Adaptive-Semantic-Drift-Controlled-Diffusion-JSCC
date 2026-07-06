@@ -1083,6 +1083,41 @@ outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/samples/
 
 核心结论：共导出 480 张 final PNG。validation 上 final failure `0.3156`、PSNR `+0.0953` dB vs top-1、19 repair、0 new error；held-out 上 final failure `0.2812`、PSNR `+0.0748` dB vs top-1、7 repair、0 new error。该 artifact 只固化当前候选，不把 pseudo-label validation/held-out 结果包装成最终 M3。
 
+## S5 Selected Risk-Rule Classifier Ensemble Audit
+
+已用多个冻结 ImageNet 分类器对固定 `selected_risk_rule` 决策做离线复核。该流程不重新搜索 gate，ensemble 也不参与 receiver-side decision；它只用于检查 AlexNet-tuned 规则是否跨分类器仍然稳。
+
+配置：
+
+```text
+configs/s5_risk_rule_classifier_ensemble_audit_exp_s4_006.yaml
+```
+
+先检查输入和本地权重缓存：
+
+```bash
+python3 scripts/s5_audit_risk_rule_classifier_ensemble.py --dry-run
+```
+
+首次运行若缺 ResNet18/MobileNetV3-Small 权重，需要按项目流量规则清空代理变量，从 PyTorch/torchvision 官方 model zoo 直连下载约 `44.7MB + 9.83MB` 权重：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_audit_risk_rule_classifier_ensemble.py --device cuda:0 --allow-download
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/per_model_per_sample.csv
+outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/per_sample_votes.csv
+outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/model_summary.csv
+outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/vote_summary.csv
+outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/REPORT.md
+outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/galleries/
+```
+
+核心结论：AlexNet 口径下 `selected_risk_rule` 仍保持 validation/held-out `0/0` new error；但 ResNet18 和 MobileNetV3-Small 暴露了跨模型风险。validation/held-out 分别有 `26/15` 个样本被至少一个分类器标为 selected accepted new error，多数票 new error 为 `2/1` 个。因此当前 gate 仍是候选，不是跨语义模型安全的最终 M3。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：

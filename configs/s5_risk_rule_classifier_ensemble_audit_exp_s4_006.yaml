@@ -1,0 +1,55 @@
+phase: S5
+analysis_id: exp_s4_006_risk_rule_classifier_ensemble_audit
+source_experiment: EXP-S4-006
+method: SelectedRiskRuleClassifierEnsembleAudit
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  selected_policy_per_sample_csv: outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/per_sample.csv
+  selected_policy_summary_csv: outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/summary.csv
+  source_risk_rule_decisions_csv: outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/policy_decisions.csv
+  source_risk_rule_config: configs/s5_conf_gain_risk_rule_sweep_exp_s4_006.yaml
+  checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+policy:
+  name: selected_risk_rule
+  decision_source: alexnet_topk_plus_clip_risk_rule
+  decisions_are_fixed: true
+  uses_original_for_detection: false
+  audit_note: ensemble classifiers are only used for offline risk audit, not for receiver-side decisions
+
+classifiers:
+  cache_dir: outputs/cache/torch
+  batch_size: 64
+  topk: 5
+  models:
+    - key: alexnet
+      model_name: alexnet
+      weights_enum: AlexNet_Weights
+      weights: IMAGENET1K_V1
+      weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+    - key: resnet18
+      model_name: resnet18
+      weights_enum: ResNet18_Weights
+      weights: IMAGENET1K_V1
+      weights_file: outputs/cache/torch/hub/checkpoints/resnet18-f37072fd.pth
+    - key: mobilenet_v3_small
+      model_name: mobilenet_v3_small
+      weights_enum: MobileNet_V3_Small_Weights
+      weights: IMAGENET1K_V1
+      weights_file: outputs/cache/torch/hub/checkpoints/mobilenet_v3_small-047dcff4.pth
+
+evaluation:
+  refined_conf_gain_margin: 0.05
+  gallery_rows: 12
+  warning: offline ensemble audit only; do not use validation/held-out pseudo-labels as final test conclusion
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit
