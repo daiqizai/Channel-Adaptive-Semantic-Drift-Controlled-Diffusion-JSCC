@@ -1155,6 +1155,43 @@ outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/galleries/
 
 核心结论：选中的二级 veto 为 `new_accept_refined_margin <= 0.005`，以及 top-1-equal 接受中 `refined_conf_gain_vs_m0 <= 0.05` 且 `m0_top1_margin >= 0.10` 时回退 M0。它把 validation/held-out 的多数票 new error 从 `2/1` 清到 `0/0`，但很保守：额外 veto `96/58` 张，remaining any-new-error 仍为 `16/8`，remaining majority repair 为 `5/4`，PSNR 相对 `selected_risk_rule` 回吐 `-0.1834/-0.2538` dB。因此它是风险收敛证据，不是最终 M3。
 
+## S5 Receiver-Side Risk Score Sweep
+
+已完成 `selected_risk_rule` 之上的透明 receiver-side risk score 扫描。该流程不训练、不联网、不下载、不重算分类器，只读取 selected-risk-rule 决策、classifier ensemble audit 投票和已有 PNG；目标是测试是否能用较少额外 veto 替代上一节很保守的二级 veto。
+
+配置：
+
+```text
+configs/s5_receiver_risk_score_sweep_exp_s4_006.yaml
+```
+
+先检查输入和候选规模：
+
+```bash
+python3 scripts/s5_sweep_receiver_risk_score.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_sweep_receiver_risk_score.py
+```
+
+若重跑并覆盖已有派生输出，追加 `--overwrite`。
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_receiver_risk_score_sweep/score_candidates.csv
+outputs/analysis/exp_s4_006_receiver_risk_score_sweep/policy_decisions.csv
+outputs/analysis/exp_s4_006_receiver_risk_score_sweep/policy_summary.csv
+outputs/analysis/exp_s4_006_receiver_risk_score_sweep/selected_score.json
+outputs/analysis/exp_s4_006_receiver_risk_score_sweep/REPORT.md
+outputs/analysis/exp_s4_006_receiver_risk_score_sweep/galleries/
+```
+
+核心结论：repair-pref validation 目标选择了 `low_overlap_rank` 分数，权重为 `low_top5_overlap + refined_top1_not_in_m0_safe_rank + low_clip`，阈值 `0.444446`。它在 validation 上只额外 veto `48` 张并清零多数票 new error，但 held-out 仍漏 `1` 个多数票 new error；validation/held-out 的 majority repair 也只剩 `4/2`，PSNR 相对 `selected_risk_rule` 回吐 `-0.1396/-0.1581` dB。候选表显示，若要求 validation 和 held-out 同时清零多数票 new error，最好的 score 模板需要额外 veto `143/81` 张，甚至比上一节的保守二级 veto 更重。因此轻量 risk score 暂不适合作为最终 gate，应转向更正式 split 或更强的语义风险模型。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：

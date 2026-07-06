@@ -1690,13 +1690,63 @@ outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/galleries/
 
 解释：该规则能把 `selected_risk_rule` 暴露出的 validation/held-out 多数票 new-error 从 `2/1` 清到 `0/0`，说明 ensemble 暴露的高置信风险样本可以被简单 receiver-side 特征部分捕捉。但代价很明显：额外 veto 数达到 validation/held-out `96/58`，多数票 repair 只剩 `5/4`，且 any-new-error 仍有 `16/8`。因此它是收紧 gate 的风险分析结果，不是最终 M3；后续更合理的方向是把这个二级 veto 当作 conservative safety upper-bound，再训练/选择更细的 receiver-side risk predictor 或扩展正式 split。
 
+#### 派生 receiver-side risk score sweep
+
+已运行：
+
+```bash
+python3 scripts/s5_sweep_receiver_risk_score.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_sweep_receiver_risk_score.py --overwrite
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_receiver_risk_score_sweep/score_candidates.csv
+outputs/analysis/exp_s4_006_receiver_risk_score_sweep/policy_decisions.csv
+outputs/analysis/exp_s4_006_receiver_risk_score_sweep/policy_summary.csv
+outputs/analysis/exp_s4_006_receiver_risk_score_sweep/selected_score.json
+outputs/analysis/exp_s4_006_receiver_risk_score_sweep/metadata.json
+outputs/analysis/exp_s4_006_receiver_risk_score_sweep/REPORT.md
+outputs/analysis/exp_s4_006_receiver_risk_score_sweep/galleries/
+```
+
+该派生流程固定使用 `selected_risk_rule` 的 480 条决策和 classifier ensemble audit 的离线投票标签，不重训、不联网、不下载、不重算分类器。它扫描 12 个透明 receiver-side risk score 模板和 1930 个 validation 阈值候选，目标是验证是否能用更少 extra veto 替代上一节的保守二级 veto。score 特征只来自接收端可得的 AlexNet/CLIP/top-k 派生量，如 `CLIP(M0, refined)`、top-5 overlap、refined top-1 是否偏离 M0 top-k、confidence gain 和 margin。
+
+repair-pref validation 目标选中的分数：
+
+```text
+risk_score = low_top5_overlap + refined_top1_not_in_m0_safe_rank + low_clip
+threshold = 0.444446
+```
+
+关键结果：
+
+| Split | Extra Veto | Remaining Majority New Error | Remaining Any New Error | Remaining Majority Repair | Remaining Any Repair | Delta PSNR vs selected |
+|---|---:|---:|---:|---:|---:|---:|
+| validation | 48 | 0 | 17 | 4 | 36 | -0.1396 dB |
+| heldout | 26 | 1 | 9 | 2 | 8 | -0.1581 dB |
+
+按分类器复核最终 failure：
+
+| Split | Classifier | Candidate Failure | Delta vs selected | Repair | New Error |
+|---|---|---:|---:|---:|---:|
+| validation | AlexNet | 0.3594 | +0.0437 | 5 | 0 |
+| validation | ResNet18 | 0.3719 | +0.0031 | 17 | 12 |
+| validation | MobileNetV3-Small | 0.4469 | +0.0156 | 18 | 5 |
+| heldout | AlexNet | 0.3187 | +0.0375 | 1 | 0 |
+| heldout | ResNet18 | 0.3938 | -0.0062 | 6 | 4 |
+| heldout | MobileNetV3-Small | 0.3625 | +0.0063 | 3 | 6 |
+
+解释：该 score 在 validation 上用更少 extra veto 清零多数票 new-error，但 held-out 漏掉 1 个多数票 new-error，即 19 dB `sample_000031.png`；该样本的 M0/refined AlexNet top-1 同为 `komondor`，且 top-k/CLIP 接收端分数很低风险，说明浅层 receiver-side score 很难覆盖所有跨模型语义风险。进一步查看 `score_candidates.csv`，若要求 validation 和 held-out 同时清零多数票 new-error，repair-pref 最好的 score 模板需要额外 veto validation/held-out `143/81` 张，PSNR held-out 相对 `selected_risk_rule` 回吐 `-0.3511` dB，比上一节的保守二级 veto 还重。因此这一步是负/部分结果：少 veto risk score 目前不够稳，不能作为最终 M3。
+
 #### 复现备注
 
 `EXP-S4-006` 本体不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。本体 `summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。
 
 #### 下一步
 
-围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG、classifier ensemble audit 和 ensemble-risk 二级 veto sweep 都已完成。下一步应将二级 veto 视为 conservative safety upper-bound，而不是最终规则；优先尝试更细的 receiver-side risk predictor、扩展正式 split，或在 residual CNN 训练阶段加入 semantic-risk-aware 约束。当前证据显示 raw confidence-gain、全局 CLIP veto、SNR-calibrated scalar CLIP veto、AlexNet-tuned selected rule 和当前 ensemble-risk 二级 veto 都不能直接定为第一版 M3。
+围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG、classifier ensemble audit、ensemble-risk 二级 veto sweep 和 receiver-side risk score sweep 都已完成。当前 shallow score 负/部分结果说明，单靠少量 AlexNet/CLIP/top-k receiver-side 标量仍不够稳；下一步应优先扩展更正式 split，或在 residual CNN 训练阶段加入 semantic-risk-aware 约束，而不是继续在同一批 validation 样本上加阈值。当前证据显示 raw confidence-gain、全局 CLIP veto、SNR-calibrated scalar CLIP veto、AlexNet-tuned selected rule、保守 ensemble-risk veto 和少 veto risk score 都不能直接定为第一版 M3。
 
 ### EXP-S4-007：SNR-conditioned pixel residual diffusion pilot
 

@@ -1,0 +1,100 @@
+phase: S5
+analysis_id: exp_s4_006_receiver_risk_score_sweep
+source_experiment: EXP-S4-006
+method: ReceiverSideRiskScoreSweep
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  selected_policy_per_sample_csv: outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/per_sample.csv
+  ensemble_votes_csv: outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/per_sample_votes.csv
+  ensemble_per_model_csv: outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/per_model_per_sample.csv
+  source_risk_rule_config: configs/s5_conf_gain_risk_rule_sweep_exp_s4_006.yaml
+  source_ensemble_audit_config: configs/s5_risk_rule_classifier_ensemble_audit_exp_s4_006.yaml
+  source_ensemble_veto_config: configs/s5_ensemble_risk_veto_sweep_exp_s4_006.yaml
+  checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+policy:
+  base_policy: selected_risk_rule
+  candidate_policy: selected_risk_rule_plus_receiver_risk_score
+  decisions_are_receiver_side: true
+  uses_original_for_detection: false
+  calibration_split: validation
+  evaluation_splits: [validation, heldout]
+  selection_rule: clear_validation_majority_new_error_then_keep_repairs_then_minimize_veto
+
+risk_score_search:
+  majority_new_error_budget: 0
+  threshold_source: validation_accepted_unique_scores
+  selection_priority: repair_pref
+  feature_scaling:
+    clip_reference: 0.985
+    clip_span: 0.090
+    refined_margin_reference: 0.080
+    refined_margin_span: 0.080
+    very_low_refined_margin_reference: 0.020
+    very_low_refined_margin_span: 0.020
+    weak_conf_gain_reference: 0.080
+    weak_conf_gain_span: 0.300
+    nonpositive_conf_gain_reference: 0.020
+    nonpositive_conf_gain_span: 0.120
+    high_m0_margin_span: 0.250
+    very_high_m0_margin_offset: 0.080
+    very_high_m0_margin_span: 0.200
+    overlap_reference: 3.000
+    m0_shadow_rank_max: 2
+    refined_rank_topk_safe_max: 2
+  score_templates:
+    - name: low_refined_margin
+      weights: {low_refined_margin: 1.0}
+    - name: very_low_refined_margin
+      weights: {very_low_refined_margin: 1.0}
+    - name: weak_gain_high_m0
+      weights: {weak_conf_gain: 1.0, high_m0_margin: 1.0}
+    - name: nonpositive_gain_very_high_m0
+      weights: {nonpositive_conf_gain: 1.0, very_high_m0_margin: 1.0}
+    - name: conditional_new_margin_top1_weak_m0
+      weights:
+        new_accept_x_very_low_refined_margin: 1.0
+        top1_equal_x_weak_conf_gain: 1.0
+        top1_equal_x_very_high_m0_margin: 1.0
+    - name: conditional_new_margin_top1_shadow
+      weights:
+        new_accept_x_very_low_refined_margin: 1.0
+        top1_equal_x_weak_conf_gain: 1.0
+        top1_equal_x_very_high_m0_margin: 1.0
+        top1_equal_x_m0_shadow_rank: 0.5
+    - name: clip_margin_gain
+      weights: {low_clip: 1.0, low_refined_margin: 1.0, weak_conf_gain: 1.0}
+    - name: clip_overlap_margin
+      weights: {low_clip: 1.0, low_top5_overlap: 1.0, low_refined_margin: 1.0}
+    - name: shadow_combo
+      weights: {m0_shadow_rank: 1.0, weak_conf_gain: 1.0, very_high_m0_margin: 1.0}
+    - name: conditional_new_or_shadow
+      weights:
+        new_accept_x_low_refined_margin: 1.0
+        top1_equal_x_m0_shadow_rank: 1.0
+        top1_equal_x_weak_conf_gain: 1.0
+        top1_equal_x_high_m0_margin: 1.0
+    - name: conditional_new_clip_or_shadow
+      weights:
+        new_accept_x_low_refined_margin: 1.0
+        new_accept_x_low_clip: 1.0
+        top1_equal_x_m0_shadow_rank: 1.0
+        top1_equal_x_weak_conf_gain: 1.0
+        top1_equal_x_high_m0_margin: 1.0
+    - name: low_overlap_rank
+      weights: {low_top5_overlap: 1.0, refined_top1_not_in_m0_safe_rank: 1.0, low_clip: 1.0}
+
+evaluation:
+  gallery_rows: 12
+  warning: ensemble votes are offline pseudo-label risk labels; selected score is not final M3
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_receiver_risk_score_sweep
