@@ -1426,6 +1426,38 @@ outputs/analysis/exp_s4_006_heldout_gate_check/samples/
 
 解释：held-out 复核支持 confidence-gain candidate 的方向，尤其在 1/4/7 dB 能额外接受一批 repair 并降低 pseudo final failure；但仍出现 2 个 accepted new error，位于 1 dB 和 4 dB。`samples/accepted_new_error_review.png` 已固化这两个样本的 original / M0 / refined / top-1 final / candidate final 对照。当前结论是“候选 gate 可继续收紧”，不是“候选 gate 已通过”。
 
+#### 派生 confidence-gain CLIP veto sweep
+
+已运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_sweep_conf_gain_clip_veto.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/per_sample_with_clip.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/policy_decisions.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/policy_summary.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/policy_by_snr.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/joint_policy_summary.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/REPORT.md
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/galleries/
+```
+
+该派生分析读取 validation 的 `per_sample_audit.csv` 和 held-out 的 `per_sample.csv`，用本地 OpenCLIP ViT-B/32 只计算 receiver-side `CLIP(M0, refined)`。Original pseudo-label 仍只用于离线评价 final failure，不参与 veto 决策。
+
+全局关键结果：
+
+| Policy | Validation failure | Held-out failure | Validation repair | Held-out repair | Validation new error | Held-out new error | Sum delta PSNR vs top-1 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `top1_equal` | 0.3750 | 0.3250 | 0 | 0 | 0 | 0 | +0.0000 |
+| `top1_equal_or_refined_conf_gain_ge_0p05` | 0.3188 | 0.2812 | 21 | 9 | 3 | 2 | +0.2159 |
+| `top1_equal_or_conf_gain_0p05_clip_m0_refined_ge_0p98` | 0.3719 | 0.3187 | 1 | 1 | 0 | 0 | +0.0073 |
+
+解释：`CLIP(M0, refined) >= 0.98` 是当前扫描中能在 validation 和 held-out 同时清零 accepted new error、且不完全退回 top-1 的最保守阈值。它挡掉了 raw confidence-gain 的 5 个 accepted new error，但也挡掉了 28/30 个 repair，因此收益几乎被压平。这个结果说明单一 CLIP image-image veto 可作安全参考，但不够作为最终 M3；下一步需要 SNR-calibrated threshold、classifier ensemble 或 receiver-side risk predictor。
+
 #### 复现备注
 
 本实验不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。`summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。

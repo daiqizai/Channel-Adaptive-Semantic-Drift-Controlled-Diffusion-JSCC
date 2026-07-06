@@ -941,6 +941,42 @@ outputs/analysis/exp_s4_006_heldout_gate_check/samples/
 
 核心结论：held-out 上 candidate final failure 为 `0.2812`，top-1 baseline 为 `0.3250`；candidate final PSNR 比 top-1 baseline 高 `+0.1007` dB，比 M0 高 `+0.5460` dB。新增接受 19/160 个样本，其中 9 个是 repair，但仍有 2 个 accepted new error。`samples/accepted_new_error_review.png` 已固化这两个风险样本；候选 gate 方向复现，但还不能写成最终 M3。
 
+## S5 Confidence-Gain CLIP Veto Sweep
+
+当前已完成 `EXP-S4-006` confidence-gain gate 的 receiver-side CLIP 二级 veto 扫描。该流程不训练、不下载，只读取 validation/held-out CSV、已有 M0/refined PNG 和本地 OpenCLIP ViT-B/32 权重；veto 决策只使用 `CLIP(M0, refined)`，不看 original 或 caption。
+
+配置：
+
+```text
+configs/s5_conf_gain_clip_veto_sweep_exp_s4_006.yaml
+```
+
+先检查输入：
+
+```bash
+python3 scripts/s5_sweep_conf_gain_clip_veto.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_sweep_conf_gain_clip_veto.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/per_sample_with_clip.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/policy_decisions.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/policy_summary.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/policy_by_snr.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/joint_policy_summary.csv
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/REPORT.md
+outputs/analysis/exp_s4_006_conf_gain_clip_veto_sweep/galleries/
+```
+
+核心结论：全局最保守可用阈值为 `CLIP(M0, refined) >= 0.98`。它在 validation 和 held-out 上都把 accepted new error 压到 0，但只保留 2 个 repair，总 PSNR 相比 top-1 gate 仅提升 `+0.0073` dB。该 veto 是安全参考，不是最终 M3；下一步应做 SNR-calibrated threshold、classifier ensemble 或轻量 receiver-side risk predictor。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：
