@@ -1562,13 +1562,44 @@ baseline top-1 agreement 仍直接接受 refined。
 
 限制：该规则仍在 COCO pseudo-label validation 上选择，held-out 也只是同一 COCO val export 的未用样本段，不是最终 test split。它可以作为下一版 M3 gate 候选，但不能直接写成最终结论。
 
+#### 派生 selected risk-rule final PNG materialization
+
+已运行：
+
+```bash
+python3 scripts/s5_materialize_risk_rule_policy.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_materialize_risk_rule_policy.py
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/per_sample.csv
+outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/summary.csv
+outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/REPORT.md
+outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/metadata.json
+outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/exports/{validation,heldout}/snr_XXdb/final/
+outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/samples/
+```
+
+该派生流程只读取 `outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/policy_decisions.csv`，筛选 `policy == selected_risk_rule` 的 480 条决策，并按 `accept_refined` 从已有 M0/refined PNG 复制 final 输出；不训练、不联网、不重算 CLIP 或分类器。`summary.csv` 同时写入 top-1 gate 的 per-sample reference，方便核对 final failure 和 PSNR 增量。
+
+关键结果：
+
+| Split | Images | Final Failure | Delta Failure vs Top1 | Final PSNR | Delta PSNR vs Top1 | Repair | New Error | Shadow Veto |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| validation | 320 | 0.3156 | -0.0594 | 32.0767 | +0.0953 | 19 | 0 | 5 |
+| heldout | 160 | 0.2812 | -0.0437 | 31.8350 | +0.0748 | 7 | 0 | 5 |
+
+说明：这是 risk-rule sweep 的 artifact 固化，不是新实验结论；作用是把当前最强 M3 gate 候选变成可复查的 final PNG/CSV/report，为后续正式 split 或更大 held-out 复核做准备。
+
 #### 复现备注
 
-本实验不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。`summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。
+`EXP-S4-006` 本体不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。本体 `summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。
 
 #### 下一步
 
-围绕 `EXP-S4-006` 继续收敛 detector：优先 materialize `selected_risk_rule` final PNG，并在更正式的 test split 或更大 held-out 上复核；同时可尝试 classifier ensemble 验证该 shadow-margin pattern 是否对 AlexNet 以外的冻结分类器也成立。当前证据显示 raw confidence-gain、全局 CLIP veto 和 SNR-calibrated scalar CLIP veto 都不能直接定为第一版 M3；`selected_risk_rule` 是更强候选，但仍需冻结规则和正式复核。
+围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG 已 materialize，下一步是在更正式的 test split 或更大 held-out 上复核；同时可尝试 classifier ensemble 验证该 shadow-margin pattern 是否对 AlexNet 以外的冻结分类器也成立。当前证据显示 raw confidence-gain、全局 CLIP veto 和 SNR-calibrated scalar CLIP veto 都不能直接定为第一版 M3；`selected_risk_rule` 是更强候选，但仍需冻结规则和正式复核。
 
 ### EXP-S4-007：SNR-conditioned pixel residual diffusion pilot
 

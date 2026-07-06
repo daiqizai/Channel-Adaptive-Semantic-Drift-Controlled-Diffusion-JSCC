@@ -1048,6 +1048,41 @@ outputs/analysis/exp_s4_006_conf_gain_risk_rule_sweep/galleries/
 
 核心结论：选中的 shadow-margin risk rule 在 validation 上 final failure `0.3156`、PSNR `+0.0953` dB vs top-1、19 repair、0 accepted new error；held-out 上 final failure `0.2812`、PSNR `+0.0748` dB vs top-1、7 repair、0 accepted new error。它挡掉 raw confidence-gain 的 held-out 2 个新错，同时比全局 `CLIP >= 0.98` 多保留 6 个 held-out repair。当前它是最强 M3 gate 候选，但仍需冻结规则并在正式 test split 或更大 held-out 上复核。
 
+## S5 Selected Risk-Rule Candidate Outputs
+
+已将 `selected_risk_rule` 的 final PNG 和 per-sample 决策落盘，便于后续人工复查和正式 split 复核。该流程不训练、不联网、不重算 CLIP/分类器，只读取 risk-rule sweep 的 `policy_decisions.csv` 并复制已有 M0/refined PNG。
+
+配置：
+
+```text
+configs/s5_materialize_risk_rule_gate_exp_s4_006.yaml
+```
+
+先检查输入：
+
+```bash
+python3 scripts/s5_materialize_risk_rule_policy.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_materialize_risk_rule_policy.py
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/per_sample.csv
+outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/summary.csv
+outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/REPORT.md
+outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/metadata.json
+outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/exports/{validation,heldout}/snr_XXdb/final/
+outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/samples/
+```
+
+核心结论：共导出 480 张 final PNG。validation 上 final failure `0.3156`、PSNR `+0.0953` dB vs top-1、19 repair、0 new error；held-out 上 final failure `0.2812`、PSNR `+0.0748` dB vs top-1、7 repair、0 new error。该 artifact 只固化当前候选，不把 pseudo-label validation/held-out 结果包装成最终 M3。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：
