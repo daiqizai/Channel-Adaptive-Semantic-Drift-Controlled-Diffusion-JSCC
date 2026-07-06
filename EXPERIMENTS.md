@@ -1638,13 +1638,65 @@ outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/galleries/
 
 解释：这个结果把边界说清楚了。`selected_risk_rule` 在 AlexNet pseudo-label 口径下确实是当前最强 gate 候选，但并非跨语义模型安全：ResNet18 和 MobileNetV3-Small 都能发现额外 accepted-new-error 风险，且有 3 个样本得到多数票 new-error。它仍可作为候选，但后续必须加入 ensemble-aware veto、辅助语义 veto 或更正式 split 复核，不能把它直接写成最终 M3。
 
+#### 派生 ensemble-risk 二级 veto sweep
+
+已运行：
+
+```bash
+python3 scripts/s5_sweep_ensemble_risk_veto.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_sweep_ensemble_risk_veto.py
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/rule_candidates.csv
+outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/policy_decisions.csv
+outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/policy_summary.csv
+outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/selected_rule.json
+outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/metadata.json
+outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/REPORT.md
+outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/galleries/
+```
+
+该派生流程固定使用 `selected_risk_rule` 的 480 条决策和 classifier ensemble audit 的离线投票标签，不重训、不联网、不下载、不重算分类器。搜索阶段只在 validation 上用 ensemble 多数票 new-error 作为风险约束；规则本身只使用接收端可得特征，包括 refined top-1 margin、refined 相对 M0 的 confidence gain、M0 top-1 margin 和 selected-risk-rule 的接受类型。
+
+选中的二级 veto：
+
+```text
+在 selected_risk_rule 已接受 refined 的样本上：
+  若它是 new_accept_vs_top1 且 refined_top1_margin <= 0.005，则额外 veto；
+  若它是 top1-equal accept，且 refined_conf_gain_vs_m0 <= 0.05，
+     且 m0_top1_margin >= 0.10，则额外 veto。
+```
+
+关键结果：
+
+| Split | Extra Veto | Remaining Majority New Error | Remaining Any New Error | Remaining Majority Repair | Remaining Any Repair | Delta PSNR vs selected |
+|---|---:|---:|---:|---:|---:|---:|
+| validation | 96 | 0 | 16 | 5 | 40 | -0.1834 dB |
+| heldout | 58 | 0 | 8 | 4 | 14 | -0.2538 dB |
+
+按分类器复核最终 failure：
+
+| Split | Classifier | Candidate Failure | Delta vs selected | Repair | New Error |
+|---|---|---:|---:|---:|---:|
+| validation | AlexNet | 0.3187 | +0.0031 | 18 | 0 |
+| validation | ResNet18 | 0.3719 | +0.0031 | 14 | 9 |
+| validation | MobileNetV3-Small | 0.4688 | +0.0375 | 13 | 7 |
+| heldout | AlexNet | 0.2812 | +0.0000 | 7 | 0 |
+| heldout | ResNet18 | 0.3938 | -0.0062 | 5 | 3 |
+| heldout | MobileNetV3-Small | 0.3313 | -0.0250 | 7 | 5 |
+
+解释：该规则能把 `selected_risk_rule` 暴露出的 validation/held-out 多数票 new-error 从 `2/1` 清到 `0/0`，说明 ensemble 暴露的高置信风险样本可以被简单 receiver-side 特征部分捕捉。但代价很明显：额外 veto 数达到 validation/held-out `96/58`，多数票 repair 只剩 `5/4`，且 any-new-error 仍有 `16/8`。因此它是收紧 gate 的风险分析结果，不是最终 M3；后续更合理的方向是把这个二级 veto 当作 conservative safety upper-bound，再训练/选择更细的 receiver-side risk predictor 或扩展正式 split。
+
 #### 复现备注
 
 `EXP-S4-006` 本体不联网、不下载模型或数据，只读取已有正式 M0 export 和本地 AlexNet/LPIPS 权重。运行命令显式清空代理变量，`metrics.json` 中记录 `proxy_environment_present: []`。本体 `summary.csv` 有 5 个 SNR 汇总行，`per_sample.csv` 有 320 个 eval 样本行，`train_history.csv` 有 40 个 epoch 行。
 
 #### 下一步
 
-围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG 和 classifier ensemble audit 都已完成。下一步应基于 ensemble 暴露的 new-error 样本收紧 gate，例如加入 ensemble-aware veto、辅助语义 veto 或轻量 receiver-side risk predictor，并在更正式的 test split 或更大 held-out 上复核。当前证据显示 raw confidence-gain、全局 CLIP veto、SNR-calibrated scalar CLIP veto 和当前 AlexNet-tuned selected rule 都不能直接定为第一版 M3。
+围绕 `EXP-S4-006` 继续收敛 detector：`selected_risk_rule` final PNG、classifier ensemble audit 和 ensemble-risk 二级 veto sweep 都已完成。下一步应将二级 veto 视为 conservative safety upper-bound，而不是最终规则；优先尝试更细的 receiver-side risk predictor、扩展正式 split，或在 residual CNN 训练阶段加入 semantic-risk-aware 约束。当前证据显示 raw confidence-gain、全局 CLIP veto、SNR-calibrated scalar CLIP veto、AlexNet-tuned selected rule 和当前 ensemble-risk 二级 veto 都不能直接定为第一版 M3。
 
 ### EXP-S4-007：SNR-conditioned pixel residual diffusion pilot
 

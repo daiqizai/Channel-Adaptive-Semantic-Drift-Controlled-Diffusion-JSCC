@@ -30,4 +30,5 @@
 - `s5_conf_gain_risk_rule_sweep_exp_s4_006.yaml`：基于已有 CLIP/top-k CSV，在 validation 上搜索 receiver-side confidence-gain risk rules，并在 held-out 上复核 accepted-new-error 风险。
 - `s5_materialize_risk_rule_gate_exp_s4_006.yaml`：把 risk-rule sweep 选出的 `selected_risk_rule` final PNG 从已有 M0/refined 输出中落盘，并保存 summary、per-sample CSV 和样例 sheet。
 - `s5_risk_rule_classifier_ensemble_audit_exp_s4_006.yaml`：用多个冻结 torchvision ImageNet 分类器离线审计 `selected_risk_rule` 的跨模型 repair/new-error 风险。
+- `s5_ensemble_risk_veto_sweep_exp_s4_006.yaml`：基于 classifier ensemble audit 的多数票 new-error 风险标签，在 validation 上搜索 `selected_risk_rule` 的 receiver-side 二级 veto，并在 held-out 上复核。
 - `s5_residual_diffusion_pilot_coco256_awgn.yaml`：对正式 256 张/SNR M0 export 训练一个 latent-free pixel residual DDPM pilot，验证 diffusion 是否适合作为保守残差建模器。

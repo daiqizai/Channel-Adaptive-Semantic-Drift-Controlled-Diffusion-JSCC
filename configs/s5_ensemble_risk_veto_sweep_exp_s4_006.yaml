@@ -1,0 +1,45 @@
+phase: S5
+analysis_id: exp_s4_006_ensemble_risk_veto_sweep
+source_experiment: EXP-S4-006
+method: SelectedRiskRuleEnsembleRiskVetoSweep
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  selected_policy_per_sample_csv: outputs/analysis/exp_s4_006_risk_rule_candidate_outputs/per_sample.csv
+  ensemble_votes_csv: outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/per_sample_votes.csv
+  ensemble_per_model_csv: outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/per_model_per_sample.csv
+  source_risk_rule_config: configs/s5_conf_gain_risk_rule_sweep_exp_s4_006.yaml
+  source_ensemble_audit_config: configs/s5_risk_rule_classifier_ensemble_audit_exp_s4_006.yaml
+  checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+policy:
+  base_policy: selected_risk_rule
+  candidate_policy: selected_risk_rule_plus_ensemble_risk_veto
+  decisions_are_receiver_side: true
+  uses_original_for_detection: false
+  calibration_split: validation
+  evaluation_splits: [validation, heldout]
+  selection_rule: clear_validation_majority_new_error_then_keep_majority_repairs_then_keep_any_repairs_then_minimize_veto_count
+
+risk_veto_search:
+  majority_new_error_budget: 0
+  new_accept_refined_margin_max_grid: [null, 0.005, 0.010, 0.020, 0.030, 0.050, 0.080, 0.100]
+  top1_refined_conf_gain_max_grid: [null, -0.100, -0.050, 0.000, 0.030, 0.050, 0.080, 0.100]
+  top1_m0_margin_min_grid: [0.000, 0.050, 0.080, 0.100, 0.120, 0.150, 0.200]
+  rule_template:
+    - veto selected new accepts when refined_top1_margin <= threshold
+    - veto selected top1-equal accepts when refined_conf_gain_vs_m0 <= threshold and m0_top1_margin >= threshold
+
+evaluation:
+  gallery_rows: 12
+  warning: ensemble votes are offline pseudo-label risk labels; selected rule is not final M3
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep

@@ -1118,6 +1118,43 @@ outputs/analysis/exp_s4_006_risk_rule_classifier_ensemble_audit/galleries/
 
 核心结论：AlexNet 口径下 `selected_risk_rule` 仍保持 validation/held-out `0/0` new error；但 ResNet18 和 MobileNetV3-Small 暴露了跨模型风险。validation/held-out 分别有 `26/15` 个样本被至少一个分类器标为 selected accepted new error，多数票 new error 为 `2/1` 个。因此当前 gate 仍是候选，不是跨语义模型安全的最终 M3。
 
+## S5 Ensemble-Risk Veto Sweep
+
+已在 `selected_risk_rule` 之上完成 classifier-ensemble 风险驱动的二级 veto 扫描。该流程不训练、不联网、不下载、不重算分类器，只读取已经 materialize 的 selected-risk-rule 决策、classifier ensemble audit 的投票 CSV 和已有 PNG；搜索目标是在 validation 上清零多数票 accepted-new-error，同时尽量保留 repair。
+
+配置：
+
+```text
+configs/s5_ensemble_risk_veto_sweep_exp_s4_006.yaml
+```
+
+先检查输入和网格规模：
+
+```bash
+python3 scripts/s5_sweep_ensemble_risk_veto.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_sweep_ensemble_risk_veto.py
+```
+
+若重跑并覆盖已有派生输出，追加 `--overwrite`。
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/rule_candidates.csv
+outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/policy_decisions.csv
+outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/policy_summary.csv
+outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/selected_rule.json
+outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/REPORT.md
+outputs/analysis/exp_s4_006_ensemble_risk_veto_sweep/galleries/
+```
+
+核心结论：选中的二级 veto 为 `new_accept_refined_margin <= 0.005`，以及 top-1-equal 接受中 `refined_conf_gain_vs_m0 <= 0.05` 且 `m0_top1_margin >= 0.10` 时回退 M0。它把 validation/held-out 的多数票 new error 从 `2/1` 清到 `0/0`，但很保守：额外 veto `96/58` 张，remaining any-new-error 仍为 `16/8`，remaining majority repair 为 `5/4`，PSNR 相对 `selected_risk_rule` 回吐 `-0.1834/-0.2538` dB。因此它是风险收敛证据，不是最终 M3。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：
