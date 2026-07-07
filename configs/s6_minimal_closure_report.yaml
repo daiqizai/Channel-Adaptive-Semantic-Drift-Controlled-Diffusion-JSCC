@@ -17,6 +17,7 @@ inputs:
   residual_shrink_validation_summary: outputs/analysis/exp_s4_006_residual_shrink_selection/summary.csv
   heldout_residual_shrink_summary: outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/summary.csv
   testlike_residual_shrink_summary: outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/summary.csv
+  adaptive_residual_alpha_summary: outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv
   testlike_policy_summary: outputs/analysis/exp_s4_006_testlike_risk_rule_check/policy_summary.csv
   testlike_clean_correct_summary: outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/summary.csv
 
@@ -26,6 +27,7 @@ methods:
   m2: M2-SNRConditionedPixelResidualRestoration
   m3_conservative: M3-ResidualRestorationTop1Fallback
   m3_shrink: M3-ResidualRestorationTop1ShrinkFallback
+  m3_adaptive_alpha: M3-AdaptiveResidualAlphaTop1Fallback
   m3_candidate: M3-SelectedRiskRuleCandidate
 
 notes:
@@ -33,6 +35,7 @@ notes:
   - EXP-S2-002 M1 uses 16 images/SNR at [1, 7, 19] and is a negative reference, not the same split as EXP-S4-006.
   - EXP-S4-006 residual validation uses 64 images/SNR at [1, 4, 7, 13, 19].
   - Residual shrink schedule was selected on EXP-S4-006 validation and then frozen on held-out and test-like splits.
+  - Adaptive residual alpha policy uses a fixed receiver-side rule over existing alpha candidates and does not tune on held-out/test-like.
   - Test-like policy and COCO-object clean-correct tables are auxiliary semantic diagnostics, not final supervised truth.
 
 outputs:

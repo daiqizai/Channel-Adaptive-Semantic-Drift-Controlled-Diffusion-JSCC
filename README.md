@@ -1376,12 +1376,13 @@ outputs/analysis/minimal_closure_report/method_closure_summary.csv
 outputs/analysis/minimal_closure_report/residual_per_snr_quality_semantics.csv
 outputs/analysis/minimal_closure_report/blind_diffusion_negative_reference.csv
 outputs/analysis/minimal_closure_report/residual_shrink_policy_tradeoff.csv
+outputs/analysis/minimal_closure_report/adaptive_residual_alpha_policy_tradeoff.csv
 outputs/analysis/minimal_closure_report/testlike_policy_tradeoff.csv
 outputs/analysis/minimal_closure_report/coco_object_clean_correct_tradeoff.csv
 outputs/analysis/minimal_closure_report/figures/
 ```
 
-核心结论：`M1-BlindDiffusion-SDImg2Img` 保留为负参考，平均 PSNR 相比其 M0 输入下降 `-14.7485` dB、LPIPS 变差 `+0.3877`；`M2-SNRConditionedPixelResidualRestoration` 是正向 restoration anchor，`EXP-S4-006` 上平均 PSNR `+0.7235` dB、LPIPS `-0.0274`；`M3-ResidualRestorationTop1Fallback` 可作为保守第一版闭环，平均 PSNR `+0.4011` dB、LPIPS `-0.0104`，且同一 pseudo-label 口径下 semantic failure 不高于 M0。`M3-ResidualRestorationTop1ShrinkFallback` 是固定 schedule 保守候选：validation 平均 PSNR delta `+0.4584` dB，frozen held-out/test-like 平均 PSNR delta `+0.4689/+0.4552` dB，held-out/test-like accepted new error 均为 0。最新 `adaptive_max_top1_consistent_alpha` 进一步把 validation/held-out/test-like PSNR delta 提升到 `+0.5584/+0.5664/+0.5691` dB，accepted new error 仍为 `0/0/0`；它是当前最强保守质量增强候选，但 repair 仍为 0。`selected_risk_rule` 仍只能作为候选/消融，因为 test-like 和 COCO-object clean-correct 诊断还留有 new-error 风险。
+核心结论：`M1-BlindDiffusion-SDImg2Img` 保留为负参考，平均 PSNR 相比其 M0 输入下降 `-14.7485` dB、LPIPS 变差 `+0.3877`；`M2-SNRConditionedPixelResidualRestoration` 是正向 restoration anchor，`EXP-S4-006` 上平均 PSNR `+0.7235` dB、LPIPS `-0.0274`；`M3-ResidualRestorationTop1Fallback` 可作为保守第一版闭环，平均 PSNR `+0.4011` dB、LPIPS `-0.0104`，且同一 pseudo-label 口径下 semantic failure 不高于 M0。`M3-ResidualRestorationTop1ShrinkFallback` 是固定 schedule 保守候选：validation 平均 PSNR delta `+0.4584` dB，frozen held-out/test-like 平均 PSNR delta `+0.4689/+0.4552` dB，held-out/test-like accepted new error 均为 0。`M3-AdaptiveResidualAlphaTop1Fallback` 是当前最强保守候选：validation/held-out/test-like PSNR delta 为 `+0.5584/+0.5664/+0.5691` dB，accepted new error 为 `0/0/0`；但 repair 仍为 0。`selected_risk_rule` 仍只能作为候选/消融，因为 test-like 和 COCO-object clean-correct 诊断还留有 new-error 风险。
 
 ## S6 Residual Shrink Selection
 

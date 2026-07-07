@@ -43,6 +43,7 @@
 | ANALYSIS-S6-005 | 2026-07-07 | 371833e + local script | FrozenHeldoutResidualShrinkScheduleCheck | COCO2017 val2017 held-out `sample_000000`-`sample_000031`, 32 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, accept/new-error | 完成（frozen schedule held-out 复核；不调参不训练不下载） | `outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/` |
 | ANALYSIS-S6-006 | 2026-07-07 | c19cc0f + local script | ResidualShrinkM3ArtifactGallery | COCO2017 val2017 validation/held-out/test-like residual shrink outputs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | policy summary, case counts, safe accept/protective reject/new-error galleries | 完成（派生 artifact；不训练不下载不调参） | `outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/` |
 | ANALYSIS-S6-007 | 2026-07-07 | fbcfe72 + local script | AdaptiveResidualAlphaPolicy | COCO2017 val2017 validation/held-out/test-like residual alpha candidates | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, selected alpha, accept/new-error | 完成（派生 policy；不训练不下载不调参） | `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/` |
+| ANALYSIS-S6-008 | 2026-07-07 | bcfc1f1 + local script/config | MinimalClosureReportWithAdaptiveAlphaM3 | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink/adaptive-alpha tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 adaptive alpha M3；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2292,6 +2293,57 @@ Adaptive policy 的 per-SNR PSNR delta：
 #### 下一步
 
 把 adaptive alpha policy 写入 M3 方法候选：短期可作为 `M3-AdaptiveResidualAlphaTop1Fallback` 的派生方案；中期应训练一个 receiver-side alpha/risk predictor 或在 residual CNN 中加入 semantic-risk-aware amplitude loss，使方法不依赖离线枚举 alpha candidates。
+
+### ANALYSIS-S6-008：Minimal Closure Report With Adaptive Alpha M3
+
+- 日期：2026-07-07
+- 项目版本：`bcfc1f1` + uncommitted closure-report script/config at run time
+- 阶段：S6 derived closure report
+- 方法：MinimalClosureReportWithAdaptiveAlphaM3
+- 数据集：COCO2017 `val2017` existing outputs and analysis CSVs
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_minimal_closure_report.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_make_minimal_closure_report.py
+python3 scripts/s6_make_minimal_closure_report.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_make_minimal_closure_report.py --overwrite
+```
+
+- 关键源码：`scripts/s6_make_minimal_closure_report.py`
+- 新增输入：`outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv`
+- 输出路径：`outputs/analysis/minimal_closure_report/`
+- 状态：完成；只读取已有 metrics/CSV，不训练、不运行 diffusion、不重算分类器、不下载
+
+#### 指标
+
+| Method | Split | Mean Delta PSNR | Mean Delta LPIPS | Mean Failure | New Error | Status |
+|---|---|---:|---:|---:|---:|---|
+| M3-ResidualRestorationTop1Fallback | validation | +0.4011 | -0.0104 | 0.3750 | 0 | conservative first closure |
+| M3-ResidualRestorationTop1ShrinkFallback | validation / held-out / test-like | +0.4584 / +0.4689 / +0.4552 | -0.0153 / -0.0150 / -0.0152 | 0.3750 / 0.3250 / 0.4719 | 0 / 0 / 0 | fixed schedule candidate |
+| M3-AdaptiveResidualAlphaTop1Fallback | validation / held-out / test-like | +0.5584 / +0.5664 / +0.5691 | -0.0189 / -0.0174 / -0.0201 | 0.3750 / 0.3250 / 0.4719 | 0 / 0 / 0 | strongest conservative candidate |
+
+#### 结果总结
+
+本轮刷新把 `ANALYSIS-S6-007` 的 adaptive alpha policy 并入最小闭环报告。`outputs/analysis/minimal_closure_report/REPORT.md` 现在明确区分：
+
+- `M3-ResidualRestorationTop1Fallback`：保守第一版闭环；
+- `M3-ResidualRestorationTop1ShrinkFallback`：固定 per-SNR schedule 消融/备选；
+- `M3-AdaptiveResidualAlphaTop1Fallback`：当前最强保守质量增强候选；
+- `M3-SelectedRiskRuleCandidate`：有 repair 但仍有 new-error 风险，不能作为最终安全方法。
+
+新增输出包括 `adaptive_residual_alpha_policy_tradeoff.csv` 和 `figures/adaptive_residual_alpha_policy_tradeoff.png`。报告仍保留 caveat：adaptive alpha 不使用原图，但还是后验枚举 alpha candidates 的 receiver-side policy，还不是带 learned amplitude/risk control 的 residual CNN。
+
+#### 复现备注
+
+正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。由于脚本/config 在运行时尚未提交，metadata 中 `git_dirty_state` 为 `dirty`。
+
+#### 下一步
+
+论文口径上可把 adaptive alpha 作为当前 M3 主候选；方法侧下一步应把该 per-sample alpha 选择前移到训练/模型选择流程，例如训练 receiver-side alpha predictor、把 residual amplitude loss 加入 residual CNN，或设计从 M0/refined 附近初始化的短链 conditional residual diffusion。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 
