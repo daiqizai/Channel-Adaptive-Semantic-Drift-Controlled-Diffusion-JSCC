@@ -1,0 +1,79 @@
+phase: S6
+analysis_id: exp_s4_006_residual_shrink_artifact_gallery
+method: ResidualShrinkM3ArtifactGallery
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  jscc_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+splits:
+  - name: validation
+    description: EXP-S4-006 validation eval samples, sample_000192-sample_000255
+    per_sample_csv: outputs/analysis/exp_s4_006_residual_shrink_selection/per_sample.csv
+    summary_csv: outputs/analysis/exp_s4_006_residual_shrink_selection/summary.csv
+    selected_policy:
+      label: M3-ResidualRestorationTop1ShrinkFallback
+      policy: selected_top1_fallback_shrink_schedule
+    unsafe_policies:
+      - label: AlwaysAcceptFullStrength
+        policy: always_alpha
+        alpha: 1.0
+      - label: AlwaysAcceptValidationConstrained
+        policy: selected_always_m0_failure_constrained_schedule
+  - name: held-out
+    description: Frozen held-out check, sample_000000-sample_000031
+    per_sample_csv: outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/per_sample.csv
+    summary_csv: outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/summary.csv
+    selected_policy:
+      label: M3-ResidualRestorationTop1ShrinkFallback
+      policy: validation_top1_shrink_schedule
+    unsafe_policies:
+      - label: AlwaysAcceptFullStrength
+        policy: always_full_strength
+      - label: AlwaysAcceptValidationConstrained
+        policy: validation_always_m0_failure_constrained_schedule
+  - name: test-like
+    description: Frozen test-like check, sample_000256-sample_000319
+    per_sample_csv: outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/per_sample.csv
+    summary_csv: outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/summary.csv
+    selected_policy:
+      label: M3-ResidualRestorationTop1ShrinkFallback
+      policy: validation_top1_shrink_schedule
+    unsafe_policies:
+      - label: AlwaysAcceptFullStrength
+        policy: always_full_strength
+      - label: AlwaysAcceptValidationConstrained
+        policy: validation_always_m0_failure_constrained_schedule
+
+case_categories:
+  - m3_safe_accept
+  - m3_protective_reject
+  - m3_rejected_good_candidate
+  - m3_accepted_repair
+  - m3_accepted_new_error
+  - unsafe_accepted_new_error
+  - unsafe_accepted_repair
+
+gallery:
+  max_cases_per_category_per_split: 6
+  image_size: 192
+  columns:
+    - original
+    - m0_reconstruction
+    - candidate
+    - final_source
+
+notes:
+  - This is a derived artifact pass over existing residual shrink outputs.
+  - It does not train a model, run diffusion, recompute classifiers, tune alpha, or download data.
+  - It separates the safe conservative M3 shrink behavior from unsafe always-accept residual behavior.
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery

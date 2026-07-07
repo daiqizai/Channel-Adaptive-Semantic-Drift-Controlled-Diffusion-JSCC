@@ -1496,6 +1496,40 @@ outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/samples/
 
 核心结论：frozen validation top-1 shrink schedule 在 test-like 上平均 PSNR delta 为 `+0.4552` dB，比 full-strength top-1 fallback 的 `+0.4113` dB 高 `+0.0439` dB；LPIPS delta 为 `-0.0152`，pseudo final failure 仍等于 M0，accepted new error 为 0。always-accept full strength / validation always-constrained schedule 分别仍有 25/12 个 accepted new error，不能作为最终 M3。
 
+## S6 Residual Shrink M3 Artifact Gallery
+
+已完成 residual shrink M3 的统一 artifact gallery。该流程只读取 validation、held-out、test-like 的 shrink summary/per-sample CSV 和已有 PNG，不训练、不运行 diffusion、不重算分类器、不下载，也不重新选择 alpha。
+
+配置：
+
+```text
+configs/s6_residual_shrink_artifact_gallery_exp_s4_006.yaml
+```
+
+先检查输入：
+
+```bash
+python3 scripts/s6_make_residual_shrink_gallery.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_make_residual_shrink_gallery.py --overwrite
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/REPORT.md
+outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/policy_summary.csv
+outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/case_counts.csv
+outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/case_index.csv
+outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/samples/
+```
+
+核心结论：selected shrink M3 在 validation/held-out/test-like 上 PSNR delta 为 `+0.4584/+0.4689/+0.4552` dB，accepted new error 为 `0/0/0`；always-accept full strength 的 accepted new error 为 `28/10/25`，validation-constrained always-accept 仍有 `19/3/12` 个 new error。该目录提供 safe accept、protective reject、rejected good candidate 和 unsafe new-error 的样例 sheet，适合作为第一版 failure-case / reliability 小节素材。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：

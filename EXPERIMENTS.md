@@ -41,6 +41,7 @@
 | ANALYSIS-S6-003 | 2026-07-07 | 7ef1753 + local script | FrozenResidualShrinkScheduleCheck | COCO2017 val2017 test-like `sample_000256`-`sample_000319`, 64 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, accept/new-error | 完成（frozen schedule 复核；不调参不训练不下载） | `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/` |
 | ANALYSIS-S6-004 | 2026-07-07 | 371833e + local script | MinimalClosureReportWithHeldoutShrinkM3 | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 held-out/test-like shrink M3；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
 | ANALYSIS-S6-005 | 2026-07-07 | 371833e + local script | FrozenHeldoutResidualShrinkScheduleCheck | COCO2017 val2017 held-out `sample_000000`-`sample_000031`, 32 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, accept/new-error | 完成（frozen schedule held-out 复核；不调参不训练不下载） | `outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/` |
+| ANALYSIS-S6-006 | 2026-07-07 | c19cc0f + local script | ResidualShrinkM3ArtifactGallery | COCO2017 val2017 validation/held-out/test-like residual shrink outputs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | policy summary, case counts, safe accept/protective reject/new-error galleries | 完成（派生 artifact；不训练不下载不调参） | `outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2151,6 +2152,64 @@ Validation 选出的 top-1 shrink schedule 在 held-out split 继续成立：平
 #### 下一步
 
 把 validation、held-out、test-like 三段 shrink 证据并入 minimal closure report；后续把 alpha/残差幅度约束前移到 residual CNN 训练或 validation model selection。
+
+### ANALYSIS-S6-006：Residual Shrink M3 Artifact Gallery
+
+- 日期：2026-07-07
+- 项目版本：`c19cc0f` + uncommitted artifact-gallery script/config at run time
+- 阶段：S6 derived artifact / failure-case organization
+- 方法：ResidualShrinkM3ArtifactGallery
+- 数据集：COCO2017 `val2017` validation、held-out、test-like residual shrink outputs
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_residual_shrink_artifact_gallery_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_make_residual_shrink_gallery.py
+python3 scripts/s6_make_residual_shrink_gallery.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_make_residual_shrink_gallery.py --overwrite
+```
+
+- 关键源码：`scripts/s6_make_residual_shrink_gallery.py`
+- 输入：
+  - `outputs/analysis/exp_s4_006_residual_shrink_selection/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_residual_shrink_selection/summary.csv`
+  - `outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/summary.csv`
+  - `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/summary.csv`
+- 输出路径：`outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/`
+- 状态：完成；只整理已有 CSV/PNG，不训练、不运行 diffusion、不重算分类器、不下载、不调参
+
+#### 指标
+
+| Split | M3 Delta PSNR | M3 Delta LPIPS | M3 New Error | Safe Accept | Protective Reject | Rejected Good | Always Full New Error | Always Constrained New Error |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| validation | +0.4584 | -0.0153 | 0 | 183 | 17 | 34 | 28 | 19 |
+| held-out | +0.4689 | -0.0150 | 0 | 102 | 6 | 19 | 10 | 3 |
+| test-like | +0.4552 | -0.0152 | 0 | 156 | 13 | 44 | 25 | 12 |
+
+#### 结果总结
+
+该派生 artifact 把 validation、held-out、test-like 三段 residual shrink 证据合并到一个可引用目录。`M3-ResidualRestorationTop1ShrinkFallback` 在三段上 accepted new error 均为 0，同时提供 safe accept、protective reject、rejected good candidate 和 unsafe always-accept new-error 的样例 sheet。它进一步明确了当前 M3 的性质：保守质量增强，而不是冒险追求 repair 数。
+
+Always-accept 仍作为负对照：full strength 在 validation/held-out/test-like 上分别有 28/10/25 个 accepted new error；validation-constrained always-accept 仍有 19/3/12 个 accepted new error，不能写成最终 M3。
+
+#### 复现备注
+
+正式运行时清空代理变量，metadata 中记录 `proxy_environment_present: []`。输出包括：
+
+- `outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/REPORT.md`
+- `outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/policy_summary.csv`
+- `outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/case_counts.csv`
+- `outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/case_index.csv`
+- `outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/samples/`
+
+#### 下一步
+
+把这些样例用于第一版 failure-case / reliability 小节；方法侧继续把 residual alpha/幅度控制前移到 residual CNN 训练、validation model selection 或短链 conditional residual diffusion。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 

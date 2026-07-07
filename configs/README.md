@@ -41,3 +41,4 @@
 - `s6_residual_shrink_selection_exp_s4_006.yaml`：在 `EXP-S4-006` 已有 M0/refined PNG 上做 residual-strength alpha shrink 派生分析，评估 `M0 + alpha*(refined-M0)` 与 top-1 fallback 的质量/语义 tradeoff。
 - `s6_heldout_residual_shrink_schedule_check_exp_s4_006.yaml`：把 validation 上选出的 residual shrink schedule 冻结后应用到 held-out split，复核其迁移质量和 accepted-new-error 风险。
 - `s6_testlike_residual_shrink_schedule_check_exp_s4_006.yaml`：把 validation 上选出的 residual shrink schedule 冻结后应用到 `sample_000256`-`sample_000319` test-like split，复核其迁移质量和 accepted-new-error 风险。
+- `s6_residual_shrink_artifact_gallery_exp_s4_006.yaml`：聚合 validation/held-out/test-like residual shrink 输出，生成 selected shrink M3 与 unsafe always-accept 的 policy summary、case counts 和样例 gallery。
