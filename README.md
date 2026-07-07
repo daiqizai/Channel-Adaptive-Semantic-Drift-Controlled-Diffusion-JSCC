@@ -1421,6 +1421,40 @@ outputs/analysis/exp_s4_006_residual_shrink_selection/samples/
 
 核心结论：validation-only top-1 fallback shrink schedule 选择 `1 dB alpha=0.5`、其余 SNR `alpha=0.75`，平均 PSNR delta 从 full-strength top-1 fallback 的 `+0.4011` dB 提升到 `+0.4584` dB，LPIPS delta 从 `-0.0104` 改到 `-0.0153`，pseudo final failure 仍不高于 M0。always-accept 虽然 PSNR 更高且平均 failure 可低于 M0，但仍包含 19-28 个 accepted new error，不能作为最终 M3。
 
+## S6 Test-Like Frozen Residual Shrink Schedule Check
+
+已完成 frozen residual shrink schedule 的 test-like 复核。该流程读取 validation shrink selection 的 `selected_schedule.json` 和 test-like gate check 已有 refined PNG，不训练、不运行 diffusion、不下载，也不在 test-like 上重新选择 alpha。
+
+配置：
+
+```text
+configs/s6_testlike_residual_shrink_schedule_check_exp_s4_006.yaml
+```
+
+先检查 frozen schedule 与输入：
+
+```bash
+python3 scripts/s6_apply_residual_shrink_schedule.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_apply_residual_shrink_schedule.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/REPORT.md
+outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/summary.csv
+outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/per_sample.csv
+outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/metadata.json
+outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/samples/
+```
+
+核心结论：frozen validation top-1 shrink schedule 在 test-like 上平均 PSNR delta 为 `+0.4552` dB，比 full-strength top-1 fallback 的 `+0.4113` dB 高 `+0.0439` dB；LPIPS delta 为 `-0.0152`，pseudo final failure 仍等于 M0，accepted new error 为 0。always-accept full strength / validation always-constrained schedule 分别仍有 25/12 个 accepted new error，不能作为最终 M3。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：

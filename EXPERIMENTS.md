@@ -38,6 +38,7 @@
 | EXP-S4-006 | 2026-07-03 | 709f1c6 | SNR-conditioned pixel residual refiner validation | COCO2017 val2017 export subset, train 160 images/SNR, eval 64 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure, accept/reject | 完成（S5 residual validation；正向但需 detector error analysis） | `outputs/EXP-S4-006/` |
 | EXP-S4-007 | 2026-07-06 | 4f4eefb | SNR-conditioned pixel residual diffusion pilot | COCO2017 val2017 export subset, train 80 images/SNR, eval 16 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure, accept/reject, sampling time | 完成（S5 residual diffusion pilot；负结果） | `outputs/EXP-S4-007/` |
 | ANALYSIS-S6-002 | 2026-07-07 | 20f9cc3 + local script | ResidualShrinkSelection | COCO2017 val2017 `EXP-S4-006` eval outputs, 64 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, accept/new-error | 完成（派生分析；validation-only；不训练不下载） | `outputs/analysis/exp_s4_006_residual_shrink_selection/` |
+| ANALYSIS-S6-003 | 2026-07-07 | 7ef1753 + local script | FrozenResidualShrinkScheduleCheck | COCO2017 val2017 test-like `sample_000256`-`sample_000319`, 64 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, accept/new-error | 完成（frozen schedule 复核；不调参不训练不下载） | `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2154,3 +2155,66 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u al
 #### 下一步
 
 把该分析作为 M3 训练/选择设计依据：优先做 semantic-risk-aware residual CNN model selection 或在训练中加入残差幅度/语义风险约束；若继续 diffusion，只做从 M0/M2 附近初始化的短链 residual correction。
+
+### ANALYSIS-S6-003：Frozen Residual Shrink Schedule Test-Like Check
+
+- 日期：2026-07-07
+- 项目版本：运行时基于 `7ef1753d` 之后的本轮新增脚本
+- 阶段：S6 frozen schedule test-like analysis
+- 方法：FrozenResidualShrinkScheduleCheck
+- 数据集：COCO2017 `val2017` test-like outputs from `EXP-S4-006`
+- 数据 split / 样本 ID：`sample_000256`-`sample_000319`，5 个 SNR，共 320 行
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- 随机种子：42；本分析本身不使用随机采样
+- checkpoint：不重新加载 JSCC/refiner checkpoint；读取 test-like gate check 已有 PNG
+- config：`configs/s6_testlike_residual_shrink_schedule_check_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_apply_residual_shrink_schedule.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_apply_residual_shrink_schedule.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_apply_residual_shrink_schedule.py --device cuda:0
+```
+
+- 关键源码：`scripts/s6_apply_residual_shrink_schedule.py`, `scripts/s6_residual_shrink_selection.py`
+- 输入：
+  - `outputs/analysis/exp_s4_006_residual_shrink_selection/selected_schedule.json`
+  - `outputs/analysis/exp_s4_006_testlike_gate_check/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_testlike_gate_check/exports/snr_XXdb/refined/`
+  - `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384/exports/original/`
+  - `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384/exports/snr_XXdb/reconstruction/`
+  - `outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth`
+- 输出路径：`outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/`
+- 状态：完成；frozen schedule 复核，不训练、不调参、不运行 diffusion、不下载
+
+#### 指标
+
+| Policy | Mean Delta PSNR | Mean Delta LPIPS | Final Failure | Delta Failure | Accept | Repair | New Error |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `m0` | 0.0000 | 0.0000 | 0.4719 | 0.0000 | 0.0000 | 0 | 0 |
+| `top1_full_strength` | +0.4113 | -0.0116 | 0.4719 | +0.0000 | 0.6250 | 0 | 0 |
+| `validation_top1_shrink_schedule` | +0.4552 | -0.0152 | 0.4719 | +0.0000 | 0.7063 | 0 | 0 |
+| `always_full_strength` | +0.7180 | -0.0270 | 0.3812 | -0.0906 | 1.0000 | 54 | 25 |
+| `validation_always_m0_failure_constrained_schedule` | +0.5555 | -0.0257 | 0.4031 | -0.0688 | 0.8000 | 34 | 12 |
+
+#### 结果总结
+
+Validation 上选出的 top-1 shrink schedule 在 test-like 上迁移成功：相对 full-strength top-1 fallback，PSNR 额外提升 `+0.0439` dB，LPIPS 进一步改善，同时 pseudo final failure 仍不高于 M0，accepted new error 为 0。分 SNR 看，固定 schedule 在 1/4/7/13/19 dB 的 PSNR delta 分别为 `+0.5087/+0.4268/+0.3769/+0.4499/+0.5137` dB。
+
+Always-accept 路线继续不安全：full-strength always-accept 有 25 个 accepted new error，validation 的 always-constrained schedule 仍有 12 个 accepted new error。因此可写成证据的是“残差强度控制 + top-1 semantic fallback”提升了保守 M3 的质量，而不是 always-accept。
+
+#### 复现备注
+
+正式运行时清空代理变量，dry-run 记录 `proxy_environment_present: []`。输出包括：
+
+- `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/REPORT.md`
+- `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/summary.csv`
+- `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/per_sample.csv`
+- `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/metadata.json`
+- `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/samples/`
+
+#### 下一步
+
+把 `validation_top1_shrink_schedule` 作为当前更强的 conservative M3 候选，后续需要在带标签 clean-correct subset 或更正式 test split 上复核；训练侧则应考虑直接学习 SNR-aware residual amplitude / alpha，而不是只在输出后缩放。
