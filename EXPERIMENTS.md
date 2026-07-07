@@ -44,6 +44,8 @@
 | ANALYSIS-S6-006 | 2026-07-07 | c19cc0f + local script | ResidualShrinkM3ArtifactGallery | COCO2017 val2017 validation/held-out/test-like residual shrink outputs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | policy summary, case counts, safe accept/protective reject/new-error galleries | 完成（派生 artifact；不训练不下载不调参） | `outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/` |
 | ANALYSIS-S6-007 | 2026-07-07 | fbcfe72 + local script | AdaptiveResidualAlphaPolicy | COCO2017 val2017 validation/held-out/test-like residual alpha candidates | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, selected alpha, accept/new-error | 完成（派生 policy；不训练不下载不调参） | `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/` |
 | ANALYSIS-S6-008 | 2026-07-07 | bcfc1f1 + local script/config | MinimalClosureReportWithAdaptiveAlphaM3 | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink/adaptive-alpha tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 adaptive alpha M3；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
+| ANALYSIS-S6-009 | 2026-07-07 | 9cacff5 + local script/config | TwoStageResidualAlphaPolicy | COCO2017 val2017 validation/held-out/test-like adaptive alpha decisions | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, two-stage accept/fallback, accepted new error | 完成（派生 policy；不重分类；不训练不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/` |
+| ANALYSIS-S6-010 | 2026-07-07 | 9cacff5 + local script/config | MinimalClosureReportWithTwoStageAlphaAblation | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink/adaptive/two-stage alpha tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 two-stage alpha 消融；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2344,6 +2346,118 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u al
 #### 下一步
 
 论文口径上可把 adaptive alpha 作为当前 M3 主候选；方法侧下一步应把该 per-sample alpha 选择前移到训练/模型选择流程，例如训练 receiver-side alpha predictor、把 residual amplitude loss 加入 residual CNN，或设计从 M0/refined 附近初始化的短链 conditional residual diffusion。
+
+### ANALYSIS-S6-009：Two-Stage Residual Alpha Policy
+
+- 日期：2026-07-07
+- 项目版本：`9cacff5` + local script/config at run time
+- 阶段：S6 deployability ablation
+- 方法：TwoStageResidualAlphaPolicy
+- 数据集：COCO2017 `val2017` validation / held-out / test-like adaptive-alpha decisions
+- 数据 split：validation `320` 行、held-out `160` 行、test-like `320` 行
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_two_stage_residual_alpha_policy_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_apply_two_stage_residual_alpha_policy.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_apply_two_stage_residual_alpha_policy.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_apply_two_stage_residual_alpha_policy.py --device cuda:0
+```
+
+- 关键源码：`scripts/s6_apply_two_stage_residual_alpha_policy.py`
+- 输入：
+  - `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv`
+  - `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv`
+- 输出路径：`outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/`
+- 状态：完成；只读取已有 adaptive alpha 决策表和 final 图，不训练、不运行 diffusion、不重算分类器、不下载；LPIPS 省略以避免外部权重加载
+
+#### 策略
+
+```text
+full_then_fixed_schedule:
+  first try top1_full_strength
+  if alpha=1.0 candidate top-1 equals M0 top-1, accept full strength
+  otherwise use fixed_validation_top1_shrink_schedule with the same top-1 gate
+  otherwise fallback to M0
+```
+
+#### 指标
+
+| Split | Delta PSNR | Final Failure Delta | Accept | Full Accept | Fallback Stage | Fallback Accept When Used | New Error | Missed Repair |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| validation | +0.4831 | +0.0000 | 0.7469 | 0.6406 | 0.3594 | 0.2957 | 0 | 45 |
+| held-out | +0.5009 | +0.0000 | 0.7625 | 0.6687 | 0.3312 | 0.2830 | 0 | 31 |
+| test-like | +0.4875 | +0.0000 | 0.7250 | 0.6250 | 0.3750 | 0.2667 | 0 | 70 |
+
+对比：
+
+| Policy | validation | held-out | test-like | New Error |
+|---|---:|---:|---:|---:|
+| `top1_full_strength` | +0.4011 | +0.4454 | +0.4113 | 0/0/0 |
+| `fixed_validation_top1_shrink_schedule` | +0.4584 | +0.4689 | +0.4552 | 0/0/0 |
+| `full_then_fixed_schedule` | +0.4831 | +0.5009 | +0.4875 | 0/0/0 |
+| `adaptive_max_top1_consistent_alpha` | +0.5584 | +0.5664 | +0.5691 | 0/0/0 |
+
+#### 结果总结
+
+Two-stage policy 用最多两次 candidate 检查，质量上稳定优于 fixed schedule，但没有追上 exhaustive adaptive alpha。它的价值是证明可以把“残差强度控制”向更少候选、更接近接收端部署的策略压缩，同时保持同一 AlexNet pseudo-label 口径下 accepted new error 为 0。
+
+该策略仍没有 repair，missed repair 仍为 `45/31/70`，因此仍是保守质量增强，不是语义修复。下一步如果继续这条线，应训练 receiver-side alpha predictor 或把 alpha/risk 控制并入 residual CNN，而不是继续增加后验枚举规则。
+
+#### 复现备注
+
+正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。本轮曾有一次 ad hoc 指标探针误触发 LPIPS/AlexNet 临时权重下载；下载进程已停止，`/tmp/alpha_twostage_cache` 已删除，未使用任何该探针结果。正式脚本默认不加载 LPIPS，避免再次触发外部权重加载。
+
+### ANALYSIS-S6-010：Minimal Closure Report With Two-Stage Alpha Ablation
+
+- 日期：2026-07-07
+- 项目版本：`9cacff5` + local script/config at run time
+- 阶段：S6 derived closure report
+- 方法：MinimalClosureReportWithTwoStageAlphaAblation
+- 数据集：COCO2017 `val2017` existing outputs and analysis CSVs
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_minimal_closure_report.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_make_minimal_closure_report.py scripts/s6_apply_two_stage_residual_alpha_policy.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_make_minimal_closure_report.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_make_minimal_closure_report.py --overwrite
+```
+
+- 关键源码：`scripts/s6_make_minimal_closure_report.py`
+- 新增输入：`outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/summary.csv`
+- 输出路径：`outputs/analysis/minimal_closure_report/`
+- 状态：完成；只读取已有 metrics/CSV，不训练、不运行 diffusion、不重算分类器、不下载
+
+#### 指标
+
+| Method | Split | Mean Delta PSNR | Mean Delta LPIPS | Mean Failure | New Error | Status |
+|---|---|---:|---:|---:|---:|---|
+| M3-ResidualRestorationTop1Fallback | validation | +0.4011 | -0.0104 | 0.3750 | 0 | conservative first closure |
+| M3-ResidualRestorationTop1ShrinkFallback | validation / held-out / test-like | +0.4584 / +0.4689 / +0.4552 | -0.0153 / -0.0150 / -0.0152 | 0.3750 / 0.3250 / 0.4719 | 0 / 0 / 0 | fixed schedule candidate |
+| M3-TwoStageResidualAlphaTop1Fallback | validation / held-out / test-like | +0.4831 / +0.5009 / +0.4875 | N/A | 0.3750 / 0.3250 / 0.4719 | 0 / 0 / 0 | deployability ablation |
+| M3-AdaptiveResidualAlphaTop1Fallback | validation / held-out / test-like | +0.5584 / +0.5664 / +0.5691 | -0.0189 / -0.0174 / -0.0201 | 0.3750 / 0.3250 / 0.4719 | 0 / 0 / 0 | strongest conservative candidate |
+
+#### 结果总结
+
+本轮刷新把 `ANALYSIS-S6-009` 的 two-stage alpha 消融并入最小闭环报告。`outputs/analysis/minimal_closure_report/REPORT.md` 现在明确区分：
+
+- `M3-AdaptiveResidualAlphaTop1Fallback`：当前最强保守质量增强候选；
+- `M3-TwoStageResidualAlphaTop1Fallback`：少候选检查的部署折中，质量高于 fixed schedule 但低于 exhaustive adaptive alpha；
+- `M3-ResidualRestorationTop1ShrinkFallback`：固定 per-SNR schedule 消融/备选；
+- `M3-SelectedRiskRuleCandidate`：有 repair 但仍有 new-error 风险，不能作为最终安全方法。
+
+新增输出包括 `two_stage_residual_alpha_policy_tradeoff.csv`。报告仍保留 caveat：two-stage alpha 的 LPIPS 被刻意省略，不能把空 LPIPS 项与其他策略的 LPIPS 数值横向比较。
+
+#### 下一步
+
+方法侧下一步不应继续堆后验策略，而应把 alpha 选择变成可学习或训练期约束：训练 receiver-side alpha/risk predictor，或在 residual CNN/短链 conditional residual diffusion 中加入 semantic-risk-aware residual amplitude 控制。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 

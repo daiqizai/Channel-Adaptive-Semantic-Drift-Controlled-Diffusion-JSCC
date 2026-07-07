@@ -1,0 +1,57 @@
+phase: S6
+analysis_id: exp_s4_006_two_stage_residual_alpha_policy
+method: TwoStageResidualAlphaPolicy
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  source_config: configs/s6_adaptive_residual_alpha_policy_exp_s4_006.yaml
+  source_summary_csv: outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv
+  source_per_sample_csv: outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv
+
+splits:
+  - validation
+  - held-out
+  - test-like
+
+two_stage_policy:
+  name: full_then_fixed_schedule
+  first_stage_policy: top1_full_strength
+  fallback_policy: fixed_validation_top1_shrink_schedule
+  reference_policy: adaptive_max_top1_consistent_alpha
+
+comparison_policies:
+  - m0
+  - top1_full_strength
+  - fixed_validation_top1_shrink_schedule
+  - full_then_fixed_schedule
+  - adaptive_max_top1_consistent_alpha
+  - always_full_strength
+
+evaluation:
+  image_batch_size: 16
+  metrics:
+    - psnr
+    - ssim
+    - ms_ssim
+    - pseudo_final_failure
+    - accept_rate
+    - selected_alpha
+    - accepted_new_error_count
+    - missed_repair_count
+  lpips: omitted_to_avoid_weight_loading_or_download
+
+notes:
+  - This derived analysis reads the existing adaptive residual-alpha per-sample table and final image paths.
+  - It does not train a model, run diffusion, classify images, regenerate candidates, tune on held-out/test-like, load LPIPS, or download data.
+  - The two-stage policy first tries full-strength top-1 fallback; if full strength changes the M0 top-1, it falls back to the frozen validation shrink schedule.
+  - This uses at most two receiver-side candidate checks rather than exhaustively selecting the maximum top-1-consistent alpha from four candidates.
+  - LPIPS is intentionally omitted in this pilot so the run cannot trigger external model-weight loading.
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy
