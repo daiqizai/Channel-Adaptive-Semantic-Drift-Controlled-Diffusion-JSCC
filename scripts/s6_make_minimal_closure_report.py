@@ -245,6 +245,8 @@ def build_method_summary(
     formal_m0: list[dict[str, Any]],
     m1_rows: list[dict[str, Any]],
     residual_rows: list[dict[str, Any]],
+    shrink_validation_rows: list[dict[str, str]],
+    testlike_shrink_rows: list[dict[str, str]],
     testlike_rows: list[dict[str, str]],
     clean_rows: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
@@ -255,6 +257,9 @@ def build_method_summary(
     top1 = row_for_policy(testlike_rows, "top1_equal")
     selected = row_for_policy(testlike_rows, "selected_risk_rule")
     selected_plus = row_for_policy(testlike_rows, "selected_risk_rule_plus_ensemble_veto")
+    validation_shrink = row_for_policy(shrink_validation_rows, "selected_top1_fallback_shrink_schedule")
+    testlike_top1_full = row_for_policy(testlike_shrink_rows, "top1_full_strength")
+    testlike_shrink = row_for_policy(testlike_shrink_rows, "validation_top1_shrink_schedule")
     clean_selected = row_for_policy(clean_rows, "selected_risk_rule", subset="clean_correct")
     clean_selected_plus = row_for_policy(clean_rows, "selected_risk_rule_plus_ensemble_veto", subset="clean_correct")
 
@@ -312,6 +317,26 @@ def build_method_summary(
             "mean_delta_psnr_vs_m0_db": mean([row["delta_psnr_vs_m0_db"] for row in m3]),
             "mean_delta_lpips_vs_m0": mean([row["delta_lpips_vs_m0"] for row in m3]),
             "status": "safe conservative closure on pseudo-label metric",
+        },
+        {
+            "method": "M3-ResidualRestorationTop1ShrinkFallback",
+            "role": "stronger conservative M3 candidate",
+            "split": "validation_selected_frozen_testlike",
+            "snrs": "[1,4,7,13,19]",
+            "mean_psnr_db": to_float(validation_shrink["final_psnr_db"]),
+            "mean_ms_ssim": to_float(validation_shrink["final_ms_ssim"]),
+            "mean_semantic_failure": to_float(validation_shrink["final_failure_rate"]),
+            "mean_delta_failure_vs_m0": to_float(validation_shrink["delta_final_failure_vs_m0"]),
+            "mean_delta_psnr_vs_m0_db": to_float(validation_shrink["delta_psnr_vs_m0_db"]),
+            "mean_delta_lpips_vs_m0": to_float(validation_shrink["delta_lpips_vs_m0"]),
+            "testlike_psnr_db": to_float(testlike_shrink["final_psnr_db"]),
+            "testlike_delta_psnr_vs_m0_db": to_float(testlike_shrink["delta_psnr_vs_m0_db"]),
+            "testlike_delta_psnr_vs_full_top1_db": to_float(testlike_shrink["delta_psnr_vs_m0_db"])
+            - to_float(testlike_top1_full["delta_psnr_vs_m0_db"]),
+            "testlike_delta_lpips_vs_m0": to_float(testlike_shrink["delta_lpips_vs_m0"]),
+            "testlike_final_failure_rate": to_float(testlike_shrink["final_failure_rate"]),
+            "testlike_accepted_new_error_count": to_int(testlike_shrink["accepted_new_error_count"]),
+            "status": "best conservative M3 candidate so far; still pseudo-label/test-like",
         },
         {
             "method": "M3-SelectedRiskRuleCandidate",
@@ -383,6 +408,39 @@ def build_clean_policy_export(rows: list[dict[str, str]]) -> list[dict[str, Any]
                 "accepted_new_error_gt_count": to_int(row["accepted_new_error_gt_count"]),
             }
         )
+    return output
+
+
+def build_shrink_policy_export(validation_rows: list[dict[str, str]], testlike_rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    output = []
+    for split, rows in [
+        ("validation_exp_s4_006", validation_rows),
+        ("frozen_testlike", testlike_rows),
+    ]:
+        for row in rows:
+            if row.get("snr_db") != "all":
+                continue
+            alpha = row.get("alpha", "")
+            policy_label = f"{row['policy']}@{alpha}" if alpha not in ("", None) else row["policy"]
+            output.append(
+                {
+                    "split": split,
+                    "policy": row["policy"],
+                    "policy_label": policy_label,
+                    "alpha": alpha,
+                    "num_images": to_int(row["num_images"]),
+                    "accept_rate": to_float(row["accept_rate"]),
+                    "final_failure_rate": to_float(row["final_failure_rate"]),
+                    "delta_failure_vs_m0": to_float(row["delta_final_failure_vs_m0"]),
+                    "final_psnr_db": to_float(row["final_psnr_db"]),
+                    "delta_psnr_vs_m0_db": to_float(row["delta_psnr_vs_m0_db"]),
+                    "final_lpips": to_float(row["final_lpips"]),
+                    "delta_lpips_vs_m0": to_float(row["delta_lpips_vs_m0"]),
+                    "repair_count": to_int(row["repair_count"]),
+                    "accepted_new_error_count": to_int(row["accepted_new_error_count"]),
+                    "rejected_good_count": to_int(row["rejected_good_count"]),
+                }
+            )
     return output
 
 
@@ -458,6 +516,23 @@ def plot_testlike_tradeoff(policy_rows: list[dict[str, Any]], clean_rows: list[d
     plt.close(fig)
 
 
+def plot_shrink_tradeoff(shrink_rows: list[dict[str, Any]], path: Path) -> None:
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.4), sharey=True)
+    splits = [
+        ("validation_exp_s4_006", "Validation Shrink Tradeoff"),
+        ("frozen_testlike", "Frozen Test-Like Shrink Tradeoff"),
+    ]
+    for ax, (split, title) in zip(axes, splits):
+        rows = [row for row in shrink_rows if row["split"] == split and row["policy"] != "m0"]
+        for row in rows:
+            ax.scatter(row["delta_psnr_vs_m0_db"], row["accepted_new_error_count"], s=70)
+            ax.annotate(row["policy_label"], (row["delta_psnr_vs_m0_db"], row["accepted_new_error_count"]), fontsize=8)
+        style_axes(ax, title, "PSNR delta vs M0 (dB)", "accepted new errors")
+    fig.tight_layout()
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
 def markdown_table(rows: list[dict[str, Any]], columns: list[tuple[str, str]]) -> list[str]:
     lines = []
     headers = [label for _key, label in columns]
@@ -478,6 +553,7 @@ def make_report(
     config: dict[str, Any],
     method_summary: list[dict[str, Any]],
     residual_rows: list[dict[str, Any]],
+    shrink_rows: list[dict[str, Any]],
     testlike_rows: list[dict[str, Any]],
     clean_rows: list[dict[str, Any]],
     metadata: dict[str, Any],
@@ -485,6 +561,7 @@ def make_report(
     m1 = next(row for row in method_summary if row["method"] == "M1-BlindDiffusion-SDImg2Img")
     m2 = next(row for row in method_summary if row["method"] == "M2-SNRConditionedPixelResidualRestoration")
     m3 = next(row for row in method_summary if row["method"] == "M3-ResidualRestorationTop1Fallback")
+    m3_shrink = next(row for row in method_summary if row["method"] == "M3-ResidualRestorationTop1ShrinkFallback")
     selected = next(row for row in method_summary if row["method"] == "M3-SelectedRiskRuleCandidate")
     safety = next(row for row in method_summary if row["method"] == "M3-EnsembleVetoSafetyBound")
 
@@ -499,6 +576,7 @@ def make_report(
         f"- `M1-BlindDiffusion-SDImg2Img` remains a negative reference: mean PSNR delta vs its M0 input is `{signed(float(m1['mean_delta_psnr_vs_m0_db']))}` dB and mean LPIPS delta is `{signed(float(m1['mean_delta_lpips_vs_m0']))}`.",
         f"- `M2-SNRConditionedPixelResidualRestoration` is the positive restoration anchor: mean PSNR delta vs M0 is `{signed(float(m2['mean_delta_psnr_vs_m0_db']))}` dB and mean LPIPS delta is `{signed(float(m2['mean_delta_lpips_vs_m0']))}` on `EXP-S4-006`.",
         f"- `M3-ResidualRestorationTop1Fallback` is the conservative first closure: mean PSNR delta vs M0 is `{signed(float(m3['mean_delta_psnr_vs_m0_db']))}` dB, mean LPIPS delta is `{signed(float(m3['mean_delta_lpips_vs_m0']))}`, and pseudo semantic failure does not increase vs M0.",
+        f"- `M3-ResidualRestorationTop1ShrinkFallback` is the strongest conservative candidate so far: validation PSNR delta is `{signed(float(m3_shrink['mean_delta_psnr_vs_m0_db']))}` dB, frozen test-like PSNR delta is `{signed(float(m3_shrink['testlike_delta_psnr_vs_m0_db']))}` dB, and test-like `accepted_new_error_count={m3_shrink['testlike_accepted_new_error_count']}`.",
         f"- `selected_risk_rule` is still only a candidate: on test-like it gives `{signed(float(selected['delta_psnr_vs_top1_db']))}` dB vs top-1 and `accepted_new_error_count={selected['accepted_new_error_count']}`; on COCO-object clean-correct it still has `clean_correct_new_error_count={selected['clean_correct_new_error_count']}`.",
         f"- The ensemble-veto safety bound removes COCO-object clean-correct new errors, but its clean-correct PSNR delta vs top-1 is `{signed(float(safety['clean_correct_delta_psnr_vs_top1_db']))}` dB, so it is too conservative as the main M3.",
         "",
@@ -510,6 +588,7 @@ def make_report(
         "| M1 | Stable Diffusion img2img blind refinement, empty prompt | Negative reference |",
         "| M2 | SNR-conditioned pixel residual CNN refinement | Positive restoration anchor |",
         "| M3 | M2 plus top-1 semantic fallback | Conservative first closure |",
+        "| M3 improved candidate | M2 with validation-selected residual shrink plus top-1 fallback | Stronger conservative pseudo-safe candidate |",
         "| M3 candidate | M2 plus selected risk rule | Higher PSNR candidate, not final-safe |",
         "",
         "## Closure Summary",
@@ -545,6 +624,32 @@ def make_report(
             ("accept_rate", "Accept"),
         ],
     )
+    lines.extend(["", "## Residual Shrink Schedule Check", ""])
+    shrink_focus = [
+        row
+        for row in shrink_rows
+        if row["policy"]
+        in [
+            "top1_fallback_alpha",
+            "selected_top1_fallback_shrink_schedule",
+            "top1_full_strength",
+            "validation_top1_shrink_schedule",
+            "always_full_strength",
+            "validation_always_m0_failure_constrained_schedule",
+        ]
+    ]
+    lines += markdown_table(
+        shrink_focus,
+        [
+            ("split", "Split"),
+            ("policy_label", "Policy"),
+            ("delta_psnr_vs_m0_db", "Delta PSNR"),
+            ("delta_lpips_vs_m0", "Delta LPIPS"),
+            ("final_failure_rate", "Failure"),
+            ("accept_rate", "Accept"),
+            ("accepted_new_error_count", "New Error"),
+        ],
+    )
     lines.extend(["", "## Test-Like Gate Risk", ""])
     lines += markdown_table(
         testlike_rows,
@@ -574,11 +679,13 @@ def make_report(
             "",
             f"- Residual quality: `{metadata['figures']['residual_quality']}`",
             f"- Residual semantics: `{metadata['figures']['residual_semantics']}`",
+            f"- Residual shrink tradeoff: `{metadata['figures']['shrink_tradeoff']}`",
             f"- Test-like tradeoff: `{metadata['figures']['testlike_tradeoff']}`",
             "",
             "## Caveats",
             "",
             "- M1 and EXP-S4-006 use different sample counts and splits; M1 is included as a negative reference, not a same-split comparison.",
+            "- Residual shrink was selected on validation and frozen on test-like; it is a stronger conservative candidate, not supervised-label proof.",
             "- COCO pseudo-label, classifier ensemble, caption CLIP, and COCO-object CLIP are auxiliary semantic diagnostics.",
             "- The first closure should not claim that the selected risk rule is cross-model or supervised-label safe.",
             "",
@@ -587,6 +694,7 @@ def make_report(
             f"- Method summary: `{metadata['method_summary_csv']}`",
             f"- Residual per-SNR table: `{metadata['residual_per_snr_csv']}`",
             f"- Blind diffusion negative table: `{metadata['blind_diffusion_csv']}`",
+            f"- Residual shrink table: `{metadata['shrink_policy_csv']}`",
             f"- Test-like policy table: `{metadata['testlike_policy_csv']}`",
             f"- COCO-object clean-correct table: `{metadata['clean_correct_policy_csv']}`",
             f"- Metadata: `{metadata['metadata_json']}`",
@@ -633,19 +741,31 @@ def main() -> None:
     m0_metrics = load_json(resolve_project_path(config["inputs"]["m0_formal_metrics"]))
     m1_metrics = load_json(resolve_project_path(config["inputs"]["m1_blind_diffusion_metrics"]))
     residual_summary = read_csv(resolve_project_path(config["inputs"]["residual_validation_summary"]))
+    shrink_validation_summary = read_csv(resolve_project_path(config["inputs"]["residual_shrink_validation_summary"]))
+    testlike_shrink_summary = read_csv(resolve_project_path(config["inputs"]["testlike_residual_shrink_summary"]))
     testlike_policy = read_csv(resolve_project_path(config["inputs"]["testlike_policy_summary"]))
     clean_summary = read_csv(resolve_project_path(config["inputs"]["testlike_clean_correct_summary"]))
 
     formal_m0_rows = build_formal_m0_rows(m0_metrics)
     m1_rows = build_m1_rows(m1_metrics)
     residual_rows = build_residual_rows(residual_summary)
+    shrink_rows = build_shrink_policy_export(shrink_validation_summary, testlike_shrink_summary)
     testlike_rows = build_testlike_policy_export(testlike_policy)
     clean_rows = build_clean_policy_export(clean_summary)
-    method_summary = build_method_summary(formal_m0_rows, m1_rows, residual_rows, testlike_policy, clean_summary)
+    method_summary = build_method_summary(
+        formal_m0_rows,
+        m1_rows,
+        residual_rows,
+        shrink_validation_summary,
+        testlike_shrink_summary,
+        testlike_policy,
+        clean_summary,
+    )
 
     method_summary_csv = output_dir / "method_closure_summary.csv"
     residual_csv = output_dir / "residual_per_snr_quality_semantics.csv"
     blind_csv = output_dir / "blind_diffusion_negative_reference.csv"
+    shrink_csv = output_dir / "residual_shrink_policy_tradeoff.csv"
     testlike_csv = output_dir / "testlike_policy_tradeoff.csv"
     clean_csv = output_dir / "coco_object_clean_correct_tradeoff.csv"
     metadata_json = output_dir / "metadata.json"
@@ -654,14 +774,17 @@ def main() -> None:
     write_csv(method_summary_csv, method_summary)
     write_csv(residual_csv, residual_rows)
     write_csv(blind_csv, m1_rows)
+    write_csv(shrink_csv, shrink_rows)
     write_csv(testlike_csv, testlike_rows)
     write_csv(clean_csv, clean_rows)
 
     residual_quality = figures_dir / "residual_quality_vs_snr.png"
     residual_semantics = figures_dir / "residual_semantics_vs_snr.png"
+    shrink_tradeoff = figures_dir / "residual_shrink_policy_tradeoff.png"
     testlike_tradeoff = figures_dir / "testlike_policy_tradeoff.png"
     plot_residual_quality(residual_rows, residual_quality)
     plot_residual_semantics(residual_rows, residual_semantics)
+    plot_shrink_tradeoff(shrink_rows, shrink_tradeoff)
     plot_testlike_tradeoff(testlike_rows, clean_rows, testlike_tradeoff)
 
     metadata = {
@@ -673,6 +796,7 @@ def main() -> None:
         "method_summary_csv": project_relative(method_summary_csv),
         "residual_per_snr_csv": project_relative(residual_csv),
         "blind_diffusion_csv": project_relative(blind_csv),
+        "shrink_policy_csv": project_relative(shrink_csv),
         "testlike_policy_csv": project_relative(testlike_csv),
         "clean_correct_policy_csv": project_relative(clean_csv),
         "metadata_json": project_relative(metadata_json),
@@ -680,6 +804,7 @@ def main() -> None:
         "figures": {
             "residual_quality": project_relative(residual_quality),
             "residual_semantics": project_relative(residual_semantics),
+            "shrink_tradeoff": project_relative(shrink_tradeoff),
             "testlike_tradeoff": project_relative(testlike_tradeoff),
         },
         "git_commit": git_commit(),
@@ -690,7 +815,10 @@ def main() -> None:
         "download_note": "No download is required; this report only reads existing local outputs.",
     }
     save_json(metadata_json, metadata)
-    report_md.write_text(make_report(config, method_summary, residual_rows, testlike_rows, clean_rows, metadata), encoding="utf-8")
+    report_md.write_text(
+        make_report(config, method_summary, residual_rows, shrink_rows, testlike_rows, clean_rows, metadata),
+        encoding="utf-8",
+    )
     print(json.dumps({"output_dir": project_relative(output_dir), "report": project_relative(report_md)}, indent=2))
 
 

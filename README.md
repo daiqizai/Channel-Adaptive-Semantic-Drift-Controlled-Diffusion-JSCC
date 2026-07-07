@@ -1342,7 +1342,7 @@ outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/galleries/
 
 ## S6 Minimal Closure Report
 
-已生成第一版最小闭环汇总报告。该流程不训练、不推理、不分类、不联网，只读取已有 metrics/CSV，把 M0、M1 负结果、`EXP-S4-006` residual M2/M3 和 test-like 语义审计汇总到同一个报告里。
+已生成第一版最小闭环汇总报告，并已刷新纳入 residual shrink M3 候选。该流程不训练、不推理、不分类、不联网，只读取已有 metrics/CSV，把 M0、M1 负结果、`EXP-S4-006` residual M2/M3、residual shrink schedule 和 test-like 语义审计汇总到同一个报告里。
 
 配置：
 
@@ -1362,6 +1362,12 @@ python3 scripts/s6_make_minimal_closure_report.py --dry-run
 env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_make_minimal_closure_report.py
 ```
 
+刷新同一派生输出目录：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_make_minimal_closure_report.py --overwrite
+```
+
 输出：
 
 ```text
@@ -1369,12 +1375,13 @@ outputs/analysis/minimal_closure_report/REPORT.md
 outputs/analysis/minimal_closure_report/method_closure_summary.csv
 outputs/analysis/minimal_closure_report/residual_per_snr_quality_semantics.csv
 outputs/analysis/minimal_closure_report/blind_diffusion_negative_reference.csv
+outputs/analysis/minimal_closure_report/residual_shrink_policy_tradeoff.csv
 outputs/analysis/minimal_closure_report/testlike_policy_tradeoff.csv
 outputs/analysis/minimal_closure_report/coco_object_clean_correct_tradeoff.csv
 outputs/analysis/minimal_closure_report/figures/
 ```
 
-核心结论：`M1-BlindDiffusion-SDImg2Img` 保留为负参考，平均 PSNR 相比其 M0 输入下降 `-14.7485` dB、LPIPS 变差 `+0.3877`；`M2-SNRConditionedPixelResidualRestoration` 是正向 restoration anchor，`EXP-S4-006` 上平均 PSNR `+0.7235` dB、LPIPS `-0.0274`；`M3-ResidualRestorationTop1Fallback` 可作为保守第一版闭环，平均 PSNR `+0.4011` dB、LPIPS `-0.0104`，且同一 pseudo-label 口径下 semantic failure 不高于 M0。`selected_risk_rule` 仍只能作为候选/消融，因为 test-like 和 COCO-object clean-correct 诊断还留有 new-error 风险。
+核心结论：`M1-BlindDiffusion-SDImg2Img` 保留为负参考，平均 PSNR 相比其 M0 输入下降 `-14.7485` dB、LPIPS 变差 `+0.3877`；`M2-SNRConditionedPixelResidualRestoration` 是正向 restoration anchor，`EXP-S4-006` 上平均 PSNR `+0.7235` dB、LPIPS `-0.0274`；`M3-ResidualRestorationTop1Fallback` 可作为保守第一版闭环，平均 PSNR `+0.4011` dB、LPIPS `-0.0104`，且同一 pseudo-label 口径下 semantic failure 不高于 M0。`M3-ResidualRestorationTop1ShrinkFallback` 是当前最强保守候选：validation 平均 PSNR delta `+0.4584` dB，frozen test-like 平均 PSNR delta `+0.4552` dB，test-like accepted new error 为 0。`selected_risk_rule` 仍只能作为候选/消融，因为 test-like 和 COCO-object clean-correct 诊断还留有 new-error 风险。
 
 ## S6 Residual Shrink Selection
 

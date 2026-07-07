@@ -37,7 +37,7 @@
 - `s5_apply_testlike_risk_rules.py`：把 validation/held-out 阶段冻结的 `selected_risk_rule` 和保守 ensemble-risk veto 应用到 test-like split，重新计算本地 CLIP、输出决策表、final PNG 和风险样例。
 - `s5_coco_object_clip_clean_eval.py`：读取 test-like gate 决策、COCO instance labels 和本地 OpenCLIP，按 dominant object label 构造辅助 clean-correct 子集，输出 policy-level GT-like semantic failure/repair/new-error 诊断。
 - `s5_residual_diffusion_pilot.py`：读取正式 256 张/SNR M0 export，训练一个小型 SNR-conditioned pixel residual DDPM；避开 Stable Diffusion、text prompt 和 SD VAE，用同一 pseudo semantic fallback 口径评估 residual diffusion。
-- `s6_make_minimal_closure_report.py`：只读取已有 metrics/CSV，聚合 M0/M1/M2/M3、test-like gate 和 COCO-object clean-correct 结果，生成最小闭环报告、CSV 和 tradeoff 图。
+- `s6_make_minimal_closure_report.py`：只读取已有 metrics/CSV，聚合 M0/M1/M2/M3、residual shrink schedule、test-like gate 和 COCO-object clean-correct 结果，生成最小闭环报告、CSV 和 tradeoff 图。
 - `s6_residual_shrink_selection.py`：只读取 `EXP-S4-006` 已有 original/M0/refined PNG，生成 residual alpha shrink 候选并用冻结 AlexNet 与图像指标评估 always-accept、top-1 fallback 和 validation-only shrink schedule。
 - `s6_apply_residual_shrink_schedule.py`：把 validation 阶段冻结的 residual shrink schedule 应用到 test-like split，不在 test-like 上重新选 alpha，输出 policy summary、逐样本决策、final PNG 和样例拼图。
 - `run_s2_coco256_awgn_train.sh`：长任务脚本；负责断点续传 COCO2017 train/val、解压、检查图片数量，并启动 COCO-256 AWGN DeepJSCC GPU 训练。

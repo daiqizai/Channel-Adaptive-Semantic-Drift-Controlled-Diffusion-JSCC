@@ -39,6 +39,7 @@
 | EXP-S4-007 | 2026-07-06 | 4f4eefb | SNR-conditioned pixel residual diffusion pilot | COCO2017 val2017 export subset, train 80 images/SNR, eval 16 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure, accept/reject, sampling time | 完成（S5 residual diffusion pilot；负结果） | `outputs/EXP-S4-007/` |
 | ANALYSIS-S6-002 | 2026-07-07 | 20f9cc3 + local script | ResidualShrinkSelection | COCO2017 val2017 `EXP-S4-006` eval outputs, 64 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, accept/new-error | 完成（派生分析；validation-only；不训练不下载） | `outputs/analysis/exp_s4_006_residual_shrink_selection/` |
 | ANALYSIS-S6-003 | 2026-07-07 | 7ef1753 + local script | FrozenResidualShrinkScheduleCheck | COCO2017 val2017 test-like `sample_000256`-`sample_000319`, 64 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, accept/new-error | 完成（frozen schedule 复核；不调参不训练不下载） | `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/` |
+| ANALYSIS-S6-004 | 2026-07-07 | c43d9a8 + local script | MinimalClosureReportWithShrinkM3 | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 shrink M3；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2034,12 +2035,12 @@ Pure refined 的 pseudo failure 明显高于 M0：1/4/7/13/19 dB 分别为 `0.87
 
 不要把该 naive residual DDPM 作为正向 M2/M3 路线。若继续研究 diffusion，应改成 restoration-aware 的条件短链：从 M0 或 residual CNN 输出附近初始化，只做小幅 residual correction；或以 `EXP-S4-006` residual CNN 作为 mean / teacher，再训练低噪声 conditional diffusion。第一版论文闭环仍应优先收敛 `EXP-S4-006` 的 residual CNN + semantic gate。
 
-### 派生汇总：Minimal Closure Report
+### ANALYSIS-S6-004：Minimal Closure Report with Shrink M3
 
 - 日期：2026-07-07
-- 项目版本：`20f9cc3d6d0444b3eee2a2ccab76bb04b9a18369` + uncommitted report script at run time
+- 项目版本：`c43d9a8` + uncommitted report script at run time
 - 阶段：S6 minimal closure derived analysis
-- 方法：MinimalClosureReport
+- 方法：MinimalClosureReportWithShrinkM3
 - 数据集：COCO2017 `val2017` subset outputs
 - 信道：AWGN
 - SNR：`[1, 4, 7, 13, 19]` dB；M1 negative reference 仅覆盖 `[1, 7, 19]` dB
@@ -2049,7 +2050,7 @@ Pure refined 的 pseudo failure 明显高于 M0：1/4/7/13/19 dB 分别为 `0.87
 
 ```bash
 python3 scripts/s6_make_minimal_closure_report.py --dry-run
-env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_make_minimal_closure_report.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_make_minimal_closure_report.py --overwrite
 ```
 
 - 关键源码：`scripts/s6_make_minimal_closure_report.py`
@@ -2057,6 +2058,8 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u al
   - `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/metrics.json`
   - `outputs/EXP-S2-002/metrics.json`
   - `outputs/EXP-S4-006/summary.csv`
+  - `outputs/analysis/exp_s4_006_residual_shrink_selection/summary.csv`
+  - `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/summary.csv`
   - `outputs/analysis/exp_s4_006_testlike_risk_rule_check/policy_summary.csv`
   - `outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/summary.csv`
 - 输出路径：`outputs/analysis/minimal_closure_report/`
@@ -2070,29 +2073,33 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u al
 | M1-BlindDiffusion-SDImg2Img | negative reference | exp_s2_002_16img_per_snr | -14.7485 | +0.3877 | N/A | failed due quality and semantic drift |
 | M2-SNRConditionedPixelResidualRestoration | positive restoration anchor | exp_s4_006_eval | +0.7235 | -0.0274 | 0.3344 | positive quality, needs semantic handling |
 | M3-ResidualRestorationTop1Fallback | conservative first M3 | exp_s4_006_eval | +0.4011 | -0.0104 | 0.3750 | safe conservative closure on pseudo-label metric |
+| M3-ResidualRestorationTop1ShrinkFallback | stronger conservative M3 candidate | validation selected / frozen test-like | +0.4584 | -0.0153 | 0.3750 | best conservative M3 candidate so far; test-like PSNR delta +0.4552 and new error 0 |
 | M3-SelectedRiskRuleCandidate | test-like candidate gate | testlike_policy | N/A | N/A | 0.4437 | not final; leaves AlexNet/GT-like risk |
 
 #### 结果总结
 
 该汇总把当前第一版闭环口径固定下来：M1 使用 SD img2img 空 prompt 是明确负结果，只作为 blind diffusion reference；M2 应写成 SNR-conditioned pixel residual restoration，是当前正向质量提升来源；M3 的保守第一版采用 top-1 semantic fallback，可以在 `EXP-S4-006` pseudo-label 口径下保证 final failure 不高于 M0，同时保留平均 `+0.4011` dB PSNR 和 `-0.0104` LPIPS 收益。
 
+刷新后的报告新增 `M3-ResidualRestorationTop1ShrinkFallback`：validation-only schedule 选择 `1 dB alpha=0.5`、其余 SNR `alpha=0.75`，validation 平均 PSNR delta 为 `+0.4584` dB，LPIPS delta 为 `-0.0153`；冻结到 test-like 后，平均 PSNR delta 为 `+0.4552` dB，比 full-strength top-1 fallback 高 `+0.0439` dB，accepted new error 为 0。因此它是当前最强保守 M3 候选，但仍是 pseudo-label/test-like 证据，不是监督标签安全证明。
+
 `selected_risk_rule` 继续作为候选/消融：test-like AlexNet 口径下有 1 个 accepted new error，COCO-object clean-correct 口径下仍有 2 个 GT-like new error；保守 ensemble veto 可清 COCO-object new error，但 PSNR 相比 top-1 为 `-0.1727` dB，过于保守。
 
 #### 复现备注
 
-该流程只读已有本地 outputs，不重新运行模型或分类器。正式运行时清空代理变量，metadata 中记录 `proxy_environment_present: []`。生成文件包括 `REPORT.md`、5 个 CSV 和 3 张 figure：
+该流程只读已有本地 outputs，不重新运行模型或分类器。正式运行时清空代理变量，metadata 中记录 `proxy_environment_present: []`。生成文件包括 `REPORT.md`、6 个 CSV 和 4 张 figure：
 
 - `outputs/analysis/minimal_closure_report/REPORT.md`
 - `outputs/analysis/minimal_closure_report/method_closure_summary.csv`
 - `outputs/analysis/minimal_closure_report/residual_per_snr_quality_semantics.csv`
 - `outputs/analysis/minimal_closure_report/blind_diffusion_negative_reference.csv`
+- `outputs/analysis/minimal_closure_report/residual_shrink_policy_tradeoff.csv`
 - `outputs/analysis/minimal_closure_report/testlike_policy_tradeoff.csv`
 - `outputs/analysis/minimal_closure_report/coco_object_clean_correct_tradeoff.csv`
 - `outputs/analysis/minimal_closure_report/figures/`
 
 #### 下一步
 
-围绕这个闭环继续推进：优先把 M3 从“事后 top-1 fallback”升级到 semantic-risk-aware residual training / model selection；若继续研究 diffusion，只做以 M2/refined/M0 附近初始化的短链 conditional residual correction。
+围绕这个闭环继续推进：优先把 residual strength / alpha 选择前移到 semantic-risk-aware residual training 或 validation model selection；若继续研究 diffusion，只做以 M2/refined/M0 附近初始化的短链 conditional residual correction。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 
