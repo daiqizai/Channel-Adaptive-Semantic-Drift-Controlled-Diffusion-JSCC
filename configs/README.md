@@ -37,3 +37,4 @@
 - `s5_testlike_risk_rule_classifier_ensemble_audit_exp_s4_006.yaml`：用多个冻结 torchvision ImageNet 分类器离线审计 test-like `selected_risk_rule` 的跨模型 repair/new-error 风险。
 - `s5_testlike_coco_object_clip_clean_eval_exp_s4_006.yaml`：用 COCO instance dominant object labels 和本地 OpenCLIP ViT-B/32，在 test-like split 上构造辅助 clean-correct 子集并复核各 gate policy 的 GT-like semantic failure/repair/new-error。
 - `s5_residual_diffusion_pilot_coco256_awgn.yaml`：对正式 256 张/SNR M0 export 训练一个 latent-free pixel residual DDPM pilot，验证 diffusion 是否适合作为保守残差建模器。
+- `s6_minimal_closure_report.yaml`：聚合 M0、M1、`EXP-S4-006` residual M2/M3 和 test-like 语义审计，生成第一版最小论文闭环报告与 tradeoff 图。

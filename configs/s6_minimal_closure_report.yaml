@@ -1,0 +1,34 @@
+phase: S6
+analysis_id: minimal_closure_report
+method: MinimalClosureReport
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  m0_formal_metrics: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export/metrics.json
+  m1_blind_diffusion_metrics: outputs/EXP-S2-002/metrics.json
+  residual_validation_summary: outputs/EXP-S4-006/summary.csv
+  residual_validation_report: outputs/EXP-S4-006/REPORT.md
+  testlike_policy_summary: outputs/analysis/exp_s4_006_testlike_risk_rule_check/policy_summary.csv
+  testlike_clean_correct_summary: outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/summary.csv
+
+methods:
+  m0: M0-DeepJSCC-HR
+  m1: M1-BlindDiffusion-SDImg2Img
+  m2: M2-SNRConditionedPixelResidualRestoration
+  m3_conservative: M3-ResidualRestorationTop1Fallback
+  m3_candidate: M3-SelectedRiskRuleCandidate
+
+notes:
+  - This is a derived closure report. It does not train, refine, classify, or download.
+  - EXP-S2-002 M1 uses 16 images/SNR at [1, 7, 19] and is a negative reference, not the same split as EXP-S4-006.
+  - EXP-S4-006 residual validation uses 64 images/SNR at [1, 4, 7, 13, 19].
+  - Test-like policy and COCO-object clean-correct tables are auxiliary semantic diagnostics, not final supervised truth.
+
+outputs:
+  output_dir: outputs/analysis/minimal_closure_report

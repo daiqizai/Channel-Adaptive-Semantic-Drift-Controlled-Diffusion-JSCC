@@ -1340,6 +1340,42 @@ outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/galleries/
 
 核心结论：64 个 test-like 原图中有 55 个满足 dominant COCO object 面积规则，其中 27 个 original 通过 CLIP clean-correct 过滤，形成 135 行 clean-correct 统计。`selected_risk_rule` 在该子集上 final failure 与 top-1 gate 相同，均为 `0.0815`，PSNR 高 `+0.0257` dB，有 `1` 个 GT-like repair 和 `2` 个 GT-like new error；`selected_risk_rule_plus_ensemble_veto` 把 new error 降到 `0`，final failure 降到 `0.0741`，但 repair 也降到 `0`，PSNR 相比 top-1 低 `-0.1727` dB。这个结果继续支持当前判断：更保守的 veto 能保护语义，但会明显牺牲 restoration 收益；COCO object CLIP 只是辅助 clean-correct 诊断，不替代真正带标签 ImageNet/Imagenette 评估。
 
+## S6 Minimal Closure Report
+
+已生成第一版最小闭环汇总报告。该流程不训练、不推理、不分类、不联网，只读取已有 metrics/CSV，把 M0、M1 负结果、`EXP-S4-006` residual M2/M3 和 test-like 语义审计汇总到同一个报告里。
+
+配置：
+
+```text
+configs/s6_minimal_closure_report.yaml
+```
+
+先检查输入：
+
+```bash
+python3 scripts/s6_make_minimal_closure_report.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_make_minimal_closure_report.py
+```
+
+输出：
+
+```text
+outputs/analysis/minimal_closure_report/REPORT.md
+outputs/analysis/minimal_closure_report/method_closure_summary.csv
+outputs/analysis/minimal_closure_report/residual_per_snr_quality_semantics.csv
+outputs/analysis/minimal_closure_report/blind_diffusion_negative_reference.csv
+outputs/analysis/minimal_closure_report/testlike_policy_tradeoff.csv
+outputs/analysis/minimal_closure_report/coco_object_clean_correct_tradeoff.csv
+outputs/analysis/minimal_closure_report/figures/
+```
+
+核心结论：`M1-BlindDiffusion-SDImg2Img` 保留为负参考，平均 PSNR 相比其 M0 输入下降 `-14.7485` dB、LPIPS 变差 `+0.3877`；`M2-SNRConditionedPixelResidualRestoration` 是正向 restoration anchor，`EXP-S4-006` 上平均 PSNR `+0.7235` dB、LPIPS `-0.0274`；`M3-ResidualRestorationTop1Fallback` 可作为保守第一版闭环，平均 PSNR `+0.4011` dB、LPIPS `-0.0104`，且同一 pseudo-label 口径下 semantic failure 不高于 M0。`selected_risk_rule` 仍只能作为候选/消融，因为 test-like 和 COCO-object clean-correct 诊断还留有 new-error 风险。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：
