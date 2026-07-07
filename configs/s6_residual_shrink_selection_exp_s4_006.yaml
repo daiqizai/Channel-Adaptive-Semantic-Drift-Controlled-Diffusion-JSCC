@@ -1,0 +1,67 @@
+phase: S6
+analysis_id: exp_s4_006_residual_shrink_selection
+method: ResidualShrinkSelection
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  source_experiment: EXP-S4-006
+  source_config: outputs/EXP-S4-006/config.yaml
+  source_summary_csv: outputs/EXP-S4-006/summary.csv
+  source_per_sample_csv: outputs/EXP-S4-006/per_sample.csv
+  original_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256/exports/original
+  m0_export_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256
+  refined_export_dir: outputs/EXP-S4-006/exports
+  jscc_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+shrink:
+  alphas: [0.25, 0.50, 0.75, 1.00]
+  formula: x_alpha = clamp(m0 + alpha * (refined - m0), 0, 1)
+  policies:
+    - m0
+    - always_alpha
+    - top1_fallback_alpha
+  selection:
+    validation_only: true
+    split: EXP-S4-006 eval split sample_000192-sample_000255
+    constraint: final_failure_rate <= m0_final_failure_rate_per_snr
+    objective: maximize_psnr_db_per_snr
+    primary_policy: top1_fallback_alpha
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 32
+  topk: 5
+
+evaluation:
+  image_batch_size: 16
+  sample_grid_count: 4
+  metrics:
+    - psnr
+    - ssim
+    - ms_ssim
+    - lpips_optional
+    - pseudo_final_failure
+    - accept_rate
+    - repair_count
+    - accepted_new_error_count
+
+notes:
+  - This is a derived validation-only analysis over existing EXP-S4-006 outputs.
+  - It does not train a model, run diffusion, change the JSCC checkpoint, or download data.
+  - Alpha is a residual-strength shrink factor; alpha=1.0 corresponds to the existing refined PNG.
+  - Results from this same validation split must not be reported as test-safe model selection.
+  - The goal is to test whether semantic drift mainly comes from over-strong residual refinement.
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_residual_shrink_selection

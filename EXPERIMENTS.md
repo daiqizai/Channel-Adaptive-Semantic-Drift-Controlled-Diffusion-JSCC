@@ -37,6 +37,7 @@
 | EXP-S4-005 | 2026-07-03 | 401d4bd + uncommitted local changes at run time | SNR-conditioned pixel residual refiner pilot | COCO2017 val2017 export subset, train 24 images/SNR, eval 8 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure, accept/reject | 完成（S5 latent-free restoration pilot；正向小样本结果） | `outputs/EXP-S4-005/` |
 | EXP-S4-006 | 2026-07-03 | 709f1c6 | SNR-conditioned pixel residual refiner validation | COCO2017 val2017 export subset, train 160 images/SNR, eval 64 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure, accept/reject | 完成（S5 residual validation；正向但需 detector error analysis） | `outputs/EXP-S4-006/` |
 | EXP-S4-007 | 2026-07-06 | 4f4eefb | SNR-conditioned pixel residual diffusion pilot | COCO2017 val2017 export subset, train 80 images/SNR, eval 16 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure, accept/reject, sampling time | 完成（S5 residual diffusion pilot；负结果） | `outputs/EXP-S4-007/` |
+| ANALYSIS-S6-002 | 2026-07-07 | 20f9cc3 + local script | ResidualShrinkSelection | COCO2017 val2017 `EXP-S4-006` eval outputs, 64 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, accept/new-error | 完成（派生分析；validation-only；不训练不下载） | `outputs/analysis/exp_s4_006_residual_shrink_selection/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2091,3 +2092,65 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u al
 #### 下一步
 
 围绕这个闭环继续推进：优先把 M3 从“事后 top-1 fallback”升级到 semantic-risk-aware residual training / model selection；若继续研究 diffusion，只做以 M2/refined/M0 附近初始化的短链 conditional residual correction。
+
+### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
+
+- 日期：2026-07-07
+- 项目版本：运行时基于 `20f9cc3d6d0444b3eee2a2ccab76bb04b9a18369` 之后的本轮新增脚本
+- 阶段：S6 validation-only model-selection analysis
+- 方法：ResidualShrinkSelection
+- 数据集：COCO2017 `val2017` subset outputs from `EXP-S4-006`
+- 数据 split / 样本 ID：`sample_000192`-`sample_000255`，5 个 SNR，共 320 行
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- 随机种子：42；本分析本身不使用随机采样
+- checkpoint：不重新加载 JSCC/refiner checkpoint；读取 `EXP-S4-006` 已有 PNG
+- config：`configs/s6_residual_shrink_selection_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_residual_shrink_selection.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_residual_shrink_selection.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_residual_shrink_selection.py --device cuda:0 --overwrite
+```
+
+- 关键源码：`scripts/s6_residual_shrink_selection.py`
+- 输入：
+  - `outputs/EXP-S4-006/per_sample.csv`
+  - `outputs/EXP-S4-006/exports/snr_XXdb/refined/`
+  - `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256/exports/original/`
+  - `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256/exports/snr_XXdb/reconstruction/`
+  - `outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth`
+- 输出路径：`outputs/analysis/exp_s4_006_residual_shrink_selection/`
+- 状态：完成；派生分析，不训练、不运行 diffusion、不下载
+
+#### 指标
+
+| Policy | Alpha/Schedule | Mean Delta PSNR | Mean Delta LPIPS | Final Failure | Delta Failure | Accept | New Error |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `top1_fallback_alpha` | 1.0 | +0.4011 | -0.0104 | 0.3750 | +0.0000 | 0.6406 | 0 |
+| `top1_fallback_alpha` | validation-selected `[0.5,0.75,0.75,0.75,0.75]` | +0.4584 | -0.0153 | 0.3750 | +0.0000 | 0.7438 | 0 |
+| `always_alpha` | 1.0 | +0.7235 | -0.0274 | 0.3344 | -0.0406 | 1.0000 | 28 |
+| `selected_always_m0_failure_constrained_schedule` | validation-selected | +0.5505 | -0.0253 | 0.3281 | -0.0469 | 0.8000 | 19 |
+
+#### 结果总结
+
+缩放残差强度能提升保守 top-1 fallback 的质量/语义 tradeoff：validation-only per-SNR schedule 在不提高 pseudo final failure 的前提下，比 full-strength top-1 fallback 多 `+0.0573` dB PSNR，并进一步改善 LPIPS。选出的 schedule 为：1 dB 用 `alpha=0.5`，4/7/13/19 dB 用 `alpha=0.75`。
+
+但是 always-accept 不能作为最终 M3。它的平均 final failure 低于 M0，是因为 repair 数量多于 new error；逐样本看仍有 19-28 个 accepted new error。该结果说明下一步应把 residual strength / alpha 控制放入训练或 validation model selection，而不是把 always-accept 包装成安全方法。
+
+#### 复现备注
+
+正式运行时清空代理变量，dry-run 记录 `proxy_environment_present: []`。输出包括：
+
+- `outputs/analysis/exp_s4_006_residual_shrink_selection/REPORT.md`
+- `outputs/analysis/exp_s4_006_residual_shrink_selection/summary.csv`
+- `outputs/analysis/exp_s4_006_residual_shrink_selection/per_sample.csv`
+- `outputs/analysis/exp_s4_006_residual_shrink_selection/selected_schedule.json`
+- `outputs/analysis/exp_s4_006_residual_shrink_selection/alpha_tradeoff.png`
+- `outputs/analysis/exp_s4_006_residual_shrink_selection/samples/`
+
+#### 下一步
+
+把该分析作为 M3 训练/选择设计依据：优先做 semantic-risk-aware residual CNN model selection 或在训练中加入残差幅度/语义风险约束；若继续 diffusion，只做从 M0/M2 附近初始化的短链 residual correction。
