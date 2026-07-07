@@ -1381,7 +1381,7 @@ outputs/analysis/minimal_closure_report/coco_object_clean_correct_tradeoff.csv
 outputs/analysis/minimal_closure_report/figures/
 ```
 
-核心结论：`M1-BlindDiffusion-SDImg2Img` 保留为负参考，平均 PSNR 相比其 M0 输入下降 `-14.7485` dB、LPIPS 变差 `+0.3877`；`M2-SNRConditionedPixelResidualRestoration` 是正向 restoration anchor，`EXP-S4-006` 上平均 PSNR `+0.7235` dB、LPIPS `-0.0274`；`M3-ResidualRestorationTop1Fallback` 可作为保守第一版闭环，平均 PSNR `+0.4011` dB、LPIPS `-0.0104`，且同一 pseudo-label 口径下 semantic failure 不高于 M0。`M3-ResidualRestorationTop1ShrinkFallback` 是当前最强保守候选：validation 平均 PSNR delta `+0.4584` dB，frozen held-out/test-like 平均 PSNR delta `+0.4689/+0.4552` dB，held-out/test-like accepted new error 均为 0。`selected_risk_rule` 仍只能作为候选/消融，因为 test-like 和 COCO-object clean-correct 诊断还留有 new-error 风险。
+核心结论：`M1-BlindDiffusion-SDImg2Img` 保留为负参考，平均 PSNR 相比其 M0 输入下降 `-14.7485` dB、LPIPS 变差 `+0.3877`；`M2-SNRConditionedPixelResidualRestoration` 是正向 restoration anchor，`EXP-S4-006` 上平均 PSNR `+0.7235` dB、LPIPS `-0.0274`；`M3-ResidualRestorationTop1Fallback` 可作为保守第一版闭环，平均 PSNR `+0.4011` dB、LPIPS `-0.0104`，且同一 pseudo-label 口径下 semantic failure 不高于 M0。`M3-ResidualRestorationTop1ShrinkFallback` 是固定 schedule 保守候选：validation 平均 PSNR delta `+0.4584` dB，frozen held-out/test-like 平均 PSNR delta `+0.4689/+0.4552` dB，held-out/test-like accepted new error 均为 0。最新 `adaptive_max_top1_consistent_alpha` 进一步把 validation/held-out/test-like PSNR delta 提升到 `+0.5584/+0.5664/+0.5691` dB，accepted new error 仍为 `0/0/0`；它是当前最强保守质量增强候选，但 repair 仍为 0。`selected_risk_rule` 仍只能作为候选/消融，因为 test-like 和 COCO-object clean-correct 诊断还留有 new-error 风险。
 
 ## S6 Residual Shrink Selection
 
@@ -1529,6 +1529,49 @@ outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/samples/
 ```
 
 核心结论：selected shrink M3 在 validation/held-out/test-like 上 PSNR delta 为 `+0.4584/+0.4689/+0.4552` dB，accepted new error 为 `0/0/0`；always-accept full strength 的 accepted new error 为 `28/10/25`，validation-constrained always-accept 仍有 `19/3/12` 个 new error。该目录提供 safe accept、protective reject、rejected good candidate 和 unsafe new-error 的样例 sheet，适合作为第一版 failure-case / reliability 小节素材。
+
+## S6 Adaptive Residual Alpha Policy
+
+已完成 per-sample adaptive residual alpha policy 派生分析。该流程只读取 validation、held-out、test-like 已有 alpha candidate PNG、本地 AlexNet 和 LPIPS 权重，不训练、不运行 diffusion、不重新生成 residual、不下载，也不在 held-out/test-like 上调参。
+
+核心规则：
+
+```text
+adaptive_max_top1_consistent_alpha:
+  choose largest alpha in [1.0, 0.75, 0.5, 0.25]
+  if candidate top-1 == M0 top-1
+  else fallback to M0
+```
+
+配置：
+
+```text
+configs/s6_adaptive_residual_alpha_policy_exp_s4_006.yaml
+```
+
+先检查输入：
+
+```bash
+python3 scripts/s6_apply_adaptive_residual_alpha_policy.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_apply_adaptive_residual_alpha_policy.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/REPORT.md
+outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv
+outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv
+outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/metadata.json
+outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/samples/
+```
+
+核心结论：adaptive max top-1-consistent alpha 在 validation/held-out/test-like 上 PSNR delta 为 `+0.5584/+0.5664/+0.5691` dB，accepted new error 为 `0/0/0`，强于 fixed shrink schedule 的 `+0.4584/+0.4689/+0.4552` dB。它仍没有 repair，missed repair 为 `45/31/70`，因此当前定位是更强的保守质量增强候选，而不是语义修复方法。
 
 ## 项目进度可视化汇总
 

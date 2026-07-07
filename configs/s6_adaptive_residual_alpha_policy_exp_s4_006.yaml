@@ -1,0 +1,79 @@
+phase: S6
+analysis_id: exp_s4_006_adaptive_residual_alpha_policy
+method: AdaptiveResidualAlphaPolicy
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  jscc_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+splits:
+  - name: validation
+    description: EXP-S4-006 validation eval samples, sample_000192-sample_000255
+    base_per_sample_csv: outputs/analysis/exp_s4_006_residual_shrink_selection/per_sample.csv
+    base_policy: m0
+    candidate_root: outputs/analysis/exp_s4_006_residual_shrink_selection/candidates
+  - name: held-out
+    description: Frozen held-out check, sample_000000-sample_000031
+    base_per_sample_csv: outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/per_sample.csv
+    base_policy: m0
+    candidate_root: outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/candidates
+  - name: test-like
+    description: Frozen test-like check, sample_000256-sample_000319
+    base_per_sample_csv: outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/per_sample.csv
+    base_policy: m0
+    candidate_root: outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/candidates
+
+alphas: [0.25, 0.5, 0.75, 1.0]
+
+fixed_validation_top1_shrink_schedule:
+  "1": 0.5
+  "4": 0.75
+  "7": 0.75
+  "13": 0.75
+  "19": 0.75
+
+policies:
+  - m0
+  - top1_full_strength
+  - fixed_validation_top1_shrink_schedule
+  - adaptive_max_top1_consistent_alpha
+  - always_full_strength
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 32
+  topk: 5
+
+evaluation:
+  image_batch_size: 16
+  sample_grid_count: 4
+  metrics:
+    - psnr
+    - ssim
+    - ms_ssim
+    - lpips_optional
+    - pseudo_final_failure
+    - accept_rate
+    - selected_alpha
+    - accepted_new_error_count
+    - missed_repair_count
+
+notes:
+  - This derived analysis applies a receiver-side adaptive residual alpha policy to existing alpha candidates.
+  - It does not train a model, run diffusion, recompute residual candidates, tune on held-out/test-like, or download data.
+  - adaptive_max_top1_consistent_alpha selects the largest alpha whose candidate classifier top-1 equals M0 top-1, else falls back to M0.
+  - Under the same frozen top-1 classifier, that adaptive rule cannot create accepted new errors on M0-correct samples.
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy

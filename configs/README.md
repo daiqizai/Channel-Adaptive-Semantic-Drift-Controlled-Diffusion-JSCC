@@ -42,3 +42,4 @@
 - `s6_heldout_residual_shrink_schedule_check_exp_s4_006.yaml`：把 validation 上选出的 residual shrink schedule 冻结后应用到 held-out split，复核其迁移质量和 accepted-new-error 风险。
 - `s6_testlike_residual_shrink_schedule_check_exp_s4_006.yaml`：把 validation 上选出的 residual shrink schedule 冻结后应用到 `sample_000256`-`sample_000319` test-like split，复核其迁移质量和 accepted-new-error 风险。
 - `s6_residual_shrink_artifact_gallery_exp_s4_006.yaml`：聚合 validation/held-out/test-like residual shrink 输出，生成 selected shrink M3 与 unsafe always-accept 的 policy summary、case counts 和样例 gallery。
+- `s6_adaptive_residual_alpha_policy_exp_s4_006.yaml`：在已有 residual alpha candidate PNG 上评估 per-sample 最大 top-1-consistent alpha 选择策略，比较 full-strength、fixed schedule、adaptive policy 和 always-accept。

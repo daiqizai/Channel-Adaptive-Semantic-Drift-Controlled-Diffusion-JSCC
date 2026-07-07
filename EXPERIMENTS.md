@@ -42,6 +42,7 @@
 | ANALYSIS-S6-004 | 2026-07-07 | 371833e + local script | MinimalClosureReportWithHeldoutShrinkM3 | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 held-out/test-like shrink M3；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
 | ANALYSIS-S6-005 | 2026-07-07 | 371833e + local script | FrozenHeldoutResidualShrinkScheduleCheck | COCO2017 val2017 held-out `sample_000000`-`sample_000031`, 32 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, accept/new-error | 完成（frozen schedule held-out 复核；不调参不训练不下载） | `outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/` |
 | ANALYSIS-S6-006 | 2026-07-07 | c19cc0f + local script | ResidualShrinkM3ArtifactGallery | COCO2017 val2017 validation/held-out/test-like residual shrink outputs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | policy summary, case counts, safe accept/protective reject/new-error galleries | 完成（派生 artifact；不训练不下载不调参） | `outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/` |
+| ANALYSIS-S6-007 | 2026-07-07 | fbcfe72 + local script | AdaptiveResidualAlphaPolicy | COCO2017 val2017 validation/held-out/test-like residual alpha candidates | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, selected alpha, accept/new-error | 完成（派生 policy；不训练不下载不调参） | `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2210,6 +2211,87 @@ Always-accept 仍作为负对照：full strength 在 validation/held-out/test-li
 #### 下一步
 
 把这些样例用于第一版 failure-case / reliability 小节；方法侧继续把 residual alpha/幅度控制前移到 residual CNN 训练、validation model selection 或短链 conditional residual diffusion。
+
+### ANALYSIS-S6-007：Adaptive Residual Alpha Policy
+
+- 日期：2026-07-07
+- 项目版本：`fbcfe72` + uncommitted adaptive-alpha script/config at run time
+- 阶段：S6 derived policy / residual strength control
+- 方法：AdaptiveResidualAlphaPolicy
+- 数据集：COCO2017 `val2017` validation、held-out、test-like residual alpha candidates
+- 数据 split / 样本 ID：
+  - validation：`sample_000192`-`sample_000255`，64 images/SNR
+  - held-out：`sample_000000`-`sample_000031`，32 images/SNR
+  - test-like：`sample_000256`-`sample_000319`，64 images/SNR
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_adaptive_residual_alpha_policy_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_apply_adaptive_residual_alpha_policy.py
+python3 scripts/s6_apply_adaptive_residual_alpha_policy.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_apply_adaptive_residual_alpha_policy.py --device cuda:0
+```
+
+- 关键源码：`scripts/s6_apply_adaptive_residual_alpha_policy.py`
+- 输入：
+  - `outputs/analysis/exp_s4_006_residual_shrink_selection/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_residual_shrink_selection/candidates/`
+  - `outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/candidates/`
+  - `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/candidates/`
+- 输出路径：`outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/`
+- 状态：完成；只读取已有 alpha candidate PNG、本地 AlexNet 和 LPIPS 权重，不训练、不运行 diffusion、不重新生成 residual、不下载、不在 held-out/test-like 上调参
+
+#### 指标
+
+| Split | Policy | Delta PSNR | Delta LPIPS | Failure Delta | Accept Rate | Mean Alpha | Repair | New Error | Missed Repair |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| validation | top1_full_strength | +0.4011 | -0.0104 | +0.0000 | 0.6406 | 1.0000 | 0 | 0 | 45 |
+| validation | fixed_validation_top1_shrink_schedule | +0.4584 | -0.0153 | +0.0000 | 0.7438 | 0.7111 | 0 | 0 | 45 |
+| validation | adaptive_max_top1_consistent_alpha | +0.5584 | -0.0189 | +0.0000 | 0.9062 | 0.8457 | 0 | 0 | 45 |
+| validation | always_full_strength | +0.7235 | -0.0274 | -0.0406 | 1.0000 | 1.0000 | 41 | 28 | 4 |
+| held-out | top1_full_strength | +0.4454 | -0.0113 | +0.0000 | 0.6687 | 1.0000 | 0 | 0 | 31 |
+| held-out | fixed_validation_top1_shrink_schedule | +0.4689 | -0.0150 | +0.0000 | 0.7625 | 0.7131 | 0 | 0 | 31 |
+| held-out | adaptive_max_top1_consistent_alpha | +0.5664 | -0.0174 | +0.0000 | 0.9187 | 0.8605 | 0 | 0 | 31 |
+| held-out | always_full_strength | +0.6853 | -0.0223 | -0.1000 | 1.0000 | 1.0000 | 26 | 10 | 5 |
+| test-like | top1_full_strength | +0.4113 | -0.0116 | +0.0000 | 0.6250 | 1.0000 | 0 | 0 | 70 |
+| test-like | fixed_validation_top1_shrink_schedule | +0.4552 | -0.0152 | +0.0000 | 0.7063 | 0.7102 | 0 | 0 | 70 |
+| test-like | adaptive_max_top1_consistent_alpha | +0.5691 | -0.0201 | +0.0000 | 0.8906 | 0.8482 | 0 | 0 | 70 |
+| test-like | always_full_strength | +0.7180 | -0.0270 | -0.0906 | 1.0000 | 1.0000 | 54 | 25 | 16 |
+
+Adaptive policy 的 per-SNR PSNR delta：
+
+| Split | 1 dB | 4 dB | 7 dB | 13 dB | 19 dB |
+|---|---:|---:|---:|---:|---:|
+| validation | +0.6850 | +0.5843 | +0.4802 | +0.5129 | +0.5294 |
+| held-out | +0.6843 | +0.6055 | +0.4704 | +0.5143 | +0.5573 |
+| test-like | +0.7739 | +0.6078 | +0.4638 | +0.4754 | +0.5246 |
+
+#### 结果总结
+
+`adaptive_max_top1_consistent_alpha` 在每个样本上从 `alpha=1.0/0.75/0.5/0.25` 中选择最大且 candidate top-1 与 M0 top-1 一致的 residual 强度，否则回退 M0。该规则不使用原图，只使用接收端已有 M0、alpha candidates 和冻结 AlexNet 的 top-1 一致性。
+
+它在 validation/held-out/test-like 上把 PSNR delta 提升到 `+0.5584/+0.5664/+0.5691` dB，明显强于固定 per-SNR shrink schedule 的 `+0.4584/+0.4689/+0.4552` dB，并且在同一 AlexNet pseudo-label 口径下 accepted new error 保持 `0/0/0`。always-accept 仍然质量更高但有 `28/10/25` 个 new error，继续作为负对照。
+
+需要特别记录的是：adaptive policy 没有产生 repair，且 missed repair 为 `45/31/70`。因此它是当前最强的保守质量增强候选，不是语义修复方法。下一步应把这种 per-sample alpha 选择前移到 residual CNN 的训练目标、validation model selection 或短链 conditional residual diffusion 的幅度控制里，而不是继续只做离线后验选择。
+
+#### 复现备注
+
+正式运行时清空代理变量，未下载模型或数据。metadata 记录 `proxy_environment_present: []`；由于脚本/config 在运行时尚未提交，`git_dirty_state` 为 `dirty`。输出包括：
+
+- `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/REPORT.md`
+- `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv`
+- `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv`
+- `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/metadata.json`
+- `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/samples/`
+
+#### 下一步
+
+把 adaptive alpha policy 写入 M3 方法候选：短期可作为 `M3-AdaptiveResidualAlphaTop1Fallback` 的派生方案；中期应训练一个 receiver-side alpha/risk predictor 或在 residual CNN 中加入 semantic-risk-aware amplitude loss，使方法不依赖离线枚举 alpha candidates。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 
