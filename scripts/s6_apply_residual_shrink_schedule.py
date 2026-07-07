@@ -42,7 +42,7 @@ from s6_residual_shrink_selection import (
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Apply frozen residual-shrink schedules to test-like outputs.")
+    parser = argparse.ArgumentParser(description="Apply frozen residual-shrink schedules to held-out/test-like outputs.")
     parser.add_argument("--config", default="configs/s6_testlike_residual_shrink_schedule_check_exp_s4_006.yaml")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--output-dir", default=None)
@@ -52,13 +52,22 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def input_value(config: dict[str, Any], key: str, legacy_key: str | None = None) -> str:
+    inputs = config["inputs"]
+    if key in inputs:
+        return str(inputs[key])
+    if legacy_key is not None and legacy_key in inputs:
+        return str(inputs[legacy_key])
+    raise KeyError(f"Missing input key: {key}")
+
+
 def validate_inputs(config: dict[str, Any], snrs: list[float]) -> dict[str, str]:
     paths = {
         "validation_shrink_schedule": resolve_project_path(config["inputs"]["validation_shrink_schedule"]),
         "validation_shrink_summary": resolve_project_path(config["inputs"]["validation_shrink_summary"]),
-        "testlike_source_config": resolve_project_path(config["inputs"]["testlike_source_config"]),
-        "testlike_per_sample_csv": resolve_project_path(config["inputs"]["testlike_per_sample_csv"]),
-        "testlike_summary_csv": resolve_project_path(config["inputs"]["testlike_summary_csv"]),
+        "source_config": resolve_project_path(input_value(config, "source_config", "testlike_source_config")),
+        "per_sample_csv": resolve_project_path(input_value(config, "per_sample_csv", "testlike_per_sample_csv")),
+        "summary_csv": resolve_project_path(input_value(config, "summary_csv", "testlike_summary_csv")),
         "original_dir": resolve_project_path(config["inputs"]["original_dir"]),
         "m0_export_dir": resolve_project_path(config["inputs"]["m0_export_dir"]),
         "refined_export_dir": resolve_project_path(config["inputs"]["refined_export_dir"]),
@@ -173,6 +182,7 @@ def make_report(
     summary_rows: list[dict[str, Any]],
     metadata: dict[str, Any],
 ) -> str:
+    split_name = str(config.get("split_name", "test-like"))
     all_rows = {row["policy"]: row for row in summary_rows if row["snr_db"] == "all"}
     top1_full = all_rows["top1_full_strength"]
     top1_shrink = all_rows["validation_top1_shrink_schedule"]
@@ -180,16 +190,16 @@ def make_report(
     always_constrained = all_rows["validation_always_m0_failure_constrained_schedule"]
     delta_shrink_vs_full = float(top1_shrink["delta_psnr_vs_m0_db"]) - float(top1_full["delta_psnr_vs_m0_db"])
     lines = [
-        "# Test-Like Frozen Residual Shrink Schedule Check",
+        f"# Frozen Residual Shrink Schedule Check: {split_name}",
         "",
-        "This report applies residual-shrink schedules selected on EXP-S4-006 validation outputs to the test-like split.",
-        "It does not tune alpha on test-like samples.",
+        f"This report applies residual-shrink schedules selected on EXP-S4-006 validation outputs to the {split_name} split.",
+        f"It does not tune alpha on {split_name} samples.",
         "",
         "## Bottom Line",
         "",
         f"- Full-strength top-1 fallback gives PSNR delta `{signed(top1_full['delta_psnr_vs_m0_db'])}` dB vs M0 with final failure delta `{signed(top1_full['delta_final_failure_vs_m0'])}`.",
         f"- Frozen validation top-1 shrink schedule gives PSNR delta `{signed(top1_shrink['delta_psnr_vs_m0_db'])}` dB vs M0 with final failure delta `{signed(top1_shrink['delta_final_failure_vs_m0'])}`.",
-        f"- Frozen shrink changes PSNR by `{signed(delta_shrink_vs_full)}` dB vs full-strength top-1 fallback on test-like.",
+        f"- Frozen shrink changes PSNR by `{signed(delta_shrink_vs_full)}` dB vs full-strength top-1 fallback on {split_name}.",
         f"- Always-accept full strength has `{always_full['accepted_new_error_count']}` accepted new errors; validation always-constrained schedule still has `{always_constrained['accepted_new_error_count']}`, so neither is a safe M3.",
         "",
         "## All-Policy Summary",
@@ -240,7 +250,7 @@ def make_report(
             "## Caveats",
             "",
             "- This is still a COCO pseudo-label/AlexNet auxiliary semantic metric.",
-            "- The schedule is frozen from validation, but this is still a test-like split from the same COCO val export family.",
+            f"- The schedule is frozen from validation, but this is still a {split_name} split from the same COCO val export family.",
             "- A smaller residual strength may improve validation but must be verified before becoming final M3.",
             "",
             "## Frozen Schedules",
@@ -288,7 +298,7 @@ def main() -> None:
 
     device = resolve_device(args.device)
     image_batch_size = int(config["evaluation"]["image_batch_size"])
-    rows = read_csv(resolve_project_path(config["inputs"]["testlike_per_sample_csv"]))
+    rows = read_csv(resolve_project_path(input_value(config, "per_sample_csv", "testlike_per_sample_csv")))
     rows = sorted(rows, key=lambda row: (float(row["snr_db"]), row["sample"]))
     grouped: dict[float, list[dict[str, str]]] = {}
     for row in rows:
@@ -403,6 +413,7 @@ def main() -> None:
     metadata = {
         "analysis_id": config["analysis_id"],
         "method": config["method"],
+        "split_name": config.get("split_name", "test-like"),
         "project_commit": git_commit(),
         "git_dirty_state": git_dirty_state(),
         "python": sys.version,

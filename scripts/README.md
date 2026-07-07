@@ -39,6 +39,6 @@
 - `s5_residual_diffusion_pilot.py`：读取正式 256 张/SNR M0 export，训练一个小型 SNR-conditioned pixel residual DDPM；避开 Stable Diffusion、text prompt 和 SD VAE，用同一 pseudo semantic fallback 口径评估 residual diffusion。
 - `s6_make_minimal_closure_report.py`：只读取已有 metrics/CSV，聚合 M0/M1/M2/M3、residual shrink schedule、test-like gate 和 COCO-object clean-correct 结果，生成最小闭环报告、CSV 和 tradeoff 图。
 - `s6_residual_shrink_selection.py`：只读取 `EXP-S4-006` 已有 original/M0/refined PNG，生成 residual alpha shrink 候选并用冻结 AlexNet 与图像指标评估 always-accept、top-1 fallback 和 validation-only shrink schedule。
-- `s6_apply_residual_shrink_schedule.py`：把 validation 阶段冻结的 residual shrink schedule 应用到 test-like split，不在 test-like 上重新选 alpha，输出 policy summary、逐样本决策、final PNG 和样例拼图。
+- `s6_apply_residual_shrink_schedule.py`：把 validation 阶段冻结的 residual shrink schedule 应用到 held-out/test-like split，不在目标 split 上重新选 alpha，输出 policy summary、逐样本决策、final PNG 和样例拼图。
 - `run_s2_coco256_awgn_train.sh`：长任务脚本；负责断点续传 COCO2017 train/val、解压、检查图片数量，并启动 COCO-256 AWGN DeepJSCC GPU 训练。
 - `prepare_image_symlink_split.py`：从一个图片目录按固定 seed 生成不重叠的 train/val 符号链接切分，用于 COCO-val pilot 等临时高分辨率训练。

@@ -1381,7 +1381,7 @@ outputs/analysis/minimal_closure_report/coco_object_clean_correct_tradeoff.csv
 outputs/analysis/minimal_closure_report/figures/
 ```
 
-核心结论：`M1-BlindDiffusion-SDImg2Img` 保留为负参考，平均 PSNR 相比其 M0 输入下降 `-14.7485` dB、LPIPS 变差 `+0.3877`；`M2-SNRConditionedPixelResidualRestoration` 是正向 restoration anchor，`EXP-S4-006` 上平均 PSNR `+0.7235` dB、LPIPS `-0.0274`；`M3-ResidualRestorationTop1Fallback` 可作为保守第一版闭环，平均 PSNR `+0.4011` dB、LPIPS `-0.0104`，且同一 pseudo-label 口径下 semantic failure 不高于 M0。`M3-ResidualRestorationTop1ShrinkFallback` 是当前最强保守候选：validation 平均 PSNR delta `+0.4584` dB，frozen test-like 平均 PSNR delta `+0.4552` dB，test-like accepted new error 为 0。`selected_risk_rule` 仍只能作为候选/消融，因为 test-like 和 COCO-object clean-correct 诊断还留有 new-error 风险。
+核心结论：`M1-BlindDiffusion-SDImg2Img` 保留为负参考，平均 PSNR 相比其 M0 输入下降 `-14.7485` dB、LPIPS 变差 `+0.3877`；`M2-SNRConditionedPixelResidualRestoration` 是正向 restoration anchor，`EXP-S4-006` 上平均 PSNR `+0.7235` dB、LPIPS `-0.0274`；`M3-ResidualRestorationTop1Fallback` 可作为保守第一版闭环，平均 PSNR `+0.4011` dB、LPIPS `-0.0104`，且同一 pseudo-label 口径下 semantic failure 不高于 M0。`M3-ResidualRestorationTop1ShrinkFallback` 是当前最强保守候选：validation 平均 PSNR delta `+0.4584` dB，frozen held-out/test-like 平均 PSNR delta `+0.4689/+0.4552` dB，held-out/test-like accepted new error 均为 0。`selected_risk_rule` 仍只能作为候选/消融，因为 test-like 和 COCO-object clean-correct 诊断还留有 new-error 风险。
 
 ## S6 Residual Shrink Selection
 
@@ -1427,6 +1427,40 @@ outputs/analysis/exp_s4_006_residual_shrink_selection/samples/
 ```
 
 核心结论：validation-only top-1 fallback shrink schedule 选择 `1 dB alpha=0.5`、其余 SNR `alpha=0.75`，平均 PSNR delta 从 full-strength top-1 fallback 的 `+0.4011` dB 提升到 `+0.4584` dB，LPIPS delta 从 `-0.0104` 改到 `-0.0153`，pseudo final failure 仍不高于 M0。always-accept 虽然 PSNR 更高且平均 failure 可低于 M0，但仍包含 19-28 个 accepted new error，不能作为最终 M3。
+
+## S6 Held-Out Frozen Residual Shrink Schedule Check
+
+已完成 frozen residual shrink schedule 的 held-out 复核。该流程读取 validation shrink selection 的 `selected_schedule.json` 和 held-out gate check 已有 refined PNG，不训练、不运行 diffusion、不下载，也不在 held-out 上重新选择 alpha。
+
+配置：
+
+```text
+configs/s6_heldout_residual_shrink_schedule_check_exp_s4_006.yaml
+```
+
+先检查 frozen schedule 与输入：
+
+```bash
+python3 scripts/s6_apply_residual_shrink_schedule.py --config configs/s6_heldout_residual_shrink_schedule_check_exp_s4_006.yaml --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_apply_residual_shrink_schedule.py --config configs/s6_heldout_residual_shrink_schedule_check_exp_s4_006.yaml --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/REPORT.md
+outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/summary.csv
+outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/per_sample.csv
+outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/metadata.json
+outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/samples/
+```
+
+核心结论：frozen validation top-1 shrink schedule 在 held-out 上平均 PSNR delta 为 `+0.4689` dB，比 full-strength top-1 fallback 的 `+0.4454` dB 高 `+0.0236` dB；LPIPS delta 为 `-0.0150`，pseudo final failure 仍等于 M0，accepted new error 为 0。always-accept full strength / validation always-constrained schedule 分别仍有 10/3 个 accepted new error，不能作为最终 M3。
 
 ## S6 Test-Like Frozen Residual Shrink Schedule Check
 

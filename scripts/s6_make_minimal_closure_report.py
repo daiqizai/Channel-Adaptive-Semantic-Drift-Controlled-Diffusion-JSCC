@@ -246,6 +246,7 @@ def build_method_summary(
     m1_rows: list[dict[str, Any]],
     residual_rows: list[dict[str, Any]],
     shrink_validation_rows: list[dict[str, str]],
+    heldout_shrink_rows: list[dict[str, str]],
     testlike_shrink_rows: list[dict[str, str]],
     testlike_rows: list[dict[str, str]],
     clean_rows: list[dict[str, str]],
@@ -258,6 +259,8 @@ def build_method_summary(
     selected = row_for_policy(testlike_rows, "selected_risk_rule")
     selected_plus = row_for_policy(testlike_rows, "selected_risk_rule_plus_ensemble_veto")
     validation_shrink = row_for_policy(shrink_validation_rows, "selected_top1_fallback_shrink_schedule")
+    heldout_top1_full = row_for_policy(heldout_shrink_rows, "top1_full_strength")
+    heldout_shrink = row_for_policy(heldout_shrink_rows, "validation_top1_shrink_schedule")
     testlike_top1_full = row_for_policy(testlike_shrink_rows, "top1_full_strength")
     testlike_shrink = row_for_policy(testlike_shrink_rows, "validation_top1_shrink_schedule")
     clean_selected = row_for_policy(clean_rows, "selected_risk_rule", subset="clean_correct")
@@ -330,6 +333,12 @@ def build_method_summary(
             "mean_delta_psnr_vs_m0_db": to_float(validation_shrink["delta_psnr_vs_m0_db"]),
             "mean_delta_lpips_vs_m0": to_float(validation_shrink["delta_lpips_vs_m0"]),
             "testlike_psnr_db": to_float(testlike_shrink["final_psnr_db"]),
+            "heldout_delta_psnr_vs_m0_db": to_float(heldout_shrink["delta_psnr_vs_m0_db"]),
+            "heldout_delta_psnr_vs_full_top1_db": to_float(heldout_shrink["delta_psnr_vs_m0_db"])
+            - to_float(heldout_top1_full["delta_psnr_vs_m0_db"]),
+            "heldout_delta_lpips_vs_m0": to_float(heldout_shrink["delta_lpips_vs_m0"]),
+            "heldout_final_failure_rate": to_float(heldout_shrink["final_failure_rate"]),
+            "heldout_accepted_new_error_count": to_int(heldout_shrink["accepted_new_error_count"]),
             "testlike_delta_psnr_vs_m0_db": to_float(testlike_shrink["delta_psnr_vs_m0_db"]),
             "testlike_delta_psnr_vs_full_top1_db": to_float(testlike_shrink["delta_psnr_vs_m0_db"])
             - to_float(testlike_top1_full["delta_psnr_vs_m0_db"]),
@@ -411,10 +420,15 @@ def build_clean_policy_export(rows: list[dict[str, str]]) -> list[dict[str, Any]
     return output
 
 
-def build_shrink_policy_export(validation_rows: list[dict[str, str]], testlike_rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+def build_shrink_policy_export(
+    validation_rows: list[dict[str, str]],
+    heldout_rows: list[dict[str, str]],
+    testlike_rows: list[dict[str, str]],
+) -> list[dict[str, Any]]:
     output = []
     for split, rows in [
         ("validation_exp_s4_006", validation_rows),
+        ("frozen_heldout", heldout_rows),
         ("frozen_testlike", testlike_rows),
     ]:
         for row in rows:
@@ -517,9 +531,10 @@ def plot_testlike_tradeoff(policy_rows: list[dict[str, Any]], clean_rows: list[d
 
 
 def plot_shrink_tradeoff(shrink_rows: list[dict[str, Any]], path: Path) -> None:
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.4), sharey=True)
+    fig, axes = plt.subplots(1, 3, figsize=(14, 4.4), sharey=True)
     splits = [
         ("validation_exp_s4_006", "Validation Shrink Tradeoff"),
+        ("frozen_heldout", "Frozen Held-Out Shrink Tradeoff"),
         ("frozen_testlike", "Frozen Test-Like Shrink Tradeoff"),
     ]
     for ax, (split, title) in zip(axes, splits):
@@ -576,7 +591,7 @@ def make_report(
         f"- `M1-BlindDiffusion-SDImg2Img` remains a negative reference: mean PSNR delta vs its M0 input is `{signed(float(m1['mean_delta_psnr_vs_m0_db']))}` dB and mean LPIPS delta is `{signed(float(m1['mean_delta_lpips_vs_m0']))}`.",
         f"- `M2-SNRConditionedPixelResidualRestoration` is the positive restoration anchor: mean PSNR delta vs M0 is `{signed(float(m2['mean_delta_psnr_vs_m0_db']))}` dB and mean LPIPS delta is `{signed(float(m2['mean_delta_lpips_vs_m0']))}` on `EXP-S4-006`.",
         f"- `M3-ResidualRestorationTop1Fallback` is the conservative first closure: mean PSNR delta vs M0 is `{signed(float(m3['mean_delta_psnr_vs_m0_db']))}` dB, mean LPIPS delta is `{signed(float(m3['mean_delta_lpips_vs_m0']))}`, and pseudo semantic failure does not increase vs M0.",
-        f"- `M3-ResidualRestorationTop1ShrinkFallback` is the strongest conservative candidate so far: validation PSNR delta is `{signed(float(m3_shrink['mean_delta_psnr_vs_m0_db']))}` dB, frozen test-like PSNR delta is `{signed(float(m3_shrink['testlike_delta_psnr_vs_m0_db']))}` dB, and test-like `accepted_new_error_count={m3_shrink['testlike_accepted_new_error_count']}`.",
+        f"- `M3-ResidualRestorationTop1ShrinkFallback` is the strongest conservative candidate so far: validation PSNR delta is `{signed(float(m3_shrink['mean_delta_psnr_vs_m0_db']))}` dB, frozen held-out/test-like PSNR deltas are `{signed(float(m3_shrink['heldout_delta_psnr_vs_m0_db']))}`/`{signed(float(m3_shrink['testlike_delta_psnr_vs_m0_db']))}` dB, and held-out/test-like accepted new errors are `{m3_shrink['heldout_accepted_new_error_count']}`/`{m3_shrink['testlike_accepted_new_error_count']}`.",
         f"- `selected_risk_rule` is still only a candidate: on test-like it gives `{signed(float(selected['delta_psnr_vs_top1_db']))}` dB vs top-1 and `accepted_new_error_count={selected['accepted_new_error_count']}`; on COCO-object clean-correct it still has `clean_correct_new_error_count={selected['clean_correct_new_error_count']}`.",
         f"- The ensemble-veto safety bound removes COCO-object clean-correct new errors, but its clean-correct PSNR delta vs top-1 is `{signed(float(safety['clean_correct_delta_psnr_vs_top1_db']))}` dB, so it is too conservative as the main M3.",
         "",
@@ -685,7 +700,7 @@ def make_report(
             "## Caveats",
             "",
             "- M1 and EXP-S4-006 use different sample counts and splits; M1 is included as a negative reference, not a same-split comparison.",
-            "- Residual shrink was selected on validation and frozen on test-like; it is a stronger conservative candidate, not supervised-label proof.",
+            "- Residual shrink was selected on validation and frozen on held-out/test-like splits; it is a stronger conservative candidate, not supervised-label proof.",
             "- COCO pseudo-label, classifier ensemble, caption CLIP, and COCO-object CLIP are auxiliary semantic diagnostics.",
             "- The first closure should not claim that the selected risk rule is cross-model or supervised-label safe.",
             "",
@@ -742,6 +757,7 @@ def main() -> None:
     m1_metrics = load_json(resolve_project_path(config["inputs"]["m1_blind_diffusion_metrics"]))
     residual_summary = read_csv(resolve_project_path(config["inputs"]["residual_validation_summary"]))
     shrink_validation_summary = read_csv(resolve_project_path(config["inputs"]["residual_shrink_validation_summary"]))
+    heldout_shrink_summary = read_csv(resolve_project_path(config["inputs"]["heldout_residual_shrink_summary"]))
     testlike_shrink_summary = read_csv(resolve_project_path(config["inputs"]["testlike_residual_shrink_summary"]))
     testlike_policy = read_csv(resolve_project_path(config["inputs"]["testlike_policy_summary"]))
     clean_summary = read_csv(resolve_project_path(config["inputs"]["testlike_clean_correct_summary"]))
@@ -749,7 +765,7 @@ def main() -> None:
     formal_m0_rows = build_formal_m0_rows(m0_metrics)
     m1_rows = build_m1_rows(m1_metrics)
     residual_rows = build_residual_rows(residual_summary)
-    shrink_rows = build_shrink_policy_export(shrink_validation_summary, testlike_shrink_summary)
+    shrink_rows = build_shrink_policy_export(shrink_validation_summary, heldout_shrink_summary, testlike_shrink_summary)
     testlike_rows = build_testlike_policy_export(testlike_policy)
     clean_rows = build_clean_policy_export(clean_summary)
     method_summary = build_method_summary(
@@ -757,6 +773,7 @@ def main() -> None:
         m1_rows,
         residual_rows,
         shrink_validation_summary,
+        heldout_shrink_summary,
         testlike_shrink_summary,
         testlike_policy,
         clean_summary,

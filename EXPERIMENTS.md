@@ -39,7 +39,8 @@
 | EXP-S4-007 | 2026-07-06 | 4f4eefb | SNR-conditioned pixel residual diffusion pilot | COCO2017 val2017 export subset, train 80 images/SNR, eval 16 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo drift/failure, accept/reject, sampling time | 完成（S5 residual diffusion pilot；负结果） | `outputs/EXP-S4-007/` |
 | ANALYSIS-S6-002 | 2026-07-07 | 20f9cc3 + local script | ResidualShrinkSelection | COCO2017 val2017 `EXP-S4-006` eval outputs, 64 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, accept/new-error | 完成（派生分析；validation-only；不训练不下载） | `outputs/analysis/exp_s4_006_residual_shrink_selection/` |
 | ANALYSIS-S6-003 | 2026-07-07 | 7ef1753 + local script | FrozenResidualShrinkScheduleCheck | COCO2017 val2017 test-like `sample_000256`-`sample_000319`, 64 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, accept/new-error | 完成（frozen schedule 复核；不调参不训练不下载） | `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/` |
-| ANALYSIS-S6-004 | 2026-07-07 | c43d9a8 + local script | MinimalClosureReportWithShrinkM3 | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 shrink M3；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
+| ANALYSIS-S6-004 | 2026-07-07 | 371833e + local script | MinimalClosureReportWithHeldoutShrinkM3 | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 held-out/test-like shrink M3；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
+| ANALYSIS-S6-005 | 2026-07-07 | 371833e + local script | FrozenHeldoutResidualShrinkScheduleCheck | COCO2017 val2017 held-out `sample_000000`-`sample_000031`, 32 images/SNR | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, pseudo final failure, accept/new-error | 完成（frozen schedule held-out 复核；不调参不训练不下载） | `outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2038,9 +2039,9 @@ Pure refined 的 pseudo failure 明显高于 M0：1/4/7/13/19 dB 分别为 `0.87
 ### ANALYSIS-S6-004：Minimal Closure Report with Shrink M3
 
 - 日期：2026-07-07
-- 项目版本：`c43d9a8` + uncommitted report script at run time
+- 项目版本：`371833e` + uncommitted report script/config at run time
 - 阶段：S6 minimal closure derived analysis
-- 方法：MinimalClosureReportWithShrinkM3
+- 方法：MinimalClosureReportWithHeldoutShrinkM3
 - 数据集：COCO2017 `val2017` subset outputs
 - 信道：AWGN
 - SNR：`[1, 4, 7, 13, 19]` dB；M1 negative reference 仅覆盖 `[1, 7, 19]` dB
@@ -2059,6 +2060,7 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u al
   - `outputs/EXP-S2-002/metrics.json`
   - `outputs/EXP-S4-006/summary.csv`
   - `outputs/analysis/exp_s4_006_residual_shrink_selection/summary.csv`
+  - `outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/summary.csv`
   - `outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/summary.csv`
   - `outputs/analysis/exp_s4_006_testlike_risk_rule_check/policy_summary.csv`
   - `outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/summary.csv`
@@ -2073,14 +2075,14 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u al
 | M1-BlindDiffusion-SDImg2Img | negative reference | exp_s2_002_16img_per_snr | -14.7485 | +0.3877 | N/A | failed due quality and semantic drift |
 | M2-SNRConditionedPixelResidualRestoration | positive restoration anchor | exp_s4_006_eval | +0.7235 | -0.0274 | 0.3344 | positive quality, needs semantic handling |
 | M3-ResidualRestorationTop1Fallback | conservative first M3 | exp_s4_006_eval | +0.4011 | -0.0104 | 0.3750 | safe conservative closure on pseudo-label metric |
-| M3-ResidualRestorationTop1ShrinkFallback | stronger conservative M3 candidate | validation selected / frozen test-like | +0.4584 | -0.0153 | 0.3750 | best conservative M3 candidate so far; test-like PSNR delta +0.4552 and new error 0 |
+| M3-ResidualRestorationTop1ShrinkFallback | stronger conservative M3 candidate | validation selected / frozen held-out/test-like | +0.4584 | -0.0153 | 0.3750 | best conservative M3 candidate so far; held-out/test-like PSNR delta +0.4689/+0.4552 and new error 0/0 |
 | M3-SelectedRiskRuleCandidate | test-like candidate gate | testlike_policy | N/A | N/A | 0.4437 | not final; leaves AlexNet/GT-like risk |
 
 #### 结果总结
 
 该汇总把当前第一版闭环口径固定下来：M1 使用 SD img2img 空 prompt 是明确负结果，只作为 blind diffusion reference；M2 应写成 SNR-conditioned pixel residual restoration，是当前正向质量提升来源；M3 的保守第一版采用 top-1 semantic fallback，可以在 `EXP-S4-006` pseudo-label 口径下保证 final failure 不高于 M0，同时保留平均 `+0.4011` dB PSNR 和 `-0.0104` LPIPS 收益。
 
-刷新后的报告新增 `M3-ResidualRestorationTop1ShrinkFallback`：validation-only schedule 选择 `1 dB alpha=0.5`、其余 SNR `alpha=0.75`，validation 平均 PSNR delta 为 `+0.4584` dB，LPIPS delta 为 `-0.0153`；冻结到 test-like 后，平均 PSNR delta 为 `+0.4552` dB，比 full-strength top-1 fallback 高 `+0.0439` dB，accepted new error 为 0。因此它是当前最强保守 M3 候选，但仍是 pseudo-label/test-like 证据，不是监督标签安全证明。
+刷新后的报告新增 `M3-ResidualRestorationTop1ShrinkFallback`：validation-only schedule 选择 `1 dB alpha=0.5`、其余 SNR `alpha=0.75`，validation 平均 PSNR delta 为 `+0.4584` dB，LPIPS delta 为 `-0.0153`；冻结到 held-out 后，平均 PSNR delta 为 `+0.4689` dB，比 full-strength top-1 fallback 高 `+0.0236` dB，accepted new error 为 0；冻结到 test-like 后，平均 PSNR delta 为 `+0.4552` dB，比 full-strength top-1 fallback 高 `+0.0439` dB，accepted new error 为 0。因此它是当前最强保守 M3 候选，但仍是 pseudo-label/held-out/test-like 证据，不是监督标签安全证明。
 
 `selected_risk_rule` 继续作为候选/消融：test-like AlexNet 口径下有 1 个 accepted new error，COCO-object clean-correct 口径下仍有 2 个 GT-like new error；保守 ensemble veto 可清 COCO-object new error，但 PSNR 相比 top-1 为 `-0.1727` dB，过于保守。
 
@@ -2100,6 +2102,55 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u al
 #### 下一步
 
 围绕这个闭环继续推进：优先把 residual strength / alpha 选择前移到 semantic-risk-aware residual training 或 validation model selection；若继续研究 diffusion，只做以 M2/refined/M0 附近初始化的短链 conditional residual correction。
+
+### ANALYSIS-S6-005：EXP-S4-006 Held-Out Frozen Residual Shrink Schedule Check
+
+- 日期：2026-07-07
+- 项目版本：`371833e` + uncommitted generic split script/config at run time
+- 阶段：S6 held-out derived analysis
+- 方法：FrozenHeldoutResidualShrinkScheduleCheck
+- 数据集：COCO2017 `val2017` held-out `sample_000000`-`sample_000031`
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_heldout_residual_shrink_schedule_check_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_apply_residual_shrink_schedule.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_apply_residual_shrink_schedule.py --config configs/s6_heldout_residual_shrink_schedule_check_exp_s4_006.yaml --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_apply_residual_shrink_schedule.py --config configs/s6_heldout_residual_shrink_schedule_check_exp_s4_006.yaml --device cuda:0
+```
+
+- 关键源码：`scripts/s6_apply_residual_shrink_schedule.py`, `scripts/s6_residual_shrink_selection.py`
+- 输入：
+  - `outputs/analysis/exp_s4_006_residual_shrink_selection/selected_schedule.json`
+  - `outputs/analysis/exp_s4_006_heldout_gate_check/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_heldout_gate_check/exports/`
+  - `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256/`
+- 输出路径：`outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/`
+- 状态：完成；frozen schedule held-out 复核，不训练、不下载、不调参
+
+#### 指标
+
+| Policy | Delta PSNR vs M0 | Delta LPIPS vs M0 | Final Failure | Accept | Repair | Accepted New Error |
+|---|---:|---:|---:|---:|---:|---:|
+| top1_full_strength | +0.4454 | -0.0113 | 0.3250 | 0.6687 | 0 | 0 |
+| validation_top1_shrink_schedule | +0.4689 | -0.0150 | 0.3250 | 0.7625 | 0 | 0 |
+| always_full_strength | +0.6853 | -0.0223 | 0.2250 | 1.0000 | 26 | 10 |
+| validation_always_m0_failure_constrained_schedule | +0.5292 | -0.0217 | 0.2375 | 0.8000 | 17 | 3 |
+
+#### 结果总结
+
+Validation 选出的 top-1 shrink schedule 在 held-out split 继续成立：平均 PSNR delta 从 full-strength top-1 fallback 的 `+0.4454` dB 提升到 `+0.4689` dB，LPIPS delta 从 `-0.0113` 改到 `-0.0150`，pseudo final failure 仍等于 M0，accepted new error 为 0。always-accept 两条路线仍有 10/3 个 accepted new error，不能作为最终 M3。
+
+#### 复现备注
+
+该流程只读取已有 held-out refined PNG 和 frozen validation schedule，不重新训练 residual refiner，不运行 diffusion，不下载模型或数据。metadata 中记录 `proxy_environment_present: []` 和 `split_name: held-out`。
+
+#### 下一步
+
+把 validation、held-out、test-like 三段 shrink 证据并入 minimal closure report；后续把 alpha/残差幅度约束前移到 residual CNN 训练或 validation model selection。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 
