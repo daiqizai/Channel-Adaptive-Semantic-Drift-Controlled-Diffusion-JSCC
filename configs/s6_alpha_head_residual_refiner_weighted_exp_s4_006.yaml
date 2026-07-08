@@ -1,0 +1,87 @@
+phase: S6
+analysis_id: exp_s4_006_alpha_head_residual_refiner_weighted
+method: AlphaHeadResidualRefinerWeighted
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  base_refiner_checkpoint: outputs/EXP-S4-006/checkpoints/best.pt
+  adaptive_per_sample_csv: outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv
+  adaptive_summary_csv: outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv
+  two_stage_summary_csv: outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/summary.csv
+
+splits:
+  train_split: validation
+  eval_splits: [validation, held-out, test-like]
+
+source_policy:
+  target: adaptive_max_top1_consistent_alpha
+  full: top1_full_strength
+  m0: m0
+
+alphas: [0.0, 0.25, 0.5, 0.75, 1.0]
+
+model:
+  name: alpha_head_residual_refiner_weighted
+  base_channels: 48
+  num_blocks: 5
+  snr_norm_max: 20.0
+  residual_gates:
+    "1": 0.12
+    "4": 0.10
+    "7": 0.08
+    "13": 0.05
+    "19": 0.04
+  freeze_refiner: true
+  alpha_head_hidden: 64
+  alpha_head_dropout: 0.05
+
+training:
+  epochs: 180
+  batch_size: 32
+  num_workers: 4
+  lr: 0.001
+  weight_decay: 0.0001
+  grad_clip_norm: 1.0
+  ce_weight: 1.0
+  class_weighting: inverse_frequency
+  class_weight_power: 0.5
+  class_weight_normalize_mean: true
+  soft_mse_weight: 0.05
+  soft_l1_weight: 0.0
+  validation_every_epochs: 20
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 32
+  topk: 5
+
+evaluation:
+  image_batch_size: 16
+  sample_grid_count: 4
+  metrics:
+    - psnr
+    - ssim
+    - ms_ssim
+    - pseudo_final_failure
+    - accept_rate
+    - alpha_target_accuracy
+  lpips: omitted_to_avoid_weight_loading_or_download
+
+notes:
+  - This is the class-weighted follow-up to the first alpha-head residual refiner pilot.
+  - The alpha target distribution is imbalanced, so this config uses tempered inverse-frequency CE weights with power 0.5.
+  - The residual CNN weights are loaded from EXP-S4-006 and frozen by default; only the alpha head is trained.
+  - Evaluation still applies a frozen AlexNet top-1 consistency gate before accepting the predicted-alpha candidate.
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_alpha_head_residual_refiner_weighted

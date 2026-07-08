@@ -44,6 +44,6 @@
 - `s6_apply_adaptive_residual_alpha_policy.py`：读取已有 residual alpha candidates，在 validation/held-out/test-like 上评估 per-sample 最大 top-1-consistent alpha 策略，并输出 policy summary、逐样本决策、metadata 和样例拼图。
 - `s6_apply_two_stage_residual_alpha_policy.py`：读取 adaptive residual alpha 的已有 `per_sample.csv`，组合出 full-strength-then-fixed-schedule 的 two-stage 策略，并只计算无需外部权重的 PSNR/SSIM/MS-SSIM 与语义计数。
 - `s6_train_receiver_alpha_predictor.py`：从 adaptive alpha 决策表提取接收端可见特征，在 validation 上训练小型 tabular alpha predictor，并在预测 alpha 后用 top-1 fallback 保护输出。
-- `s6_train_alpha_head_residual_refiner.py`：加载 `EXP-S4-006` residual refiner checkpoint，冻结 residual CNN 并训练附着其上的 alpha head，用 adaptive alpha pseudo target 探索训练侧 residual amplitude control。
+- `s6_train_alpha_head_residual_refiner.py`：加载 `EXP-S4-006` residual refiner checkpoint，冻结 residual CNN 并训练附着其上的 alpha head，用 adaptive alpha pseudo target 探索训练侧 residual amplitude control；支持可选 `training.class_weighting: inverse_frequency` 的 class-weighted CE follow-up。
 - `run_s2_coco256_awgn_train.sh`：长任务脚本；负责断点续传 COCO2017 train/val、解压、检查图片数量，并启动 COCO-256 AWGN DeepJSCC GPU 训练。
 - `prepare_image_symlink_split.py`：从一个图片目录按固定 seed 生成不重叠的 train/val 符号链接切分，用于 COCO-val pilot 等临时高分辨率训练。

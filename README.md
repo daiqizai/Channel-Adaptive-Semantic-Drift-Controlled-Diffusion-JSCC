@@ -1661,10 +1661,16 @@ outputs/analysis/exp_s4_006_receiver_alpha_predictor/figures/receiver_alpha_pred
 
 已完成第一版训练侧 alpha head 探索。该流程加载 `EXP-S4-006` residual refiner checkpoint，默认冻结 residual CNN，只训练一个附着在 refiner feature 上的 alpha head；训练目标来自 validation split 的 `adaptive_max_top1_consistent_alpha` pseudo target。评估时仍使用 AlexNet top-1 fallback，因此这是训练侧探索，不是新的 M3 闭环。
 
-配置：
+普通 CE 配置：
 
 ```text
 configs/s6_alpha_head_residual_refiner_pilot_exp_s4_006.yaml
+```
+
+class-weighted follow-up 配置：
+
+```text
+configs/s6_alpha_head_residual_refiner_weighted_exp_s4_006.yaml
 ```
 
 先检查输入和本地权重：
@@ -1673,10 +1679,16 @@ configs/s6_alpha_head_residual_refiner_pilot_exp_s4_006.yaml
 python3 scripts/s6_train_alpha_head_residual_refiner.py --dry-run
 ```
 
-运行：
+普通 CE 运行：
 
 ```bash
 env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --device cuda:0
+```
+
+weighted 运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_weighted_exp_s4_006.yaml --device cuda:0
 ```
 
 输出：
@@ -1688,9 +1700,14 @@ outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/per_sample.csv
 outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/train_history.csv
 outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/metadata.json
 outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/figures/alpha_head_tradeoff.png
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_weighted/REPORT.md
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_weighted/summary.csv
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_weighted/per_sample.csv
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_weighted/train_history.csv
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_weighted/metadata.json
 ```
 
-核心结论：alpha-head pilot 在 validation/held-out/test-like 上 PSNR delta 为 `+0.3846/+0.3808/+0.3623` dB，accepted new error 为 `0/0/0`，但低于 full-strength top-1 fallback、two-stage policy 和 receiver predictor。它的 target-alpha accuracy 为 `0.6687/0.6500/0.5844`，且明显偏向预测 `alpha=1.0`。这说明把 alpha head 接进 residual CNN 是正确的下一类实验，但冻结 refiner 特征 + 普通 CE 不够；下一步应做 class-weighted alpha loss、联合训练或直接加入 semantic-risk-aware residual amplitude loss。
+核心结论：alpha-head pilot 在 validation/held-out/test-like 上 PSNR delta 为 `+0.3846/+0.3808/+0.3623` dB，accepted new error 为 `0/0/0`，但低于 full-strength top-1 fallback、two-stage policy 和 receiver predictor。它的 target-alpha accuracy 为 `0.6687/0.6500/0.5844`，且明显偏向预测 `alpha=1.0`。weighted follow-up 使用 tempered inverse-frequency CE 后，预测分布更分散，但 PSNR delta 变为 `+0.3851/+0.3506/+0.3166` dB，target-alpha accuracy 变为 `0.6375/0.5750/0.4969`，仍不如 full-strength top-1 fallback。这说明类别不均衡只是症状；冻结 refiner 特征 + alpha 分类目标不能学到真正的质量收益/语义风险边界。下一步应做 benefit/risk-aware alpha 目标、联合训练，或直接加入 semantic-risk-aware residual amplitude loss。
 
 ## 项目进度可视化汇总
 

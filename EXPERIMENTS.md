@@ -49,6 +49,7 @@
 | ANALYSIS-S6-011 | 2026-07-09 | 4a466e8 + local script/config | ReceiverAlphaPredictor | COCO2017 val2017 validation/held-out/test-like adaptive alpha decisions and candidate PNGs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, target alpha accuracy, accept/new-error | 完成（validation-only tabular predictor；不训练图像模型不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_receiver_alpha_predictor/` |
 | ANALYSIS-S6-012 | 2026-07-09 | 4a466e8 + local script/config | MinimalClosureReportWithReceiverAlphaPredictor | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink/adaptive/two-stage/predictor alpha tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 receiver predictor；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
 | ANALYSIS-S6-013 | 2026-07-09 | a7076eb + local script/config | AlphaHeadResidualRefinerPilot | COCO2017 val2017 validation/held-out/test-like adaptive-alpha pseudo targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, target alpha accuracy, accept/new-error | 完成（冻结 residual CNN，仅训练 alpha head；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/` |
+| ANALYSIS-S6-014 | 2026-07-09 | 594db31 + local script/config | WeightedAlphaHeadResidualRefiner | COCO2017 val2017 validation/held-out/test-like adaptive-alpha pseudo targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, target alpha accuracy, accept/new-error | 完成（冻结 residual CNN，仅训练 class-weighted alpha head；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_weighted/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2647,6 +2648,78 @@ Alpha-head pilot 没有超过 full-strength top-1 fallback，也明显低于 two
 #### 复现备注
 
 正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。正式脚本只使用本地 `EXP-S4-006` checkpoint 和本地 AlexNet 权重，不加载 LPIPS，不下载任何模型或数据。运行时 `git_dirty_state=dirty` 是因为脚本和配置为本轮新增本地文件，结果记录为 `a7076eb + local script/config`。
+
+### ANALYSIS-S6-014：Weighted Alpha-Head Residual Refiner
+
+- 日期：2026-07-09
+- 项目版本：`594db31` + local script/config at run time
+- 阶段：S6 training-side alpha-control exploration
+- 方法：WeightedAlphaHeadResidualRefiner
+- 数据集：COCO2017 `val2017` validation / held-out / test-like adaptive-alpha pseudo targets
+- 数据 split：validation `320` 行用于训练 alpha head，held-out `160` 行和 test-like `320` 行只评估
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_alpha_head_residual_refiner_weighted_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_train_alpha_head_residual_refiner.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_weighted_exp_s4_006.yaml --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_weighted_exp_s4_006.yaml --device cuda:0
+```
+
+- 关键源码：`scripts/s6_train_alpha_head_residual_refiner.py`
+- 输入：
+  - `outputs/EXP-S4-006/checkpoints/best.pt`
+  - `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv`
+  - `outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/summary.csv`
+  - `outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth`
+- 输出路径：`outputs/analysis/exp_s4_006_alpha_head_residual_refiner_weighted/`
+- 状态：完成；加载 `EXP-S4-006` residual CNN，冻结 refiner，仅训练 alpha head；启用 tempered inverse-frequency CE weights；不运行 diffusion、不下载、不加载 LPIPS
+
+#### 方法
+
+本实验直接验证上一版 alpha-head 的主要怀疑点：pseudo target 类别不均衡。validation 训练目标分布为 `alpha=0.0/0.25/0.5/0.75/1.0 = 30/34/26/25/205`，因此训练中使用：
+
+- `class_weighting: inverse_frequency`
+- `class_weight_power: 0.5`
+- `class_weight_normalize_mean: true`
+
+得到 class weights `[1.1132, 1.0457, 1.1958, 1.2195, 0.4259]`。其余结构与 `ANALYSIS-S6-013` 一致：冻结 residual CNN，只训练 alpha head；评估时预测一个 alpha 候选，再用 AlexNet top-1 consistency gate 保护输出。
+
+#### 指标
+
+| Split | Policy | Delta PSNR | Failure Delta | Accept | Target Alpha Acc | New Error | Missed Repair |
+|---|---|---:|---:|---:|---:|---:|---:|
+| validation | full_strength_top1_fallback | +0.4011 | +0.0000 | 0.6406 |  | 0 | 41 |
+| validation | alpha_head_predicted_top1_fallback | +0.3851 | +0.0000 | 0.8094 | 0.6375 | 0 | 25 |
+| held-out | full_strength_top1_fallback | +0.4454 | +0.0000 | 0.6687 |  | 0 | 26 |
+| held-out | alpha_head_predicted_top1_fallback | +0.3506 | +0.0000 | 0.7875 | 0.5750 | 0 | 16 |
+| test-like | full_strength_top1_fallback | +0.4113 | +0.0000 | 0.6250 |  | 0 | 54 |
+| test-like | alpha_head_predicted_top1_fallback | +0.3166 | +0.0000 | 0.7562 | 0.4969 | 0 | 36 |
+
+对比上一版普通 CE：
+
+| Policy | validation | held-out | test-like | Target Alpha Acc | New Error |
+|---|---:|---:|---:|---:|---:|
+| unweighted alpha head | +0.3846 | +0.3808 | +0.3623 | 0.6687 / 0.6500 / 0.5844 | 0/0/0 |
+| weighted alpha head | +0.3851 | +0.3506 | +0.3166 | 0.6375 / 0.5750 / 0.4969 | 0/0/0 |
+| full-strength top-1 fallback | +0.4011 | +0.4454 | +0.4113 | N/A | 0/0/0 |
+| `adaptive_max_top1_consistent_alpha` | +0.5584 | +0.5664 | +0.5691 | N/A | 0/0/0 |
+
+#### 结果总结
+
+Weighted CE 把普通 CE 的 majority collapse 缓和了，但没有变成更好的 alpha policy。validation 上 unweighted 预测 `alpha=1.0` 为 `280/320`，weighted 降到 `223/320`，少数 alpha 预测明显增加；test-like 上 weighted 预测分布为 `0.0/0.25/0.5/0.75/1.0 = 64/21/5/21/209`，也比 unweighted 的 `39/5/0/9/267` 更分散。
+
+问题是更分散不等于更优。weighted 版 accept rate 更高，accepted new error 仍为 0，但 held-out/test-like PSNR 明显低于 unweighted 和 full-strength top-1 fallback。这说明 alpha head 当前学到的是“少数类覆盖”，不是“何时某个 alpha 能带来最大质量收益且不引发 semantic drift”。冻结 residual feature 本身也可能没有足够信息区分 `0.25/0.5/0.75` 的边界。
+
+结论：类别不均衡是症状之一，但不是主因。下一步不宜继续只调 CE 权重；应转向 benefit/risk-aware alpha 目标、联合微调 residual CNN，或在短链 conditional residual diffusion 中用 M0/refined 附近初始化并加入 identity/semantic-risk 约束。
+
+#### 复现备注
+
+正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。正式脚本只使用本地 `EXP-S4-006` checkpoint 和本地 AlexNet 权重，不加载 LPIPS，不下载任何模型或数据。运行时 `git_dirty_state=dirty` 是因为脚本和配置为本轮新增本地文件，结果记录为 `594db31 + local script/config`。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 

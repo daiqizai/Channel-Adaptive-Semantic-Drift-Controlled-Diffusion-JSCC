@@ -166,6 +166,32 @@ def alpha_index(alpha: float, alphas: list[float]) -> int:
     return min(range(len(alphas)), key=lambda idx: abs(float(alphas[idx]) - float(alpha)))
 
 
+def alpha_class_counts(rows: list[dict[str, Any]], num_classes: int) -> list[int]:
+    counts = [0 for _ in range(num_classes)]
+    for row in rows:
+        counts[int(row["target_alpha_index"])] += 1
+    return counts
+
+
+def class_weight_values(config: dict[str, Any], train_rows: list[dict[str, Any]]) -> list[float] | None:
+    strategy = str(config["training"].get("class_weighting", "none"))
+    if strategy in {"", "none", "false", "off"}:
+        return None
+    if strategy != "inverse_frequency":
+        raise ValueError(f"Unsupported class_weighting strategy: {strategy}")
+    counts = alpha_class_counts(train_rows, len(config["alphas"]))
+    if any(count == 0 for count in counts):
+        raise RuntimeError(f"Cannot use inverse-frequency class weights with empty alpha class: {counts}")
+    total = float(sum(counts))
+    power = float(config["training"].get("class_weight_power", 1.0))
+    raw = [(total / (len(counts) * float(count))) ** power for count in counts]
+    normalize_mean = bool(config["training"].get("class_weight_normalize_mean", True))
+    if normalize_mean:
+        scale = len(raw) / sum(raw)
+        raw = [weight * scale for weight in raw]
+    return [float(weight) for weight in raw]
+
+
 def validate_monotonic_gates(config: dict[str, Any], snrs: list[float]) -> dict[str, float]:
     gates = {snr: residual_gate(config, snr) for snr in snrs}
     ordered = sorted(gates)
@@ -339,6 +365,7 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     config: dict[str, Any],
     alphas_tensor: torch.Tensor,
+    class_weights: torch.Tensor | None,
     device: torch.device,
 ) -> dict[str, float]:
     model.train()
@@ -357,7 +384,7 @@ def train_one_epoch(
 
         optimizer.zero_grad(set_to_none=True)
         full_refined, logits = model(m0, snr_norm, gate, detach_features=freeze_refiner)
-        ce_loss = F.cross_entropy(logits, target_index)
+        ce_loss = F.cross_entropy(logits, target_index, weight=class_weights)
         probs = torch.softmax(logits, dim=-1)
         soft_alpha = torch.matmul(probs, alphas_tensor).view(-1, 1, 1, 1)
         soft_refined = (m0 + soft_alpha * (full_refined.detach() - m0)).clamp(0.0, 1.0)
@@ -392,6 +419,7 @@ def quick_eval(
     model: AlphaHeadResidualRefiner,
     loader: DataLoader,
     config: dict[str, Any],
+    class_weights: torch.Tensor | None,
     device: torch.device,
 ) -> dict[str, float]:
     model.eval()
@@ -404,7 +432,7 @@ def quick_eval(
         target_index = batch["target_alpha_index"].to(device, non_blocking=True)
         gate = gate_tensor(config, snr_db, device)
         _, logits = model(m0, snr_norm, gate, detach_features=True)
-        ce_loss = F.cross_entropy(logits, target_index)
+        ce_loss = F.cross_entropy(logits, target_index, weight=class_weights)
         pred = torch.argmax(logits, dim=-1)
         losses.append(float(ce_loss.detach().cpu()))
         accuracies.append(float((pred == target_index).float().mean().detach().cpu()))
@@ -617,6 +645,7 @@ def make_report(summary_rows: list[dict[str, Any]], config: dict[str, Any]) -> s
         "This pilot attaches a learned alpha head to the EXP-S4-006 residual refiner.",
         "The residual refiner is frozen by default; only the alpha head is trained on validation pseudo targets from adaptive alpha.",
         "No diffusion, LPIPS weight loading, or external download is used.",
+        f"Class weighting: `{config['training'].get('class_weighting', 'none')}`.",
         "",
         "## Bottom Line",
         "",
@@ -903,6 +932,7 @@ def main() -> None:
         str(config["source_policy"]["target"]),
     )
     train_rows = [row for row in all_rows if str(row["split"]) == str(config["splits"]["train_split"])]
+    class_weights_list = class_weight_values(config, train_rows)
     train_dataset = AlphaPolicyDataset(train_rows, float(config["model"]["snr_norm_max"]))
     train_loader = DataLoader(
         train_dataset,
@@ -931,6 +961,9 @@ def main() -> None:
         weight_decay=float(config["training"].get("weight_decay", 0.0)),
     )
     alphas_tensor = torch.tensor([float(item) for item in config["alphas"]], dtype=torch.float32, device=device)
+    class_weights = (
+        torch.tensor(class_weights_list, dtype=torch.float32, device=device) if class_weights_list is not None else None
+    )
     history: list[dict[str, Any]] = []
     best_eval = float("inf")
     best_path = output_dir / "checkpoints" / "best.pt"
@@ -939,10 +972,10 @@ def main() -> None:
     epochs = int(config["training"]["epochs"])
     validate_every = int(config["training"].get("validation_every_epochs", 20))
     for epoch in range(epochs):
-        train_stats = train_one_epoch(model, train_loader, optimizer, config, alphas_tensor, device)
+        train_stats = train_one_epoch(model, train_loader, optimizer, config, alphas_tensor, class_weights, device)
         row: dict[str, Any] = {"epoch": epoch, **train_stats}
         if (epoch + 1) % validate_every == 0 or epoch == epochs - 1:
-            eval_stats = quick_eval(model, eval_loader, config, device)
+            eval_stats = quick_eval(model, eval_loader, config, class_weights, device)
             row.update(eval_stats)
             if eval_stats["eval_ce_loss"] < best_eval:
                 best_eval = eval_stats["eval_ce_loss"]
@@ -1014,6 +1047,8 @@ def main() -> None:
         "training": config["training"],
         "classifier": config["classifier"],
         "base_info": base_info,
+        "target_alpha_train_counts": alpha_class_counts(train_rows, len(config["alphas"])),
+        "class_weights": class_weights_list or [],
         "proxy_environment_present": proxy_environment_present(),
         "download_note": "No model or data download is required; local AlexNet and EXP-S4-006 weights are used.",
         "package_versions": {
