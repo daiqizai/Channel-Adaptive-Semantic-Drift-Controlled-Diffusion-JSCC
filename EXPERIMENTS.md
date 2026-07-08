@@ -46,6 +46,8 @@
 | ANALYSIS-S6-008 | 2026-07-07 | bcfc1f1 + local script/config | MinimalClosureReportWithAdaptiveAlphaM3 | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink/adaptive-alpha tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 adaptive alpha M3；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
 | ANALYSIS-S6-009 | 2026-07-07 | 9cacff5 + local script/config | TwoStageResidualAlphaPolicy | COCO2017 val2017 validation/held-out/test-like adaptive alpha decisions | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, two-stage accept/fallback, accepted new error | 完成（派生 policy；不重分类；不训练不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/` |
 | ANALYSIS-S6-010 | 2026-07-07 | 9cacff5 + local script/config | MinimalClosureReportWithTwoStageAlphaAblation | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink/adaptive/two-stage alpha tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 two-stage alpha 消融；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
+| ANALYSIS-S6-011 | 2026-07-09 | 4a466e8 + local script/config | ReceiverAlphaPredictor | COCO2017 val2017 validation/held-out/test-like adaptive alpha decisions and candidate PNGs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, target alpha accuracy, accept/new-error | 完成（validation-only tabular predictor；不训练图像模型不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_receiver_alpha_predictor/` |
+| ANALYSIS-S6-012 | 2026-07-09 | 4a466e8 + local script/config | MinimalClosureReportWithReceiverAlphaPredictor | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink/adaptive/two-stage/predictor alpha tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 receiver predictor；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2458,6 +2460,122 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u al
 #### 下一步
 
 方法侧下一步不应继续堆后验策略，而应把 alpha 选择变成可学习或训练期约束：训练 receiver-side alpha/risk predictor，或在 residual CNN/短链 conditional residual diffusion 中加入 semantic-risk-aware residual amplitude 控制。
+
+### ANALYSIS-S6-011：Receiver Alpha Predictor
+
+- 日期：2026-07-09
+- 项目版本：`4a466e8` + local script/config at run time
+- 阶段：S6 learned deployability pilot
+- 方法：ReceiverAlphaPredictor
+- 数据集：COCO2017 `val2017` validation / held-out / test-like adaptive-alpha decisions and candidate PNGs
+- 数据 split：validation `320` 行用于训练，held-out `160` 行和 test-like `320` 行只评估
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_receiver_alpha_predictor_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_train_receiver_alpha_predictor.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_receiver_alpha_predictor.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_receiver_alpha_predictor.py --device cuda:0
+```
+
+- 关键源码：`scripts/s6_train_receiver_alpha_predictor.py`
+- 输入：
+  - `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv`
+  - `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/summary.csv`
+  - validation/held-out/test-like residual alpha candidate PNG roots
+  - `outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth`
+- 输出路径：`outputs/analysis/exp_s4_006_receiver_alpha_predictor/`
+- 状态：完成；validation-only 训练小型 tabular predictor，不训练图像模型、不运行 diffusion、不重新生成 residual、不下载；LPIPS 省略以避免外部权重加载
+
+#### 方法
+
+Predictor 使用接收端可见特征：
+
+- SNR 数值和 SNR one-hot；
+- M0 top-1 confidence；
+- full-strength candidate top-1 confidence、confidence delta/ratio、是否与 M0 top-1 一致；
+- M0 图像均值/方差/edge proxy；
+- full-strength residual 的 MAE/RMSE/P95/max/signed mean。
+
+训练目标是 validation 上 `adaptive_max_top1_consistent_alpha` 的 `selected_alpha` pseudo target。评估时只对预测 alpha 的候选图运行冻结 AlexNet；若 candidate top-1 与 M0 top-1 不一致，则回退 M0。
+
+#### 指标
+
+| Split | Delta PSNR | Failure Delta | Accept | Target Alpha Acc | Pred Alpha <= Oracle | New Error | Missed Repair |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| validation | +0.5584 | +0.0000 | 0.9062 | 1.0000 | 1.0000 | 0 | 45 |
+| held-out | +0.5099 | +0.0000 | 0.8375 | 0.7500 | 0.8813 | 0 | 31 |
+| test-like | +0.4871 | +0.0000 | 0.7906 | 0.7000 | 0.8563 | 0 | 70 |
+
+对比：
+
+| Policy | validation | held-out | test-like | New Error |
+|---|---:|---:|---:|---:|
+| `fixed_validation_top1_shrink_schedule` | +0.4584 | +0.4689 | +0.4552 | 0/0/0 |
+| `full_then_fixed_schedule` | +0.4831 | +0.5009 | +0.4875 | 0/0/0 |
+| `receiver_alpha_predictor_top1_fallback` | +0.5584 | +0.5099 | +0.4871 | 0/0/0 |
+| `adaptive_max_top1_consistent_alpha` | +0.5584 | +0.5664 | +0.5691 | 0/0/0 |
+
+#### 结果总结
+
+Receiver alpha predictor 在 validation 上完全拟合 adaptive alpha pseudo target，并在 held-out 上略高于 two-stage；但 test-like 只与 two-stage 基本持平，仍明显低于 exhaustive adaptive alpha。它说明“学 alpha”方向有价值，但当前 tabular 特征不足以稳定复制 oracle adaptive alpha。由于最终仍用 top-1 consistency gate，accepted new error 维持 `0/0/0`，但 repair 仍为 0，missed repair 仍为 `45/31/70`。
+
+结论：该结果应写成 learned deployability pilot，而不是当前最强 M3。下一步应把 alpha/risk 预测并入 residual CNN 训练或使用更强的 receiver-side 特征，而不是继续堆浅层后验规则。
+
+#### 复现备注
+
+正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。正式脚本只使用本地 AlexNet 权重，不加载 LPIPS，不下载任何模型或数据。
+
+### ANALYSIS-S6-012：Minimal Closure Report With Receiver Alpha Predictor
+
+- 日期：2026-07-09
+- 项目版本：`4a466e8` + local script/config at run time
+- 阶段：S6 derived closure report
+- 方法：MinimalClosureReportWithReceiverAlphaPredictor
+- 数据集：COCO2017 `val2017` existing outputs and analysis CSVs
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_minimal_closure_report.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_make_minimal_closure_report.py scripts/s6_train_receiver_alpha_predictor.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_make_minimal_closure_report.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_make_minimal_closure_report.py --overwrite
+```
+
+- 关键源码：`scripts/s6_make_minimal_closure_report.py`
+- 新增输入：`outputs/analysis/exp_s4_006_receiver_alpha_predictor/summary.csv`
+- 输出路径：`outputs/analysis/minimal_closure_report/`
+- 状态：完成；只读取已有 metrics/CSV，不训练、不运行 diffusion、不重算分类器、不下载
+
+#### 指标
+
+| Method | Split | Mean Delta PSNR | Mean Delta LPIPS | Mean Failure | New Error | Status |
+|---|---|---:|---:|---:|---:|---|
+| M3-TwoStageResidualAlphaTop1Fallback | validation / held-out / test-like | +0.4831 / +0.5009 / +0.4875 | N/A | 0.3750 / 0.3250 / 0.4719 | 0 / 0 / 0 | deployability ablation |
+| M3-ReceiverAlphaPredictorTop1Fallback | validation / held-out / test-like | +0.5584 / +0.5099 / +0.4871 | N/A | 0.3750 / 0.3250 / 0.4719 | 0 / 0 / 0 | learned deployability pilot |
+| M3-AdaptiveResidualAlphaTop1Fallback | validation / held-out / test-like | +0.5584 / +0.5664 / +0.5691 | -0.0189 / -0.0174 / -0.0201 | 0.3750 / 0.3250 / 0.4719 | 0 / 0 / 0 | strongest conservative candidate |
+
+#### 结果总结
+
+本轮刷新把 `ANALYSIS-S6-011` 的 receiver alpha predictor 并入最小闭环报告。`outputs/analysis/minimal_closure_report/REPORT.md` 现在把 alpha-control 线拆成：
+
+- `M3-AdaptiveResidualAlphaTop1Fallback`：当前最强保守质量增强候选；
+- `M3-ReceiverAlphaPredictorTop1Fallback`：learned 部署 pilot，held-out 略优于 two-stage，但 test-like 未超过 two-stage；
+- `M3-TwoStageResidualAlphaTop1Fallback`：少候选检查的非学习部署消融；
+- `M3-ResidualRestorationTop1ShrinkFallback`：固定 schedule 消融/备选。
+
+新增输出包括 `receiver_alpha_predictor_tradeoff.csv`。报告仍保留 caveat：receiver predictor 是 validation pseudo-target 训练结果，LPIPS 被省略，不能作为 supervised semantic proof。
+
+#### 下一步
+
+停止在浅层后验 alpha 规则上继续细调；下一步应进入训练侧：在 residual CNN 中加入 alpha/risk head，或设计短链 conditional residual diffusion，从模型内部学习何时放大/收缩 residual。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 

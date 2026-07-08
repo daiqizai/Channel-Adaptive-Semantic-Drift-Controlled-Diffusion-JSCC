@@ -1342,7 +1342,7 @@ outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/galleries/
 
 ## S6 Minimal Closure Report
 
-已生成第一版最小闭环汇总报告，并已刷新纳入 residual shrink、adaptive alpha 和 two-stage alpha M3 候选/消融。该流程不训练、不推理、不分类、不联网，只读取已有 metrics/CSV，把 M0、M1 负结果、`EXP-S4-006` residual M2/M3、residual strength/alpha policy 和 test-like 语义审计汇总到同一个报告里。
+已生成第一版最小闭环汇总报告，并已刷新纳入 residual shrink、adaptive alpha、two-stage alpha 和 receiver alpha predictor M3 候选/消融。该流程不训练、不推理、不分类、不联网，只读取已有 metrics/CSV，把 M0、M1 负结果、`EXP-S4-006` residual M2/M3、residual strength/alpha policy 和 test-like 语义审计汇总到同一个报告里。
 
 配置：
 
@@ -1378,12 +1378,13 @@ outputs/analysis/minimal_closure_report/blind_diffusion_negative_reference.csv
 outputs/analysis/minimal_closure_report/residual_shrink_policy_tradeoff.csv
 outputs/analysis/minimal_closure_report/adaptive_residual_alpha_policy_tradeoff.csv
 outputs/analysis/minimal_closure_report/two_stage_residual_alpha_policy_tradeoff.csv
+outputs/analysis/minimal_closure_report/receiver_alpha_predictor_tradeoff.csv
 outputs/analysis/minimal_closure_report/testlike_policy_tradeoff.csv
 outputs/analysis/minimal_closure_report/coco_object_clean_correct_tradeoff.csv
 outputs/analysis/minimal_closure_report/figures/
 ```
 
-核心结论：`M1-BlindDiffusion-SDImg2Img` 保留为负参考，平均 PSNR 相比其 M0 输入下降 `-14.7485` dB、LPIPS 变差 `+0.3877`；`M2-SNRConditionedPixelResidualRestoration` 是正向 restoration anchor，`EXP-S4-006` 上平均 PSNR `+0.7235` dB、LPIPS `-0.0274`；`M3-ResidualRestorationTop1Fallback` 可作为保守第一版闭环，平均 PSNR `+0.4011` dB、LPIPS `-0.0104`，且同一 pseudo-label 口径下 semantic failure 不高于 M0。`M3-ResidualRestorationTop1ShrinkFallback` 是固定 schedule 保守候选：validation 平均 PSNR delta `+0.4584` dB，frozen held-out/test-like 平均 PSNR delta `+0.4689/+0.4552` dB，held-out/test-like accepted new error 均为 0。`M3-AdaptiveResidualAlphaTop1Fallback` 是当前最强保守候选：validation/held-out/test-like PSNR delta 为 `+0.5584/+0.5664/+0.5691` dB，accepted new error 为 `0/0/0`；但 repair 仍为 0。`M3-TwoStageResidualAlphaTop1Fallback` 是部署性消融：validation/held-out/test-like PSNR delta 为 `+0.4831/+0.5009/+0.4875` dB，new error 仍为 `0/0/0`，但低于 exhaustive adaptive alpha。`selected_risk_rule` 仍只能作为候选/消融，因为 test-like 和 COCO-object clean-correct 诊断还留有 new-error 风险。
+核心结论：`M1-BlindDiffusion-SDImg2Img` 保留为负参考，平均 PSNR 相比其 M0 输入下降 `-14.7485` dB、LPIPS 变差 `+0.3877`；`M2-SNRConditionedPixelResidualRestoration` 是正向 restoration anchor，`EXP-S4-006` 上平均 PSNR `+0.7235` dB、LPIPS `-0.0274`；`M3-ResidualRestorationTop1Fallback` 可作为保守第一版闭环，平均 PSNR `+0.4011` dB、LPIPS `-0.0104`，且同一 pseudo-label 口径下 semantic failure 不高于 M0。`M3-ResidualRestorationTop1ShrinkFallback` 是固定 schedule 保守候选：validation 平均 PSNR delta `+0.4584` dB，frozen held-out/test-like 平均 PSNR delta `+0.4689/+0.4552` dB，held-out/test-like accepted new error 均为 0。`M3-AdaptiveResidualAlphaTop1Fallback` 是当前最强保守候选：validation/held-out/test-like PSNR delta 为 `+0.5584/+0.5664/+0.5691` dB，accepted new error 为 `0/0/0`；但 repair 仍为 0。`M3-TwoStageResidualAlphaTop1Fallback` 是部署性消融：validation/held-out/test-like PSNR delta 为 `+0.4831/+0.5009/+0.4875` dB，new error 仍为 `0/0/0`，但低于 exhaustive adaptive alpha。`M3-ReceiverAlphaPredictorTop1Fallback` 是 learned 部署 pilot：validation/held-out/test-like PSNR delta 为 `+0.5584/+0.5099/+0.4871` dB，new error 为 `0/0/0`，接近 two-stage 但仍低于 exhaustive adaptive alpha。`selected_risk_rule` 仍只能作为候选/消融，因为 test-like 和 COCO-object clean-correct 诊断还留有 new-error 风险。
 
 ## S6 Residual Shrink Selection
 
@@ -1619,6 +1620,42 @@ outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/figures/two_stage_po
 ```
 
 核心结论：two-stage policy 在 validation/held-out/test-like 上 PSNR delta 为 `+0.4831/+0.5009/+0.4875` dB，accepted new error 为 `0/0/0`，比 fixed schedule 的 `+0.4584/+0.4689/+0.4552` dB 略好，但低于 exhaustive adaptive alpha 的 `+0.5584/+0.5664/+0.5691` dB。它适合作为“少候选检查的部署折中”消融，不替代当前最强的 adaptive alpha。
+
+## S6 Receiver Alpha Predictor
+
+已完成 receiver-side alpha predictor pilot。该流程读取 adaptive alpha 决策表和候选图，在 validation 上训练一个很小的 tabular predictor，特征只包含接收端可见信息：SNR、M0/full candidate 的 classifier confidence、full candidate 是否与 M0 top-1 一致，以及 M0 到 full candidate 的 residual 图像统计。评估时仍对预测 alpha 的候选图执行 top-1 fallback，因此它是 learned deployability pilot，不是语义修复方法。
+
+配置：
+
+```text
+configs/s6_receiver_alpha_predictor_exp_s4_006.yaml
+```
+
+先检查输入和本地权重：
+
+```bash
+python3 scripts/s6_train_receiver_alpha_predictor.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_receiver_alpha_predictor.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_receiver_alpha_predictor/REPORT.md
+outputs/analysis/exp_s4_006_receiver_alpha_predictor/summary.csv
+outputs/analysis/exp_s4_006_receiver_alpha_predictor/per_sample.csv
+outputs/analysis/exp_s4_006_receiver_alpha_predictor/features.csv
+outputs/analysis/exp_s4_006_receiver_alpha_predictor/model_metadata.json
+outputs/analysis/exp_s4_006_receiver_alpha_predictor/training_history.csv
+outputs/analysis/exp_s4_006_receiver_alpha_predictor/figures/receiver_alpha_predictor_tradeoff.png
+```
+
+核心结论：receiver predictor 在 validation/held-out/test-like 上 PSNR delta 为 `+0.5584/+0.5099/+0.4871` dB，accepted new error 为 `0/0/0`。它在 validation 上完全拟合 adaptive alpha pseudo target，held-out 比 two-stage 略高，test-like 与 two-stage 基本持平，但仍低于 exhaustive adaptive alpha。这说明“学 alpha”方向值得继续，但当前 tabular 特征还不够，应把 alpha/risk 控制进一步放进 residual CNN 训练或更强的 receiver-side predictor。
 
 ## 项目进度可视化汇总
 

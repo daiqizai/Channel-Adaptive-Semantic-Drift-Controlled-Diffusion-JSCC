@@ -1,0 +1,84 @@
+phase: S6
+analysis_id: exp_s4_006_receiver_alpha_predictor
+method: ReceiverAlphaPredictor
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  adaptive_summary_csv: outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv
+  adaptive_per_sample_csv: outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv
+  two_stage_summary_csv: outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/summary.csv
+
+splits:
+  - name: validation
+    role: train
+    candidate_root: outputs/analysis/exp_s4_006_residual_shrink_selection/candidates
+  - name: held-out
+    role: eval
+    candidate_root: outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/candidates
+  - name: test-like
+    role: eval
+    candidate_root: outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/candidates
+
+alphas: [0.0, 0.25, 0.5, 0.75, 1.0]
+alpha_labels:
+  "0.0": fallback_m0
+  "0.25": alpha_0p25
+  "0.5": alpha_0p5
+  "0.75": alpha_0p75
+  "1.0": alpha_1
+
+source_policies:
+  m0: m0
+  full: top1_full_strength
+  fixed: fixed_validation_top1_shrink_schedule
+  oracle: adaptive_max_top1_consistent_alpha
+
+predictor:
+  model_type: small_mlp
+  hidden_units: 16
+  epochs: 800
+  learning_rate: 0.01
+  weight_decay: 0.001
+  class_weighting: inverse_frequency
+  target_policy: adaptive_max_top1_consistent_alpha
+  target_field: selected_alpha
+  train_split: validation
+  seed: 42
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 32
+  topk: 5
+
+evaluation:
+  image_batch_size: 16
+  metrics:
+    - psnr
+    - ssim
+    - ms_ssim
+    - pseudo_final_failure
+    - accept_rate
+    - predicted_alpha
+    - accepted_new_error_count
+    - missed_repair_count
+  lpips: omitted_to_avoid_weight_loading_or_download
+
+notes:
+  - This derived analysis trains a tiny tabular receiver-side alpha predictor on validation only.
+  - Receiver-visible features include SNR, M0/full-candidate classifier confidence, full-candidate top-1 agreement with M0, and M0-to-full residual image statistics.
+  - It uses adaptive max top-1-consistent alpha as a pseudo target but does not use original images as predictor features.
+  - At evaluation time the predicted alpha candidate is still protected by the same top-1 consistency gate before acceptance.
+  - The run loads only the local frozen AlexNet classifier weight and intentionally omits LPIPS to avoid external weight loading.
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_receiver_alpha_predictor

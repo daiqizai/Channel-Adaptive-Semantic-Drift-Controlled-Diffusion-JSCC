@@ -250,6 +250,7 @@ def build_method_summary(
     testlike_shrink_rows: list[dict[str, str]],
     adaptive_rows: list[dict[str, str]],
     two_stage_rows: list[dict[str, str]],
+    receiver_rows: list[dict[str, str]],
     testlike_rows: list[dict[str, str]],
     clean_rows: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
@@ -300,6 +301,27 @@ def build_method_summary(
         row
         for row in two_stage_rows
         if row.get("split") == "test-like" and row.get("policy") == "full_then_fixed_schedule" and row.get("snr_db") == "all"
+    )
+    receiver_validation = next(
+        row
+        for row in receiver_rows
+        if row.get("split") == "validation"
+        and row.get("policy") == "receiver_alpha_predictor_top1_fallback"
+        and row.get("snr_db") == "all"
+    )
+    receiver_heldout = next(
+        row
+        for row in receiver_rows
+        if row.get("split") == "held-out"
+        and row.get("policy") == "receiver_alpha_predictor_top1_fallback"
+        and row.get("snr_db") == "all"
+    )
+    receiver_testlike = next(
+        row
+        for row in receiver_rows
+        if row.get("split") == "test-like"
+        and row.get("policy") == "receiver_alpha_predictor_top1_fallback"
+        and row.get("snr_db") == "all"
     )
     clean_selected = row_for_policy(clean_rows, "selected_risk_rule", subset="clean_correct")
     clean_selected_plus = row_for_policy(clean_rows, "selected_risk_rule_plus_ensemble_veto", subset="clean_correct")
@@ -435,6 +457,32 @@ def build_method_summary(
             "testlike_accepted_new_error_count": to_int(two_stage_testlike["accepted_new_error_count"]),
             "testlike_missed_repair_count": to_int(two_stage_testlike["missed_repair_count"]),
             "status": "uses at most two candidate checks; below exhaustive adaptive alpha",
+        },
+        {
+            "method": "M3-ReceiverAlphaPredictorTop1Fallback",
+            "role": "learned deployability pilot",
+            "split": "validation_heldout_testlike_receiver_alpha_predictor",
+            "snrs": "[1,4,7,13,19]",
+            "mean_psnr_db": to_float(receiver_validation["final_psnr_db"]),
+            "mean_ms_ssim": to_float(receiver_validation["final_ms_ssim"]),
+            "mean_semantic_failure": to_float(receiver_validation["final_failure_rate"]),
+            "mean_delta_failure_vs_m0": to_float(receiver_validation["delta_final_failure_vs_m0"]),
+            "mean_delta_psnr_vs_m0_db": to_float(receiver_validation["delta_psnr_vs_m0_db"]),
+            "mean_delta_lpips_vs_m0": "",
+            "target_alpha_accuracy": to_float(receiver_validation["target_alpha_accuracy"]),
+            "accepted_new_error_count": to_int(receiver_validation["accepted_new_error_count"]),
+            "missed_repair_count": to_int(receiver_validation["missed_repair_count"]),
+            "heldout_delta_psnr_vs_m0_db": to_float(receiver_heldout["delta_psnr_vs_m0_db"]),
+            "heldout_final_failure_rate": to_float(receiver_heldout["final_failure_rate"]),
+            "heldout_accepted_new_error_count": to_int(receiver_heldout["accepted_new_error_count"]),
+            "heldout_missed_repair_count": to_int(receiver_heldout["missed_repair_count"]),
+            "heldout_target_alpha_accuracy": to_float(receiver_heldout["target_alpha_accuracy"]),
+            "testlike_delta_psnr_vs_m0_db": to_float(receiver_testlike["delta_psnr_vs_m0_db"]),
+            "testlike_final_failure_rate": to_float(receiver_testlike["final_failure_rate"]),
+            "testlike_accepted_new_error_count": to_int(receiver_testlike["accepted_new_error_count"]),
+            "testlike_missed_repair_count": to_int(receiver_testlike["missed_repair_count"]),
+            "testlike_target_alpha_accuracy": to_float(receiver_testlike["target_alpha_accuracy"]),
+            "status": "learned alpha pilot; close to two-stage, below exhaustive adaptive alpha",
         },
         {
             "method": "M3-SelectedRiskRuleCandidate",
@@ -606,6 +654,37 @@ def build_two_stage_policy_export(rows: list[dict[str, str]]) -> list[dict[str, 
     return output
 
 
+def build_receiver_alpha_policy_export(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    output = []
+    for row in rows:
+        if row.get("snr_db") != "all" or row.get("policy") != "receiver_alpha_predictor_top1_fallback":
+            continue
+        output.append(
+            {
+                "split": row["split"],
+                "policy": row["policy"],
+                "num_images": to_int(row["num_images"]),
+                "accept_rate": to_float(row["accept_rate"]),
+                "fallback_rate": to_float(row["fallback_rate"]),
+                "target_alpha_accuracy": to_float(row["target_alpha_accuracy"]),
+                "predicted_alpha_le_oracle_rate": to_float(row["predicted_alpha_le_oracle_rate"]),
+                "mean_predicted_alpha": to_float(row["mean_predicted_alpha"]),
+                "mean_accepted_alpha": to_float(row["mean_accepted_alpha"]),
+                "final_failure_rate": to_float(row["final_failure_rate"]),
+                "delta_failure_vs_m0": to_float(row["delta_final_failure_vs_m0"]),
+                "final_psnr_db": to_float(row["final_psnr_db"]),
+                "delta_psnr_vs_m0_db": to_float(row["delta_psnr_vs_m0_db"]),
+                "final_lpips": "",
+                "delta_lpips_vs_m0": "",
+                "repair_count": to_int(row["repair_count"]),
+                "accepted_new_error_count": to_int(row["accepted_new_error_count"]),
+                "missed_repair_count": to_int(row["missed_repair_count"]),
+                "available_repair_count": to_int(row["available_repair_count"]),
+            }
+        )
+    return output
+
+
 def style_axes(ax, title: str, xlabel: str | None = None, ylabel: str | None = None) -> None:
     ax.set_title(title, fontsize=12, pad=10)
     if xlabel:
@@ -701,6 +780,7 @@ def plot_adaptive_tradeoff(adaptive_rows: list[dict[str, Any]], path: Path) -> N
         "top1_full_strength": "top1 full",
         "fixed_validation_top1_shrink_schedule": "fixed shrink",
         "full_then_fixed_schedule": "2-stage",
+        "receiver_alpha_predictor_top1_fallback": "predictor",
         "adaptive_max_top1_consistent_alpha": "adaptive alpha",
         "always_full_strength": "always full",
     }
@@ -753,6 +833,7 @@ def make_report(
     m3_shrink = next(row for row in method_summary if row["method"] == "M3-ResidualRestorationTop1ShrinkFallback")
     m3_adaptive = next(row for row in method_summary if row["method"] == "M3-AdaptiveResidualAlphaTop1Fallback")
     m3_two_stage = next(row for row in method_summary if row["method"] == "M3-TwoStageResidualAlphaTop1Fallback")
+    m3_receiver = next(row for row in method_summary if row["method"] == "M3-ReceiverAlphaPredictorTop1Fallback")
     selected = next(row for row in method_summary if row["method"] == "M3-SelectedRiskRuleCandidate")
     safety = next(row for row in method_summary if row["method"] == "M3-EnsembleVetoSafetyBound")
 
@@ -770,6 +851,7 @@ def make_report(
         f"- `M3-ResidualRestorationTop1ShrinkFallback` is the fixed-schedule conservative candidate: validation PSNR delta is `{signed(float(m3_shrink['mean_delta_psnr_vs_m0_db']))}` dB, frozen held-out/test-like PSNR deltas are `{signed(float(m3_shrink['heldout_delta_psnr_vs_m0_db']))}`/`{signed(float(m3_shrink['testlike_delta_psnr_vs_m0_db']))}` dB, and held-out/test-like accepted new errors are `{m3_shrink['heldout_accepted_new_error_count']}`/`{m3_shrink['testlike_accepted_new_error_count']}`.",
         f"- `M3-AdaptiveResidualAlphaTop1Fallback` is the strongest conservative candidate so far: validation PSNR delta is `{signed(float(m3_adaptive['mean_delta_psnr_vs_m0_db']))}` dB, held-out/test-like PSNR deltas are `{signed(float(m3_adaptive['heldout_delta_psnr_vs_m0_db']))}`/`{signed(float(m3_adaptive['testlike_delta_psnr_vs_m0_db']))}` dB, accepted new errors are `{m3_adaptive['accepted_new_error_count']}`/`{m3_adaptive['heldout_accepted_new_error_count']}`/`{m3_adaptive['testlike_accepted_new_error_count']}`, but repair remains `0` and missed repair remains high.",
         f"- `M3-TwoStageResidualAlphaTop1Fallback` is a deployability ablation: validation/held-out/test-like PSNR deltas are `{signed(float(m3_two_stage['mean_delta_psnr_vs_m0_db']))}`/`{signed(float(m3_two_stage['heldout_delta_psnr_vs_m0_db']))}`/`{signed(float(m3_two_stage['testlike_delta_psnr_vs_m0_db']))}` dB with accepted new errors `{m3_two_stage['accepted_new_error_count']}`/`{m3_two_stage['heldout_accepted_new_error_count']}`/`{m3_two_stage['testlike_accepted_new_error_count']}`, but it remains below exhaustive adaptive alpha.",
+        f"- `M3-ReceiverAlphaPredictorTop1Fallback` is a learned deployability pilot: validation/held-out/test-like PSNR deltas are `{signed(float(m3_receiver['mean_delta_psnr_vs_m0_db']))}`/`{signed(float(m3_receiver['heldout_delta_psnr_vs_m0_db']))}`/`{signed(float(m3_receiver['testlike_delta_psnr_vs_m0_db']))}` dB with accepted new errors `{m3_receiver['accepted_new_error_count']}`/`{m3_receiver['heldout_accepted_new_error_count']}`/`{m3_receiver['testlike_accepted_new_error_count']}`; it is close to two-stage but still below exhaustive adaptive alpha.",
         f"- `selected_risk_rule` is still only a candidate: on test-like it gives `{signed(float(selected['delta_psnr_vs_top1_db']))}` dB vs top-1 and `accepted_new_error_count={selected['accepted_new_error_count']}`; on COCO-object clean-correct it still has `clean_correct_new_error_count={selected['clean_correct_new_error_count']}`.",
         f"- The ensemble-veto safety bound removes COCO-object clean-correct new errors, but its clean-correct PSNR delta vs top-1 is `{signed(float(safety['clean_correct_delta_psnr_vs_top1_db']))}` dB, so it is too conservative as the main M3.",
         "",
@@ -784,6 +866,7 @@ def make_report(
         "| M3 fixed-schedule candidate | M2 with validation-selected residual shrink plus top-1 fallback | Conservative schedule ablation / backup |",
         "| M3 adaptive-alpha candidate | M2 with per-sample max top-1-consistent residual alpha | Strongest conservative pseudo-safe candidate |",
         "| M3 two-stage alpha candidate | M2 with full-strength try, then fixed-schedule fallback | Deployability ablation |",
+        "| M3 receiver-alpha predictor | M2 with validation-trained tabular alpha predictor plus top-1 fallback | Learned deployability pilot |",
         "| M3 candidate | M2 plus selected risk rule | Higher PSNR candidate, not final-safe |",
         "",
         "## Closure Summary",
@@ -854,6 +937,7 @@ def make_report(
             "top1_full_strength",
             "fixed_validation_top1_shrink_schedule",
             "full_then_fixed_schedule",
+            "receiver_alpha_predictor_top1_fallback",
             "adaptive_max_top1_consistent_alpha",
             "always_full_strength",
         ]
@@ -911,6 +995,7 @@ def make_report(
             "- Residual shrink was selected on validation and frozen on held-out/test-like splits; it is a fixed-schedule conservative candidate, not supervised-label proof.",
             "- Adaptive residual alpha is receiver-side and does not use original images, but it is still a post-hoc policy over existing alpha candidates rather than a retrained residual model.",
             "- Two-stage residual alpha omits LPIPS by design to avoid external weight loading; compare its PSNR/SSIM/MS-SSIM and semantic counts only.",
+            "- Receiver alpha predictor is trained on validation pseudo-targets and omits LPIPS by design; it is not supervised semantic proof.",
             "- COCO pseudo-label, classifier ensemble, caption CLIP, and COCO-object CLIP are auxiliary semantic diagnostics.",
             "- The first closure should not claim that the selected risk rule is cross-model or supervised-label safe.",
             "",
@@ -922,6 +1007,7 @@ def make_report(
             f"- Residual shrink table: `{metadata['shrink_policy_csv']}`",
             f"- Adaptive residual alpha table: `{metadata['adaptive_policy_csv']}`",
             f"- Two-stage residual alpha table: `{metadata['two_stage_policy_csv']}`",
+            f"- Receiver alpha predictor table: `{metadata['receiver_alpha_policy_csv']}`",
             f"- Test-like policy table: `{metadata['testlike_policy_csv']}`",
             f"- COCO-object clean-correct table: `{metadata['clean_correct_policy_csv']}`",
             f"- Metadata: `{metadata['metadata_json']}`",
@@ -973,6 +1059,7 @@ def main() -> None:
     testlike_shrink_summary = read_csv(resolve_project_path(config["inputs"]["testlike_residual_shrink_summary"]))
     adaptive_summary = read_csv(resolve_project_path(config["inputs"]["adaptive_residual_alpha_summary"]))
     two_stage_summary = read_csv(resolve_project_path(config["inputs"]["two_stage_residual_alpha_summary"]))
+    receiver_alpha_summary = read_csv(resolve_project_path(config["inputs"]["receiver_alpha_predictor_summary"]))
     testlike_policy = read_csv(resolve_project_path(config["inputs"]["testlike_policy_summary"]))
     clean_summary = read_csv(resolve_project_path(config["inputs"]["testlike_clean_correct_summary"]))
 
@@ -992,6 +1079,7 @@ def main() -> None:
         testlike_shrink_summary,
         adaptive_summary,
         two_stage_summary,
+        receiver_alpha_summary,
         testlike_policy,
         clean_summary,
     )
@@ -1002,6 +1090,7 @@ def main() -> None:
     shrink_csv = output_dir / "residual_shrink_policy_tradeoff.csv"
     adaptive_csv = output_dir / "adaptive_residual_alpha_policy_tradeoff.csv"
     two_stage_csv = output_dir / "two_stage_residual_alpha_policy_tradeoff.csv"
+    receiver_alpha_csv = output_dir / "receiver_alpha_predictor_tradeoff.csv"
     testlike_csv = output_dir / "testlike_policy_tradeoff.csv"
     clean_csv = output_dir / "coco_object_clean_correct_tradeoff.csv"
     metadata_json = output_dir / "metadata.json"
@@ -1012,9 +1101,11 @@ def main() -> None:
     write_csv(blind_csv, m1_rows)
     write_csv(shrink_csv, shrink_rows)
     two_stage_rows = build_two_stage_policy_export(two_stage_summary)
-    adaptive_plus_rows = [*adaptive_rows, *two_stage_rows]
+    receiver_alpha_rows = build_receiver_alpha_policy_export(receiver_alpha_summary)
+    adaptive_plus_rows = [*adaptive_rows, *two_stage_rows, *receiver_alpha_rows]
     write_csv(adaptive_csv, adaptive_rows)
     write_csv(two_stage_csv, two_stage_rows)
+    write_csv(receiver_alpha_csv, receiver_alpha_rows)
     write_csv(testlike_csv, testlike_rows)
     write_csv(clean_csv, clean_rows)
 
@@ -1041,6 +1132,7 @@ def main() -> None:
         "shrink_policy_csv": project_relative(shrink_csv),
         "adaptive_policy_csv": project_relative(adaptive_csv),
         "two_stage_policy_csv": project_relative(two_stage_csv),
+        "receiver_alpha_policy_csv": project_relative(receiver_alpha_csv),
         "testlike_policy_csv": project_relative(testlike_csv),
         "clean_correct_policy_csv": project_relative(clean_csv),
         "metadata_json": project_relative(metadata_json),

@@ -19,6 +19,7 @@ inputs:
   testlike_residual_shrink_summary: outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/summary.csv
   adaptive_residual_alpha_summary: outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv
   two_stage_residual_alpha_summary: outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/summary.csv
+  receiver_alpha_predictor_summary: outputs/analysis/exp_s4_006_receiver_alpha_predictor/summary.csv
   testlike_policy_summary: outputs/analysis/exp_s4_006_testlike_risk_rule_check/policy_summary.csv
   testlike_clean_correct_summary: outputs/analysis/exp_s4_006_testlike_coco_object_clip_clean_eval/summary.csv
 
@@ -38,6 +39,7 @@ notes:
   - Residual shrink schedule was selected on EXP-S4-006 validation and then frozen on held-out and test-like splits.
   - Adaptive residual alpha policy uses a fixed receiver-side rule over existing alpha candidates and does not tune on held-out/test-like.
   - Two-stage residual alpha policy is a deployability ablation over the adaptive-alpha table; it omits LPIPS to avoid external weight loading.
+  - Receiver alpha predictor is a validation-trained tabular pilot over receiver-visible features; it omits LPIPS to avoid external weight loading.
   - Test-like policy and COCO-object clean-correct tables are auxiliary semantic diagnostics, not final supervised truth.
 
 outputs:
