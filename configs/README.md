@@ -45,3 +45,4 @@
 - `s6_adaptive_residual_alpha_policy_exp_s4_006.yaml`：在已有 residual alpha candidate PNG 上评估 per-sample 最大 top-1-consistent alpha 选择策略，比较 full-strength、fixed schedule、adaptive policy 和 always-accept。
 - `s6_two_stage_residual_alpha_policy_exp_s4_006.yaml`：从 adaptive alpha 的逐样本表派生 two-stage alpha 策略，先尝试 full-strength top-1 fallback，失败后回退 validation fixed shrink schedule；不重分类、不加载 LPIPS。
 - `s6_receiver_alpha_predictor_exp_s4_006.yaml`：用 validation pseudo target 训练轻量 receiver-side alpha predictor，并在 held-out/test-like 上用 top-1 fallback 复核质量和 new-error 风险。
+- `s6_alpha_head_residual_refiner_pilot_exp_s4_006.yaml`：加载 `EXP-S4-006` residual CNN 并训练冻结特征上的 alpha head，验证把 residual alpha 控制前移到模型内部的第一版可行性。

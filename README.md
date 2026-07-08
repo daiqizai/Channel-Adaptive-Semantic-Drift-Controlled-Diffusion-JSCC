@@ -1657,6 +1657,41 @@ outputs/analysis/exp_s4_006_receiver_alpha_predictor/figures/receiver_alpha_pred
 
 核心结论：receiver predictor 在 validation/held-out/test-like 上 PSNR delta 为 `+0.5584/+0.5099/+0.4871` dB，accepted new error 为 `0/0/0`。它在 validation 上完全拟合 adaptive alpha pseudo target，held-out 比 two-stage 略高，test-like 与 two-stage 基本持平，但仍低于 exhaustive adaptive alpha。这说明“学 alpha”方向值得继续，但当前 tabular 特征还不够，应把 alpha/risk 控制进一步放进 residual CNN 训练或更强的 receiver-side predictor。
 
+## S6 Alpha-Head Residual Refiner Pilot
+
+已完成第一版训练侧 alpha head 探索。该流程加载 `EXP-S4-006` residual refiner checkpoint，默认冻结 residual CNN，只训练一个附着在 refiner feature 上的 alpha head；训练目标来自 validation split 的 `adaptive_max_top1_consistent_alpha` pseudo target。评估时仍使用 AlexNet top-1 fallback，因此这是训练侧探索，不是新的 M3 闭环。
+
+配置：
+
+```text
+configs/s6_alpha_head_residual_refiner_pilot_exp_s4_006.yaml
+```
+
+先检查输入和本地权重：
+
+```bash
+python3 scripts/s6_train_alpha_head_residual_refiner.py --dry-run
+```
+
+运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --device cuda:0
+```
+
+输出：
+
+```text
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/REPORT.md
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/summary.csv
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/per_sample.csv
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/train_history.csv
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/metadata.json
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/figures/alpha_head_tradeoff.png
+```
+
+核心结论：alpha-head pilot 在 validation/held-out/test-like 上 PSNR delta 为 `+0.3846/+0.3808/+0.3623` dB，accepted new error 为 `0/0/0`，但低于 full-strength top-1 fallback、two-stage policy 和 receiver predictor。它的 target-alpha accuracy 为 `0.6687/0.6500/0.5844`，且明显偏向预测 `alpha=1.0`。这说明把 alpha head 接进 residual CNN 是正确的下一类实验，但冻结 refiner 特征 + 普通 CE 不够；下一步应做 class-weighted alpha loss、联合训练或直接加入 semantic-risk-aware residual amplitude loss。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：

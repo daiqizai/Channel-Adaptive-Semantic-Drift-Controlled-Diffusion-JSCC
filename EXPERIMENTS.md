@@ -48,6 +48,7 @@
 | ANALYSIS-S6-010 | 2026-07-07 | 9cacff5 + local script/config | MinimalClosureReportWithTwoStageAlphaAblation | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink/adaptive/two-stage alpha tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 two-stage alpha 消融；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
 | ANALYSIS-S6-011 | 2026-07-09 | 4a466e8 + local script/config | ReceiverAlphaPredictor | COCO2017 val2017 validation/held-out/test-like adaptive alpha decisions and candidate PNGs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, target alpha accuracy, accept/new-error | 完成（validation-only tabular predictor；不训练图像模型不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_receiver_alpha_predictor/` |
 | ANALYSIS-S6-012 | 2026-07-09 | 4a466e8 + local script/config | MinimalClosureReportWithReceiverAlphaPredictor | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink/adaptive/two-stage/predictor alpha tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 receiver predictor；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
+| ANALYSIS-S6-013 | 2026-07-09 | a7076eb + local script/config | AlphaHeadResidualRefinerPilot | COCO2017 val2017 validation/held-out/test-like adaptive-alpha pseudo targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, target alpha accuracy, accept/new-error | 完成（冻结 residual CNN，仅训练 alpha head；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2576,6 +2577,76 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u al
 #### 下一步
 
 停止在浅层后验 alpha 规则上继续细调；下一步应进入训练侧：在 residual CNN 中加入 alpha/risk head，或设计短链 conditional residual diffusion，从模型内部学习何时放大/收缩 residual。
+
+### ANALYSIS-S6-013：Alpha-Head Residual Refiner Pilot
+
+- 日期：2026-07-09
+- 项目版本：`a7076eb` + local script/config at run time
+- 阶段：S6 training-side alpha-control exploration
+- 方法：AlphaHeadResidualRefinerPilot
+- 数据集：COCO2017 `val2017` validation / held-out / test-like adaptive-alpha pseudo targets
+- 数据 split：validation `320` 行用于训练 alpha head，held-out `160` 行和 test-like `320` 行只评估
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_alpha_head_residual_refiner_pilot_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_train_alpha_head_residual_refiner.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --device cuda:0
+```
+
+- 关键源码：`scripts/s6_train_alpha_head_residual_refiner.py`
+- 输入：
+  - `outputs/EXP-S4-006/checkpoints/best.pt`
+  - `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv`
+  - `outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/summary.csv`
+  - `outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth`
+- 输出路径：`outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/`
+- 状态：完成；加载 `EXP-S4-006` residual CNN，默认冻结 refiner，仅训练 alpha head；不运行 diffusion、不下载、不加载 LPIPS
+
+#### 方法
+
+Alpha head 附着在 `EXP-S4-006` residual refiner 的 feature map 上。正式运行中：
+
+- residual CNN 从 `outputs/EXP-S4-006/checkpoints/best.pt` 加载；
+- `head/body/tail` 冻结，只训练 `alpha_head`；
+- 训练目标是 validation 上 `adaptive_max_top1_consistent_alpha` 的 `selected_alpha` pseudo target；
+- 评估时预测一个 alpha，生成 `M0 + alpha * (full_refined - M0)`，再用冻结 AlexNet top-1 consistency gate 决定接受或回退 M0。
+
+#### 指标
+
+| Split | Policy | Delta PSNR | Failure Delta | Accept | Target Alpha Acc | New Error | Missed Repair |
+|---|---|---:|---:|---:|---:|---:|---:|
+| validation | full_strength_top1_fallback | +0.4011 | +0.0000 | 0.6406 |  | 0 | 41 |
+| validation | alpha_head_predicted_top1_fallback | +0.3846 | +0.0000 | 0.7312 | 0.6687 | 0 | 37 |
+| held-out | full_strength_top1_fallback | +0.4454 | +0.0000 | 0.6687 |  | 0 | 26 |
+| held-out | alpha_head_predicted_top1_fallback | +0.3808 | +0.0000 | 0.7438 | 0.6500 | 0 | 21 |
+| test-like | full_strength_top1_fallback | +0.4113 | +0.0000 | 0.6250 |  | 0 | 54 |
+| test-like | alpha_head_predicted_top1_fallback | +0.3623 | +0.0000 | 0.7094 | 0.5844 | 0 | 44 |
+
+对比当前 alpha-control 线：
+
+| Policy | validation | held-out | test-like | New Error |
+|---|---:|---:|---:|---:|
+| `alpha_head_predicted_top1_fallback` | +0.3846 | +0.3808 | +0.3623 | 0/0/0 |
+| `full_strength_top1_fallback` | +0.4011 | +0.4454 | +0.4113 | 0/0/0 |
+| `full_then_fixed_schedule` | +0.4831 | +0.5009 | +0.4875 | 0/0/0 |
+| `receiver_alpha_predictor_top1_fallback` | +0.5584 | +0.5099 | +0.4871 | 0/0/0 |
+| `adaptive_max_top1_consistent_alpha` | +0.5584 | +0.5664 | +0.5691 | 0/0/0 |
+
+#### 结果总结
+
+Alpha-head pilot 没有超过 full-strength top-1 fallback，也明显低于 two-stage、receiver predictor 和 exhaustive adaptive alpha。它的价值是把 alpha 控制第一次接进 residual refiner 模型内部，并暴露了当前训练设计的瓶颈：validation target 中 `alpha=1.0` 占 `205/320`，而 alpha head 预测 `alpha=1.0` 达到 `280/320`，说明普通 CE 在类别不平衡下偏向 majority alpha。held-out/test-like 也有同样倾向。
+
+结论：这是训练侧方向的部分负结果，不进入 minimal closure 主表，也不能作为新 M3。下一步应尝试 inverse-frequency alpha loss、unfreeze/refiner joint fine-tune，或者直接设计 semantic-risk-aware residual amplitude loss，而不是只在冻结 feature 上训普通分类头。
+
+#### 复现备注
+
+正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。正式脚本只使用本地 `EXP-S4-006` checkpoint 和本地 AlexNet 权重，不加载 LPIPS，不下载任何模型或数据。运行时 `git_dirty_state=dirty` 是因为脚本和配置为本轮新增本地文件，结果记录为 `a7076eb + local script/config`。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 
