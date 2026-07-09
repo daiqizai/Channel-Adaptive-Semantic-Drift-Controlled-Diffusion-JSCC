@@ -52,3 +52,4 @@
 - `s6_alpha_head_residual_refiner_joint_benefit_exp_s4_006.yaml`：解冻 residual CNN，用 safe-PSNR utility alpha、soft-alpha reconstruction 和 target-alpha reconstruction loss 做 joint fine-tune，检查训练侧 amplitude/risk loss 是否会改善 residual control。
 - `s6_alpha_head_residual_refiner_tail_benefit_exp_s4_006.yaml`：冻结 residual CNN 的 head/body，只微调 tail 与 alpha head，并用 reconstruction-dominant loss 检查 partial fine-tune 能否避免全量 joint 损伤 restoration anchor。
 - `s6_alpha_head_residual_refiner_tail_regression_benefit_exp_s4_006.yaml`：在 tail-only partial fine-tune 基础上把 alpha head 改为连续 alpha regression，检查显式幅度回归是否优于离散 alpha 分类。
+- `s6_continuous_alpha_tail_refiner_audit_exp_s4_006.yaml`：对 continuous-alpha tail-only residual refiner 的已有输出补充 LPIPS 感知质量和 AlexNet/ResNet18/MobileNetV3-Small 跨分类器离线语义安全审计。

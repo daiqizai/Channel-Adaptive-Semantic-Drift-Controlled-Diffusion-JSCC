@@ -1714,6 +1714,12 @@ tail-only continuous-alpha follow-up 配置：
 configs/s6_alpha_head_residual_refiner_tail_regression_benefit_exp_s4_006.yaml
 ```
 
+continuous-alpha LPIPS / classifier-ensemble 审计配置：
+
+```text
+configs/s6_continuous_alpha_tail_refiner_audit_exp_s4_006.yaml
+```
+
 先检查输入和本地权重：
 
 ```bash
@@ -1756,6 +1762,13 @@ tail-only continuous-alpha 运行：
 env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_tail_regression_benefit_exp_s4_006.yaml --device cuda:0
 ```
 
+continuous-alpha LPIPS / classifier-ensemble 审计：
+
+```bash
+python3 scripts/s6_audit_continuous_alpha_tail_refiner.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_audit_continuous_alpha_tail_refiner.py --device cuda:0
+```
+
 输出：
 
 ```text
@@ -1790,6 +1803,12 @@ outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/
 outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/per_sample.csv
 outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/train_history.csv
 outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/metadata.json
+outputs/analysis/exp_s4_006_continuous_alpha_tail_refiner_audit/REPORT.md
+outputs/analysis/exp_s4_006_continuous_alpha_tail_refiner_audit/quality_summary.csv
+outputs/analysis/exp_s4_006_continuous_alpha_tail_refiner_audit/model_summary.csv
+outputs/analysis/exp_s4_006_continuous_alpha_tail_refiner_audit/per_sample_votes.csv
+outputs/analysis/exp_s4_006_continuous_alpha_tail_refiner_audit/vote_summary.csv
+outputs/analysis/exp_s4_006_continuous_alpha_tail_refiner_audit/metadata.json
 ```
 
 核心结论：alpha-head pilot 在 validation/held-out/test-like 上 PSNR delta 为 `+0.3846/+0.3808/+0.3623` dB，accepted new error 为 `0/0/0`，但低于 full-strength top-1 fallback、two-stage policy 和 receiver predictor。weighted follow-up 使用 tempered inverse-frequency CE 后，PSNR delta 变为 `+0.3851/+0.3506/+0.3166` dB，说明类别不均衡不是主因。benefit-aware follow-up 把目标换成 safe-PSNR utility alpha 后，PSNR delta 变为 `+0.4251/+0.4192/+0.3530` dB，new error 仍为 `0/0/0`，相对普通/weighted alpha-head 有部分进展，但仍低于 receiver predictor、two-stage policy 和 exhaustive adaptive alpha；预测分布仍几乎不使用 `alpha=0.25`。
@@ -1798,7 +1817,7 @@ joint fine-tune follow-up 解冻 residual CNN，并让 soft-alpha / target-alpha
 
 tail-only partial fine-tune follow-up 只训练 residual tail 和 alpha head，冻结 head/body，并把 loss 改成 reconstruction-dominant。它在 validation/held-out/test-like 上 PSNR delta 为 `+0.4749/+0.4552/+0.4061` dB，accepted new error 为 `0/0/0`，明显好于冻结 benefit alpha-head 和全量 joint；full-strength top-1 fallback 也恢复到 `+0.4454/+0.4820/+0.4259` dB。结论是 partial/reconstruction-dominant 方向成立，但仍低于 receiver predictor、two-stage policy 和后验 adaptive alpha，暂不升级为最终 M3。
 
-tail-only continuous-alpha follow-up 把 5 类 alpha 分类改为单个连续 alpha regression，仍只训练 residual tail 和 alpha head。它在 validation/held-out/test-like 上 PSNR delta 达到 `+0.5010/+0.5049/+0.5012` dB，accepted new error 为 `0/0/0`，超过离散 tail-only alpha head，并在 held-out/test-like 上达到或超过 two-stage policy 与 receiver predictor。该结果是当前训练侧 amplitude-control 最明确的正向突破；仍低于后验 adaptive alpha upper bound，且未补 LPIPS/ensemble audit，因此暂不直接升级最终 M3。
+tail-only continuous-alpha follow-up 把 5 类 alpha 分类改为单个连续 alpha regression，仍只训练 residual tail 和 alpha head。它在 validation/held-out/test-like 上 PSNR delta 达到 `+0.5010/+0.5049/+0.5012` dB，accepted new error 为 `0/0/0`，超过离散 tail-only alpha head，并在 held-out/test-like 上达到或超过 two-stage policy 与 receiver predictor。补充审计显示 continuous-alpha 的 LPIPS delta 为 `-0.0149/-0.0149/-0.0162`，优于同 checkpoint full-strength top-1 fallback；但 classifier ensemble 下 any-classifier new error 为 `17/9/14`，majority-vote new error 为 `1/0/0`。该结果是当前训练侧 amplitude-control 最明确的正向突破，但仍低于后验 adaptive alpha upper bound，且不能声明跨模型完全安全，因此暂不直接升级最终 M3。
 
 ## 项目进度可视化汇总
 

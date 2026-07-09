@@ -55,6 +55,7 @@
 | ANALYSIS-S6-017 | 2026-07-09 | 901420f + local script/config | BenefitAwareJointAlphaHeadResidualRefiner | COCO2017 val2017 validation/held-out/test-like benefit utility alpha targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, utility target accuracy, accept/new-error | 完成（解冻 residual CNN joint fine-tune；不运行 diffusion 不下载；LPIPS 省略；负/诊断结果） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_joint_benefit/` |
 | ANALYSIS-S6-018 | 2026-07-09 | c69743a + local script/config | BenefitAwareTailAlphaHeadResidualRefiner | COCO2017 val2017 validation/held-out/test-like benefit utility alpha targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, utility target accuracy, accept/new-error | 完成（只微调 residual tail + alpha head；不运行 diffusion 不下载；LPIPS 省略；训练侧正向阶段结果） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_benefit/` |
 | ANALYSIS-S6-019 | 2026-07-09 | 9b6f74a + local script/config | BenefitAwareTailContinuousAlphaResidualRefiner | COCO2017 val2017 validation/held-out/test-like benefit utility alpha targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, continuous alpha, accept/new-error | 完成（只微调 residual tail + continuous alpha head；不运行 diffusion 不下载；LPIPS 省略；训练侧正向突破） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/` |
+| ANALYSIS-S6-020 | 2026-07-09 | 3c8a0bd + local script/config | ContinuousAlphaTailRefinerPerceptualEnsembleAudit | COCO2017 val2017 validation/held-out/test-like continuous-alpha outputs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, LPIPS, AlexNet/ResNet18/MobileNetV3-Small pseudo final failure, ensemble new-error votes | 完成（派生审计；不训练不运行 diffusion；本地 LPIPS 与分类器权重；强候选但非跨模型完全安全） | `outputs/analysis/exp_s4_006_continuous_alpha_tail_refiner_audit/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -3092,11 +3093,64 @@ metadata 记录的可训练参数为：head `0/1776`、body `0/207840`、tail `1
 
 该结果说明，上一轮离散 alpha-head 的瓶颈很可能来自分类目标和离散候选表达，而不是 tail-only 微调本身。连续 alpha 的 nearest-class target accuracy 较低并不是直接负面信号，因为它没有强行复刻离散 utility label，而是在 `[0,1]` 上学到更平滑的幅度折中；test-like 最近 alpha 分布覆盖 `0.5/0.75/1.0`，不再完全跳过中间强度。
 
-限制：该方法仍低于 posterior adaptive alpha upper bound，且本轮仍省略 LPIPS、classifier ensemble audit 和 COCO-object/CLIP 辅助诊断。因此它可以作为 learned deployable amplitude-control 的强候选，但暂不直接写成最终 M3。
+限制：该方法仍低于 posterior adaptive alpha upper bound，且本轮训练实验本身省略 LPIPS、classifier ensemble audit 和 COCO-object/CLIP 辅助诊断。后续 `ANALYSIS-S6-020` 已补 LPIPS 和三分类器 ensemble 审计，结论是它可以作为 learned deployable amplitude-control 的强候选，但仍不能直接写成最终 M3。
 
 #### 复现备注
 
 正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。正式脚本只使用本地 `EXP-S4-006` checkpoint、本地 benefit feature table 和本地 AlexNet 权重，不加载 LPIPS，不下载任何模型或数据。运行时 `git_dirty_state=dirty` 是因为脚本和配置为本轮新增本地文件，结果记录为 `9b6f74a + local script/config`。
+
+### ANALYSIS-S6-020：Continuous-Alpha Tail Refiner LPIPS / Classifier-Ensemble Audit
+
+- 日期：2026-07-09
+- 项目版本：`3c8a0bd` + local script/config at run time
+- 阶段：S6 derived perceptual and semantic robustness audit
+- 方法：ContinuousAlphaTailRefinerPerceptualEnsembleAudit
+- 数据集：COCO2017 `val2017` validation / held-out / test-like continuous-alpha outputs
+- 数据 split：validation `320` 行，held-out `160` 行，test-like `320` 行；审计 continuous-alpha 与 full-strength top-1 fallback 两个 policy，共 `1600` 行
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_continuous_alpha_tail_refiner_audit_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_audit_continuous_alpha_tail_refiner.py
+python3 scripts/s6_audit_continuous_alpha_tail_refiner.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_audit_continuous_alpha_tail_refiner.py --device cuda:0
+```
+
+- 关键源码：`scripts/s6_audit_continuous_alpha_tail_refiner.py`
+- 输入：
+  - `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/summary.csv`
+  - `outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth`
+  - `outputs/cache/torch/hub/checkpoints/resnet18-f37072fd.pth`
+  - `outputs/cache/torch/hub/checkpoints/mobilenet_v3_small-047dcff4.pth`
+- 输出路径：`outputs/analysis/exp_s4_006_continuous_alpha_tail_refiner_audit/`
+- 状态：完成；只读取已有 PNG/CSV，不训练、不运行 diffusion、不调参
+
+#### 指标
+
+| Policy | Split | Delta PSNR | Delta LPIPS | AlexNet New Error | Any-Classifier New Error | Majority New Error | Any Repair |
+|---|---|---:|---:|---:|---:|---:|---:|
+| continuous_alpha_top1_fallback | validation | +0.5010 | -0.0149 | 0 | 17 | 1 | 41 |
+| continuous_alpha_top1_fallback | held-out | +0.5049 | -0.0149 | 0 | 9 | 0 | 11 |
+| continuous_alpha_top1_fallback | test-like | +0.5012 | -0.0162 | 0 | 14 | 0 | 47 |
+| full_strength_top1_fallback | validation | +0.4463 | -0.0097 | 0 | 19 | 1 | 38 |
+| full_strength_top1_fallback | held-out | +0.4824 | -0.0106 | 0 | 12 | 1 | 7 |
+| full_strength_top1_fallback | test-like | +0.4298 | -0.0098 | 0 | 20 | 0 | 51 |
+
+#### 结果总结
+
+LPIPS 证据支持 continuous-alpha：三段 split 上 final LPIPS delta 为 `-0.0149/-0.0149/-0.0162`，明显优于同 checkpoint full-strength top-1 fallback 的 `-0.0097/-0.0106/-0.0098`。这说明连续 alpha 的 PSNR 提升不是单纯牺牲感知质量换来的。
+
+跨分类器审计给出更谨慎的边界。AlexNet source gate 下 continuous-alpha 仍保持 accepted new error `0/0/0`，但 ResNet18/MobileNetV3-Small 作为离线 pseudo reference 时，any-classifier new error 为 `17/9/14`，majority-vote new error 为 `1/0/0`。唯一 majority case 是 validation 4 dB `sample_000248.png`，由 MobileNetV3-Small 与 ResNet18 同时标为 accepted new error。相比 full-strength fallback，continuous-alpha 在 LPIPS、PSNR 和多数 split 的 ensemble 风险上更好，但仍不能声称跨模型完全安全。
+
+结论：continuous-alpha tail refiner 是当前最强 learned training-side amplitude-control 候选；它可以进入下一轮方法设计依据，但不能直接升级为最终 M3。下一步应加入 semantic-risk-aware / ensemble-aware 训练或选择约束，或先做 labeled clean-correct subset 复核。
+
+#### 复现备注
+
+正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`，`lpips_error: null`。首次正式运行前脚本曾把 LPIPS `TORCH_HOME` 指向输出目录，触发临时 AlexNet 权重下载；该运行被中断、输出目录删除，脚本修正为使用项目本地 `outputs/cache/torch` 后重新正式运行，未使用中断结果。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 
