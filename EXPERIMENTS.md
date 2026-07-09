@@ -52,6 +52,7 @@
 | ANALYSIS-S6-014 | 2026-07-09 | 594db31 + local script/config | WeightedAlphaHeadResidualRefiner | COCO2017 val2017 validation/held-out/test-like adaptive-alpha pseudo targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, target alpha accuracy, accept/new-error | 完成（冻结 residual CNN，仅训练 class-weighted alpha head；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_weighted/` |
 | ANALYSIS-S6-015 | 2026-07-09 | 050b0c2 + local script/config | BenefitAwareAlphaPredictor | COCO2017 val2017 validation/held-out/test-like alpha candidates | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, utility target accuracy, accept/new-error | 完成（validation-derived safe-PSNR utility soft labels；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_benefit_alpha_predictor/` |
 | ANALYSIS-S6-016 | 2026-07-09 | 53b71b3 + local script/config | BenefitAwareAlphaHeadResidualRefiner | COCO2017 val2017 validation/held-out/test-like benefit utility alpha targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, utility target accuracy, accept/new-error | 完成（冻结 residual CNN，仅训练 benefit-aware alpha head；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_benefit/` |
+| ANALYSIS-S6-017 | 2026-07-09 | 901420f + local script/config | BenefitAwareJointAlphaHeadResidualRefiner | COCO2017 val2017 validation/held-out/test-like benefit utility alpha targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, utility target accuracy, accept/new-error | 完成（解冻 residual CNN joint fine-tune；不运行 diffusion 不下载；LPIPS 省略；负/诊断结果） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_joint_benefit/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2862,6 +2863,80 @@ Benefit-aware alpha head 比普通/weighted alpha-head 有部分进展。validat
 #### 复现备注
 
 正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。正式脚本只使用本地 `EXP-S4-006` checkpoint、本地 benefit feature table 和本地 AlexNet 权重，不加载 LPIPS，不下载任何模型或数据。运行时 `git_dirty_state=dirty` 是因为脚本和配置为本轮新增本地文件，结果记录为 `53b71b3 + local script/config`。
+
+### ANALYSIS-S6-017：Benefit-Aware Joint Alpha-Head Residual Refiner
+
+- 日期：2026-07-09
+- 项目版本：`901420f` + local script/config at run time
+- 阶段：S6 training-side residual alpha-control exploration
+- 方法：BenefitAwareJointAlphaHeadResidualRefiner
+- 数据集：COCO2017 `val2017` validation / held-out / test-like alpha candidates
+- 数据 split：validation `320` 行用于 joint fine-tune；held-out `160` 行和 test-like `320` 行只评估
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_alpha_head_residual_refiner_joint_benefit_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_train_alpha_head_residual_refiner.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_joint_benefit_exp_s4_006.yaml --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_joint_benefit_exp_s4_006.yaml --device cuda:0
+```
+
+- 关键源码：`scripts/s6_train_alpha_head_residual_refiner.py`
+- 输入：
+  - `outputs/EXP-S4-006/checkpoints/best.pt`
+  - `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_benefit_alpha_predictor/features.csv`
+  - `outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth`
+- 输出路径：`outputs/analysis/exp_s4_006_alpha_head_residual_refiner_joint_benefit/`
+- 状态：完成；解冻 residual CNN joint fine-tune，不运行 diffusion、不下载、不加载 LPIPS；负/诊断结果
+
+#### 方法
+
+该实验在 `ANALYSIS-S6-016` 的 benefit-aware alpha-head 基础上解冻 residual CNN，并新增训练损失：
+
+- `soft_refiner_detach: false`：predicted soft-alpha reconstruction loss 反传到 residual CNN；
+- `target_alpha_mse_weight: 100.0`：utility target alpha 对应的 refined 图像对 original 做 MSE；
+- `full_mse_weight: 10.0`：保留一个弱 full-strength restoration anchor；
+- `ce_weight: 0.30`：继续训练 alpha head 预测 utility alpha；
+- `refiner_lr: 0.00005`，alpha head `lr: 0.001`。
+
+评估阶段仍对 predicted-alpha candidate 使用冻结 AlexNet top-1 fallback。该实验测试的是“全量 unfreeze + benefit/risk alpha loss”是否能让 residual CNN 内部学到更好的 amplitude control。
+
+#### 指标
+
+| Split | Policy | Delta PSNR | Failure Delta | Accept | Target Acc | New Error | Missed Repair |
+|---|---|---:|---:|---:|---:|---:|---:|
+| validation | full_strength_top1_fallback | +0.2530 | +0.0000 | 0.6656 |  | 0 | 45 |
+| validation | alpha_head_predicted_top1_fallback | +0.3294 | +0.0000 | 0.8688 | 0.7719 | 0 | 17 |
+| held-out | full_strength_top1_fallback | +0.2236 | +0.0000 | 0.7188 |  | 0 | 19 |
+| held-out | alpha_head_predicted_top1_fallback | +0.2303 | +0.0000 | 0.8562 | 0.3875 | 0 | 8 |
+| test-like | full_strength_top1_fallback | +0.1855 | +0.0000 | 0.6687 |  | 0 | 39 |
+| test-like | alpha_head_predicted_top1_fallback | +0.1869 | +0.0000 | 0.8219 | 0.3719 | 0 | 21 |
+
+对比 alpha-head 训练侧路线：
+
+| Policy | validation | held-out | test-like | Target Acc | New Error |
+|---|---:|---:|---:|---:|---:|
+| frozen benefit alpha head | +0.4251 | +0.4192 | +0.3530 | 0.5406 / 0.4313 / 0.4062 | 0/0/0 |
+| joint benefit alpha head | +0.3294 | +0.2303 | +0.1869 | 0.7719 / 0.3875 / 0.3719 | 0/0/0 |
+| full-strength top-1 fallback before joint | +0.4011 | +0.4454 | +0.4113 | N/A | 0/0/0 |
+| full-strength top-1 fallback after joint | +0.2530 | +0.2236 | +0.1855 | N/A | 0/0/0 |
+
+#### 结果总结
+
+Joint fine-tune 成功改善了 validation alpha 分类：target accuracy 从 frozen benefit alpha-head 的 `0.5406` 提升到 `0.7719`，预测分布也从几乎不用 `alpha=0.25` 变成 `0.0/0.25/0.5/0.75/1.0 = 28/24/23/127/118`。这说明解冻 shared feature 后，模型确实能更好地读出 utility alpha。
+
+但图像 restoration anchor 被明显损伤。full-strength top-1 fallback 从原始 `+0.4011/+0.4454/+0.4113` dB 掉到 `+0.2530/+0.2236/+0.1855` dB；predicted-alpha final 也只有 `+0.3294/+0.2303/+0.1869` dB，低于 frozen benefit alpha-head。训练日志中 full MSE 从约 `0.000816` 升到约 `0.000872`，与最终 PSNR 下滑一致。
+
+结论：benefit/risk 目标可以改善 alpha 分类，但全量 unfreeze 且 CE 仍占主导会破坏 residual restoration 表征。下一步应避免让分类目标直接改写 shared residual feature；更合理的是 partial fine-tune（只调 tail/amplitude/head）、更强 reconstruction-dominant objective、或在固定 residual feature 上学习单独的 amplitude/risk head。
+
+#### 复现备注
+
+正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。正式脚本只使用本地 `EXP-S4-006` checkpoint、本地 benefit feature table 和本地 AlexNet 权重，不加载 LPIPS，不下载任何模型或数据。运行时 `git_dirty_state=dirty` 是因为脚本和配置为本轮新增本地文件，结果记录为 `901420f + local script/config`。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 

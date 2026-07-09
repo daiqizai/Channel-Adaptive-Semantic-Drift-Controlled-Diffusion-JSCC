@@ -1,0 +1,97 @@
+phase: S6
+analysis_id: exp_s4_006_alpha_head_residual_refiner_joint_benefit
+method: BenefitAwareJointAlphaHeadResidualRefiner
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  base_refiner_checkpoint: outputs/EXP-S4-006/checkpoints/best.pt
+  adaptive_per_sample_csv: outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv
+  adaptive_summary_csv: outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv
+  two_stage_summary_csv: outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/summary.csv
+  benefit_features_csv: outputs/analysis/exp_s4_006_benefit_alpha_predictor/features.csv
+
+splits:
+  train_split: validation
+  eval_splits: [validation, held-out, test-like]
+
+source_policy:
+  target: adaptive_max_top1_consistent_alpha
+  target_mode: benefit_utility_alpha
+  benefit_target_field: utility_target_alpha
+  full: top1_full_strength
+  m0: m0
+
+alphas: [0.0, 0.25, 0.5, 0.75, 1.0]
+
+model:
+  name: alpha_head_residual_refiner_joint_benefit
+  base_channels: 48
+  num_blocks: 5
+  snr_norm_max: 20.0
+  residual_gates:
+    "1": 0.12
+    "4": 0.10
+    "7": 0.08
+    "13": 0.05
+    "19": 0.04
+  freeze_refiner: false
+  alpha_head_hidden: 64
+  alpha_head_dropout: 0.05
+
+training:
+  epochs: 120
+  batch_size: 16
+  num_workers: 4
+  lr: 0.001
+  refiner_lr: 0.00005
+  weight_decay: 0.0001
+  grad_clip_norm: 1.0
+  ce_weight: 0.30
+  class_weighting: none
+  soft_refiner_detach: false
+  soft_mse_weight: 25.0
+  soft_l1_weight: 0.0
+  target_alpha_mse_weight: 100.0
+  target_alpha_l1_weight: 0.0
+  full_mse_weight: 10.0
+  full_l1_weight: 0.0
+  validation_every_epochs: 10
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 32
+  topk: 5
+
+evaluation:
+  image_batch_size: 16
+  sample_grid_count: 4
+  metrics:
+    - psnr
+    - ssim
+    - ms_ssim
+    - pseudo_final_failure
+    - accept_rate
+    - utility_target_accuracy
+  lpips: omitted_to_avoid_weight_loading_or_download
+
+notes:
+  - This follow-up is the first joint fine-tune after the frozen alpha-head bottleneck.
+  - It keeps the benefit utility alpha target from the previous feature table.
+  - Unlike the frozen alpha-head run, residual CNN weights are updated with a smaller refiner_lr.
+  - soft_refiner_detach is false, so predicted soft-alpha reconstruction loss reaches the residual CNN.
+  - target_alpha_mse trains the residual image such that the utility target alpha candidate reconstructs the original.
+  - full_mse_weight is kept small to avoid destroying the full-strength residual restoration anchor.
+  - Evaluation still applies a frozen AlexNet top-1 consistency gate before accepting the predicted-alpha candidate.
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_alpha_head_residual_refiner_joint_benefit

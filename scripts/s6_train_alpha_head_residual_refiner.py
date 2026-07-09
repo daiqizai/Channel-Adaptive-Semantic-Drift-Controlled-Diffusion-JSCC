@@ -425,6 +425,26 @@ def load_base_refiner(model: AlphaHeadResidualRefiner, checkpoint_path: Path) ->
     }
 
 
+def optimizer_parameters(model: AlphaHeadResidualRefiner, config: dict[str, Any]) -> list[Any]:
+    lr = float(config["training"]["lr"])
+    refiner_lr = config["training"].get("refiner_lr")
+    if refiner_lr in ("", None):
+        return [param for param in model.parameters() if param.requires_grad]
+
+    refiner_params: list[torch.nn.Parameter] = []
+    for module in [model.head, model.body, model.tail]:
+        refiner_params.extend([param for param in module.parameters() if param.requires_grad])
+    alpha_params = [param for param in model.alpha_head.parameters() if param.requires_grad]
+    groups: list[Any] = []
+    if refiner_params:
+        groups.append({"params": refiner_params, "lr": float(refiner_lr)})
+    if alpha_params:
+        groups.append({"params": alpha_params, "lr": lr})
+    if not groups:
+        raise RuntimeError("No trainable parameters found for optimizer.")
+    return groups
+
+
 def train_one_epoch(
     model: AlphaHeadResidualRefiner,
     loader: DataLoader,
@@ -439,13 +459,20 @@ def train_one_epoch(
     losses: list[float] = []
     ce_losses: list[float] = []
     soft_mse_losses: list[float] = []
+    soft_l1_losses: list[float] = []
+    target_alpha_mse_losses: list[float] = []
+    target_alpha_l1_losses: list[float] = []
+    full_mse_losses: list[float] = []
+    full_l1_losses: list[float] = []
     accuracies: list[float] = []
+    detach_refiner_for_soft_loss = bool(config["training"].get("soft_refiner_detach", True))
     for batch in loader:
         m0 = batch["m0"].to(device, non_blocking=True)
         target = batch["target"].to(device, non_blocking=True)
         snr_db = batch["snr_db"].to(device, non_blocking=True)
         snr_norm = batch["snr_norm"].to(device, non_blocking=True)
         target_index = batch["target_alpha_index"].to(device, non_blocking=True)
+        target_alpha = batch["target_alpha"].to(device, non_blocking=True).view(-1, 1, 1, 1)
         gate = gate_tensor(config, snr_db, device)
 
         optimizer.zero_grad(set_to_none=True)
@@ -453,13 +480,23 @@ def train_one_epoch(
         ce_loss = F.cross_entropy(logits, target_index, weight=class_weights)
         probs = torch.softmax(logits, dim=-1)
         soft_alpha = torch.matmul(probs, alphas_tensor).view(-1, 1, 1, 1)
-        soft_refined = (m0 + soft_alpha * (full_refined.detach() - m0)).clamp(0.0, 1.0)
+        residual_delta = full_refined.detach() - m0 if detach_refiner_for_soft_loss else full_refined - m0
+        soft_refined = (m0 + soft_alpha * residual_delta).clamp(0.0, 1.0)
+        target_alpha_refined = (m0 + target_alpha * (full_refined - m0)).clamp(0.0, 1.0)
         soft_mse = F.mse_loss(soft_refined, target)
         soft_l1 = F.l1_loss(soft_refined, target)
+        target_alpha_mse = F.mse_loss(target_alpha_refined, target)
+        target_alpha_l1 = F.l1_loss(target_alpha_refined, target)
+        full_mse = F.mse_loss(full_refined, target)
+        full_l1 = F.l1_loss(full_refined, target)
         loss = (
             float(config["training"]["ce_weight"]) * ce_loss
             + float(config["training"].get("soft_mse_weight", 0.0)) * soft_mse
             + float(config["training"].get("soft_l1_weight", 0.0)) * soft_l1
+            + float(config["training"].get("target_alpha_mse_weight", 0.0)) * target_alpha_mse
+            + float(config["training"].get("target_alpha_l1_weight", 0.0)) * target_alpha_l1
+            + float(config["training"].get("full_mse_weight", 0.0)) * full_mse
+            + float(config["training"].get("full_l1_weight", 0.0)) * full_l1
         )
         loss.backward()
         grad_clip = float(config["training"].get("grad_clip_norm", 0.0))
@@ -471,11 +508,21 @@ def train_one_epoch(
         losses.append(float(loss.detach().cpu()))
         ce_losses.append(float(ce_loss.detach().cpu()))
         soft_mse_losses.append(float(soft_mse.detach().cpu()))
+        soft_l1_losses.append(float(soft_l1.detach().cpu()))
+        target_alpha_mse_losses.append(float(target_alpha_mse.detach().cpu()))
+        target_alpha_l1_losses.append(float(target_alpha_l1.detach().cpu()))
+        full_mse_losses.append(float(full_mse.detach().cpu()))
+        full_l1_losses.append(float(full_l1.detach().cpu()))
         accuracies.append(float((pred == target_index).float().mean().detach().cpu()))
     return {
         "loss": float(mean(losses) or 0.0),
         "ce_loss": float(mean(ce_losses) or 0.0),
         "soft_mse": float(mean(soft_mse_losses) or 0.0),
+        "soft_l1": float(mean(soft_l1_losses) or 0.0),
+        "target_alpha_mse": float(mean(target_alpha_mse_losses) or 0.0),
+        "target_alpha_l1": float(mean(target_alpha_l1_losses) or 0.0),
+        "full_mse": float(mean(full_mse_losses) or 0.0),
+        "full_l1": float(mean(full_l1_losses) or 0.0),
         "alpha_accuracy": float(mean(accuracies) or 0.0),
     }
 
@@ -706,11 +753,17 @@ def make_report(summary_rows: list[dict[str, Any]], config: dict[str, Any]) -> s
         "alpha_head_predicted_top1_fallback",
     ]
     mode = target_mode(config)
+    refiner_frozen = bool(config["model"].get("freeze_refiner", True))
+    refiner_phrase = "The residual refiner is frozen; only the alpha head is trained."
+    if not refiner_frozen:
+        refiner_phrase = "The residual refiner is jointly fine-tuned with the alpha head."
     if mode == "benefit_utility_alpha":
         title = "# Benefit-Aware Alpha-Head Residual Refiner Pilot"
+        if not refiner_frozen:
+            title = "# Benefit-Aware Joint Alpha-Head Residual Refiner Pilot"
         target_description = (
-            "The residual refiner is frozen by default; only the alpha head is trained on "
-            "benefit/risk utility alpha labels from the previous benefit predictor feature table."
+            f"{refiner_phrase} The alpha target is a benefit/risk utility label "
+            "from the previous benefit predictor feature table."
         )
         caveat = (
             "- The alpha target is a validation-derived safe-PSNR utility target; originals are used "
@@ -719,8 +772,7 @@ def make_report(summary_rows: list[dict[str, Any]], config: dict[str, Any]) -> s
     else:
         title = "# Alpha-Head Residual Refiner Pilot"
         target_description = (
-            "The residual refiner is frozen by default; only the alpha head is trained on validation "
-            "pseudo targets from adaptive alpha."
+            f"{refiner_phrase} The alpha target is a validation pseudo target from adaptive alpha."
         )
         caveat = "- The alpha target is a pseudo target from `adaptive_max_top1_consistent_alpha`, not supervised semantic truth."
     lines = [
@@ -730,7 +782,9 @@ def make_report(summary_rows: list[dict[str, Any]], config: dict[str, Any]) -> s
         target_description,
         "No diffusion, LPIPS weight loading, or external download is used.",
         f"Target mode: `{mode}`.",
+        f"Freeze refiner: `{str(refiner_frozen).lower()}`.",
         f"Class weighting: `{config['training'].get('class_weighting', 'none')}`.",
+        f"Soft loss detaches refiner: `{str(bool(config['training'].get('soft_refiner_detach', True))).lower()}`.",
         "",
         "## Bottom Line",
         "",
@@ -1040,9 +1094,8 @@ def main() -> None:
     base_info = load_base_refiner(model, resolve_project_path(config["inputs"]["base_refiner_checkpoint"]))
     model.set_refiner_frozen(bool(config["model"].get("freeze_refiner", True)))
     model.to(device)
-    trainable_params = [param for param in model.parameters() if param.requires_grad]
     optimizer = torch.optim.AdamW(
-        trainable_params,
+        optimizer_parameters(model, config),
         lr=float(config["training"]["lr"]),
         weight_decay=float(config["training"].get("weight_decay", 0.0)),
     )

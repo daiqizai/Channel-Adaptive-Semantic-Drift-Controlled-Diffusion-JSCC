@@ -1696,6 +1696,12 @@ benefit-aware follow-up 配置：
 configs/s6_alpha_head_residual_refiner_benefit_exp_s4_006.yaml
 ```
 
+joint fine-tune follow-up 配置：
+
+```text
+configs/s6_alpha_head_residual_refiner_joint_benefit_exp_s4_006.yaml
+```
+
 先检查输入和本地权重：
 
 ```bash
@@ -1720,6 +1726,12 @@ benefit-aware 运行：
 env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_benefit_exp_s4_006.yaml --device cuda:0
 ```
 
+joint fine-tune 运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_joint_benefit_exp_s4_006.yaml --device cuda:0
+```
+
 输出：
 
 ```text
@@ -1739,9 +1751,16 @@ outputs/analysis/exp_s4_006_alpha_head_residual_refiner_benefit/summary.csv
 outputs/analysis/exp_s4_006_alpha_head_residual_refiner_benefit/per_sample.csv
 outputs/analysis/exp_s4_006_alpha_head_residual_refiner_benefit/train_history.csv
 outputs/analysis/exp_s4_006_alpha_head_residual_refiner_benefit/metadata.json
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_joint_benefit/REPORT.md
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_joint_benefit/summary.csv
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_joint_benefit/per_sample.csv
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_joint_benefit/train_history.csv
+outputs/analysis/exp_s4_006_alpha_head_residual_refiner_joint_benefit/metadata.json
 ```
 
-核心结论：alpha-head pilot 在 validation/held-out/test-like 上 PSNR delta 为 `+0.3846/+0.3808/+0.3623` dB，accepted new error 为 `0/0/0`，但低于 full-strength top-1 fallback、two-stage policy 和 receiver predictor。weighted follow-up 使用 tempered inverse-frequency CE 后，PSNR delta 变为 `+0.3851/+0.3506/+0.3166` dB，说明类别不均衡不是主因。benefit-aware follow-up 把目标换成 safe-PSNR utility alpha 后，PSNR delta 变为 `+0.4251/+0.4192/+0.3530` dB，new error 仍为 `0/0/0`，相对普通/weighted alpha-head 有部分进展，但仍低于 receiver predictor、two-stage policy 和 exhaustive adaptive alpha；预测分布仍几乎不使用 `alpha=0.25`。结论是 benefit/risk 目标方向有价值，但冻结 refiner 特征 + alpha 分类头仍不足，下一步应 joint fine-tune residual CNN，或直接加入 semantic-risk-aware residual amplitude loss。
+核心结论：alpha-head pilot 在 validation/held-out/test-like 上 PSNR delta 为 `+0.3846/+0.3808/+0.3623` dB，accepted new error 为 `0/0/0`，但低于 full-strength top-1 fallback、two-stage policy 和 receiver predictor。weighted follow-up 使用 tempered inverse-frequency CE 后，PSNR delta 变为 `+0.3851/+0.3506/+0.3166` dB，说明类别不均衡不是主因。benefit-aware follow-up 把目标换成 safe-PSNR utility alpha 后，PSNR delta 变为 `+0.4251/+0.4192/+0.3530` dB，new error 仍为 `0/0/0`，相对普通/weighted alpha-head 有部分进展，但仍低于 receiver predictor、two-stage policy 和 exhaustive adaptive alpha；预测分布仍几乎不使用 `alpha=0.25`。
+
+joint fine-tune follow-up 解冻 residual CNN，并让 soft-alpha / target-alpha MSE 反传到 refiner。它把 validation target accuracy 提到 `0.7719`，预测分布也开始覆盖 `alpha=0.25/0.5`，但 restoration anchor 被破坏，PSNR delta 只有 `+0.3294/+0.2303/+0.1869` dB。结论是 benefit/risk 目标能改善 alpha 分类，但全量 unfreeze 且 CE 主导会损伤 residual restoration；下一步应 partial fine-tune（只调 tail/amplitude/head）或 reconstruction-dominant loss，而不是直接全量 joint CE。
 
 ## 项目进度可视化汇总
 
