@@ -192,6 +192,30 @@ def class_weight_values(config: dict[str, Any], train_rows: list[dict[str, Any]]
     return [float(weight) for weight in raw]
 
 
+def refiner_trainable_parts(config: dict[str, Any]) -> list[str]:
+    part_names = ["head", "body", "tail"]
+    model_cfg = config["model"]
+    freeze_refiner = bool(model_cfg.get("freeze_refiner", True))
+    raw_parts = model_cfg.get("trainable_refiner_parts")
+    if raw_parts in ("", None):
+        return [] if freeze_refiner else part_names
+    if isinstance(raw_parts, str):
+        if raw_parts in {"none", "false", "off"}:
+            parts: list[str] = []
+        elif raw_parts in {"all", "true", "on"}:
+            parts = part_names
+        else:
+            parts = [part.strip() for part in raw_parts.split(",") if part.strip()]
+    else:
+        parts = [str(part) for part in raw_parts]
+    unknown = sorted(set(parts) - set(part_names))
+    if unknown:
+        raise ValueError(f"Unsupported trainable_refiner_parts: {unknown}; expected subset of {part_names}")
+    if freeze_refiner and parts:
+        raise ValueError("model.freeze_refiner=true conflicts with non-empty trainable_refiner_parts")
+    return [part for part in part_names if part in set(parts)]
+
+
 def validate_monotonic_gates(config: dict[str, Any], snrs: list[float]) -> dict[str, float]:
     gates = {snr: residual_gate(config, snr) for snr in snrs}
     ordered = sorted(gates)
@@ -328,6 +352,7 @@ def validate_inputs(config: dict[str, Any], snrs: list[float]) -> dict[str, Any]
         "train_split": train_split,
         "snrs": snrs,
         "residual_gates": validate_monotonic_gates(config, snrs),
+        "trainable_refiner_parts": refiner_trainable_parts(config),
         "proxy_environment_present": proxy_environment_present(),
     }
 
@@ -381,10 +406,23 @@ class AlphaHeadResidualRefiner(nn.Module):
             nn.Linear(hidden, len(config["alphas"])),
         )
 
+    def refiner_modules(self) -> dict[str, nn.Module]:
+        return {
+            "head": self.head,
+            "body": self.body,
+            "tail": self.tail,
+        }
+
     def set_refiner_frozen(self, frozen: bool) -> None:
-        for module in [self.head, self.body, self.tail]:
+        for module in self.refiner_modules().values():
             for param in module.parameters():
                 param.requires_grad = not frozen
+
+    def set_trainable_refiner_parts(self, parts: list[str]) -> None:
+        selected = set(parts)
+        for name, module in self.refiner_modules().items():
+            for param in module.parameters():
+                param.requires_grad = name in selected
 
     def forward(
         self,
@@ -443,6 +481,16 @@ def optimizer_parameters(model: AlphaHeadResidualRefiner, config: dict[str, Any]
     if not groups:
         raise RuntimeError("No trainable parameters found for optimizer.")
     return groups
+
+
+def trainable_parameter_summary(model: AlphaHeadResidualRefiner) -> dict[str, dict[str, int]]:
+    modules = {**model.refiner_modules(), "alpha_head": model.alpha_head}
+    summary: dict[str, dict[str, int]] = {}
+    for name, module in modules.items():
+        total = sum(param.numel() for param in module.parameters())
+        trainable = sum(param.numel() for param in module.parameters() if param.requires_grad)
+        summary[name] = {"total": int(total), "trainable": int(trainable)}
+    return summary
 
 
 def train_one_epoch(
@@ -753,14 +801,23 @@ def make_report(summary_rows: list[dict[str, Any]], config: dict[str, Any]) -> s
         "alpha_head_predicted_top1_fallback",
     ]
     mode = target_mode(config)
-    refiner_frozen = bool(config["model"].get("freeze_refiner", True))
-    refiner_phrase = "The residual refiner is frozen; only the alpha head is trained."
-    if not refiner_frozen:
+    trainable_parts = refiner_trainable_parts(config)
+    refiner_frozen = not trainable_parts
+    if refiner_frozen:
+        refiner_phrase = "The residual refiner is frozen; only the alpha head is trained."
+    elif trainable_parts == ["head", "body", "tail"]:
         refiner_phrase = "The residual refiner is jointly fine-tuned with the alpha head."
+    else:
+        refiner_phrase = (
+            "The residual refiner is partially fine-tuned "
+            f"({', '.join(trainable_parts)}) with the alpha head."
+        )
     if mode == "benefit_utility_alpha":
         title = "# Benefit-Aware Alpha-Head Residual Refiner Pilot"
-        if not refiner_frozen:
+        if not refiner_frozen and trainable_parts == ["head", "body", "tail"]:
             title = "# Benefit-Aware Joint Alpha-Head Residual Refiner Pilot"
+        elif not refiner_frozen:
+            title = "# Benefit-Aware Partial Alpha-Head Residual Refiner Pilot"
         target_description = (
             f"{refiner_phrase} The alpha target is a benefit/risk utility label "
             "from the previous benefit predictor feature table."
@@ -783,6 +840,7 @@ def make_report(summary_rows: list[dict[str, Any]], config: dict[str, Any]) -> s
         "No diffusion, LPIPS weight loading, or external download is used.",
         f"Target mode: `{mode}`.",
         f"Freeze refiner: `{str(refiner_frozen).lower()}`.",
+        f"Trainable refiner parts: `{trainable_parts}`.",
         f"Class weighting: `{config['training'].get('class_weighting', 'none')}`.",
         f"Soft loss detaches refiner: `{str(bool(config['training'].get('soft_refiner_detach', True))).lower()}`.",
         "",
@@ -1092,7 +1150,8 @@ def main() -> None:
 
     model = build_model(config)
     base_info = load_base_refiner(model, resolve_project_path(config["inputs"]["base_refiner_checkpoint"]))
-    model.set_refiner_frozen(bool(config["model"].get("freeze_refiner", True)))
+    trainable_parts = refiner_trainable_parts(config)
+    model.set_trainable_refiner_parts(trainable_parts)
     model.to(device)
     optimizer = torch.optim.AdamW(
         optimizer_parameters(model, config),
@@ -1184,6 +1243,8 @@ def main() -> None:
         "splits": config["splits"],
         "model": config["model"],
         "training": config["training"],
+        "trainable_refiner_parts": trainable_parts,
+        "trainable_parameters": trainable_parameter_summary(model),
         "classifier": config["classifier"],
         "base_info": base_info,
         "target_metadata": target_metadata,
