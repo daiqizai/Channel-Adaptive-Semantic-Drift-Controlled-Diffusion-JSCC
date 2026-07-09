@@ -51,6 +51,7 @@
 | ANALYSIS-S6-013 | 2026-07-09 | a7076eb + local script/config | AlphaHeadResidualRefinerPilot | COCO2017 val2017 validation/held-out/test-like adaptive-alpha pseudo targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, target alpha accuracy, accept/new-error | 完成（冻结 residual CNN，仅训练 alpha head；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/` |
 | ANALYSIS-S6-014 | 2026-07-09 | 594db31 + local script/config | WeightedAlphaHeadResidualRefiner | COCO2017 val2017 validation/held-out/test-like adaptive-alpha pseudo targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, target alpha accuracy, accept/new-error | 完成（冻结 residual CNN，仅训练 class-weighted alpha head；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_weighted/` |
 | ANALYSIS-S6-015 | 2026-07-09 | 050b0c2 + local script/config | BenefitAwareAlphaPredictor | COCO2017 val2017 validation/held-out/test-like alpha candidates | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, utility target accuracy, accept/new-error | 完成（validation-derived safe-PSNR utility soft labels；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_benefit_alpha_predictor/` |
+| ANALYSIS-S6-016 | 2026-07-09 | 53b71b3 + local script/config | BenefitAwareAlphaHeadResidualRefiner | COCO2017 val2017 validation/held-out/test-like benefit utility alpha targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, utility target accuracy, accept/new-error | 完成（冻结 residual CNN，仅训练 benefit-aware alpha head；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_benefit/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2790,6 +2791,77 @@ Benefit-aware 目标在 validation 上有效：PSNR delta `+0.5538` dB，几乎�
 #### 复现备注
 
 正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。正式脚本只使用本地 candidate PNG 和本地 AlexNet 权重，不加载 LPIPS，不下载任何模型或数据。运行时 `git_dirty_state=dirty` 是因为脚本和配置为本轮新增本地文件，结果记录为 `050b0c2 + local script/config`。
+
+### ANALYSIS-S6-016：Benefit-Aware Alpha-Head Residual Refiner
+
+- 日期：2026-07-09
+- 项目版本：`53b71b3` + local script/config at run time
+- 阶段：S6 training-side residual alpha-control exploration
+- 方法：BenefitAwareAlphaHeadResidualRefiner
+- 数据集：COCO2017 `val2017` validation / held-out / test-like alpha candidates
+- 数据 split：validation `320` 行用于训练 alpha head；held-out `160` 行和 test-like `320` 行只评估
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_alpha_head_residual_refiner_benefit_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_train_alpha_head_residual_refiner.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_benefit_exp_s4_006.yaml --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_benefit_exp_s4_006.yaml --device cuda:0
+```
+
+- 关键源码：`scripts/s6_train_alpha_head_residual_refiner.py`
+- 输入：
+  - `outputs/EXP-S4-006/checkpoints/best.pt`
+  - `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_benefit_alpha_predictor/features.csv`
+  - `outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth`
+- 输出路径：`outputs/analysis/exp_s4_006_alpha_head_residual_refiner_benefit/`
+- 状态：完成；冻结 residual CNN，仅训练 alpha head，不运行 diffusion、不下载、不加载 LPIPS
+
+#### 方法
+
+该实验复用 alpha-head residual refiner 流程，但把训练标签从 `adaptive_max_top1_consistent_alpha` hard pseudo target 换成上一轮 benefit predictor feature table 中的 `utility_target_alpha`。这些 utility target 使用 validation 原图构造：候选 alpha 必须满足 AlexNet top-1 与 M0 top-1 一致，安全候选按 PSNR delta 选最大收益，否则回退 M0。
+
+模型输入和推理仍只使用接收端可见的 M0/SNR/refiner feature。评估阶段仍对 predicted-alpha candidate 使用冻结 AlexNet top-1 fallback，因此该实验是训练侧 alpha 控制探索，不是新的 M3 闭环。
+
+#### 指标
+
+| Split | Policy | Delta PSNR | Failure Delta | Accept | Target Acc | New Error | Missed Repair |
+|---|---|---:|---:|---:|---:|---:|---:|
+| validation | full_strength_top1_fallback | +0.4011 | +0.0000 | 0.6406 |  | 0 | 41 |
+| validation | alpha_head_predicted_top1_fallback | +0.4251 | +0.0000 | 0.7812 | 0.5406 | 0 | 28 |
+| held-out | full_strength_top1_fallback | +0.4454 | +0.0000 | 0.6687 |  | 0 | 26 |
+| held-out | alpha_head_predicted_top1_fallback | +0.4192 | +0.0000 | 0.8000 | 0.4313 | 0 | 16 |
+| test-like | full_strength_top1_fallback | +0.4113 | +0.0000 | 0.6250 |  | 0 | 54 |
+| test-like | alpha_head_predicted_top1_fallback | +0.3530 | +0.0000 | 0.7406 | 0.4062 | 0 | 40 |
+
+对比 alpha-control 线：
+
+| Policy | validation | held-out | test-like | New Error |
+|---|---:|---:|---:|---:|
+| benefit-aware alpha head | +0.4251 | +0.4192 | +0.3530 | 0/0/0 |
+| unweighted alpha head | +0.3846 | +0.3808 | +0.3623 | 0/0/0 |
+| weighted alpha head | +0.3851 | +0.3506 | +0.3166 | 0/0/0 |
+| benefit-aware predictor | +0.5538 | +0.4474 | +0.4627 | 0/0/0 |
+| receiver alpha predictor | +0.5584 | +0.5099 | +0.4871 | 0/0/0 |
+| full_then_fixed_schedule | +0.4831 | +0.5009 | +0.4875 | 0/0/0 |
+| adaptive_max_top1_consistent_alpha | +0.5584 | +0.5664 | +0.5691 | 0/0/0 |
+
+#### 结果总结
+
+Benefit-aware alpha head 比普通/weighted alpha-head 有部分进展。validation 从 `+0.3846/+0.3851` 提到 `+0.4251` dB，held-out 从 `+0.3808/+0.3506` 提到 `+0.4192` dB，accepted new error 仍为 `0/0/0`。但是它没有超过 receiver predictor、two-stage policy 或 exhaustive adaptive alpha，test-like 也低于普通 alpha-head。
+
+预测分布显示模型仍没有学到细粒度 alpha 边界：validation predicted alpha 为 `0.0/0.25/0.5/0.75/1.0 = 35/0/10/154/121`，而 target 为 `30/34/35/115/106`；test-like predicted 为 `50/1/12/113/144`，target 为 `35/35/30/123/97`。模型几乎不预测 `alpha=0.25`，说明冻结 residual feature + alpha classifier 仍主要学到粗粒度 fallback/strong-refine，而不是 utility target 中的收益/风险排序。
+
+结论：benefit/risk 目标本身有价值，但只把标签换到冻结 alpha head 上还不够。下一步应优先 joint fine-tune residual CNN，或把 semantic-risk-aware residual amplitude loss 直接放进 residual restoration 训练，而不是继续只换 alpha 分类标签。
+
+#### 复现备注
+
+正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。正式脚本只使用本地 `EXP-S4-006` checkpoint、本地 benefit feature table 和本地 AlexNet 权重，不加载 LPIPS，不下载任何模型或数据。运行时 `git_dirty_state=dirty` 是因为脚本和配置为本轮新增本地文件，结果记录为 `53b71b3 + local script/config`。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 

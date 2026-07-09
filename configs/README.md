@@ -48,3 +48,4 @@
 - `s6_benefit_alpha_predictor_exp_s4_006.yaml`：把 receiver-side alpha predictor 的训练目标改为 validation-derived safe-PSNR utility soft labels，检查收益/风险目标是否比 hard pseudo alpha 更可迁移。
 - `s6_alpha_head_residual_refiner_pilot_exp_s4_006.yaml`：加载 `EXP-S4-006` residual CNN 并训练冻结特征上的 alpha head，验证把 residual alpha 控制前移到模型内部的第一版可行性。
 - `s6_alpha_head_residual_refiner_weighted_exp_s4_006.yaml`：第一版 alpha-head 的 class-weighted follow-up，使用 tempered inverse-frequency CE 权重检查类别不均衡是否是主要瓶颈。
+- `s6_alpha_head_residual_refiner_benefit_exp_s4_006.yaml`：把冻结 residual CNN alpha-head 的训练目标替换为 safe-PSNR utility alpha，检查 benefit/risk 目标在模型内部特征上是否更可迁移。

@@ -216,6 +216,65 @@ def select_policy_rows(config: dict[str, Any], rows: list[dict[str, str]], polic
     return selected
 
 
+def target_mode(config: dict[str, Any]) -> str:
+    return str(config.get("source_policy", {}).get("target_mode", "adaptive_pseudo_alpha"))
+
+
+def apply_target_mode(config: dict[str, Any], rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    mode = target_mode(config)
+    alphas = [float(item) for item in config["alphas"]]
+    if mode in {"", "adaptive_pseudo_alpha", "adaptive_alpha"}:
+        return rows, {
+            "target_mode": mode or "adaptive_pseudo_alpha",
+            "target_source": str(config["source_policy"]["target"]),
+            "target_counts": alpha_class_counts(rows, len(alphas)),
+        }
+    if mode != "benefit_utility_alpha":
+        raise ValueError(f"Unsupported source_policy.target_mode: {mode}")
+
+    features_csv = resolve_project_path(config["inputs"]["benefit_features_csv"])
+    target_field = str(config["source_policy"].get("benefit_target_field", "utility_target_alpha"))
+    feature_rows = read_csv(features_csv)
+    features_by_key = {row_key(row): row for row in feature_rows}
+    missing: list[tuple[str, float, str]] = []
+    replaced: list[dict[str, Any]] = []
+    for row in rows:
+        key = row_key(row)
+        feature = features_by_key.get(key)
+        if feature is None:
+            missing.append(key)
+            continue
+        target_alpha = to_float(feature.get(target_field), to_float(feature.get("utility_target_alpha"), 0.0))
+        idx = alpha_index(target_alpha, alphas)
+        item = dict(row)
+        item["pseudo_target_alpha"] = float(row["target_alpha"])
+        item["target_alpha"] = float(alphas[idx])
+        item["target_alpha_index"] = int(idx)
+        item["utility_target_alpha"] = float(alphas[idx])
+        item["utility_values"] = feature.get("utility_values", "")
+        item["utility_soft_targets"] = feature.get("utility_soft_targets", "")
+        replaced.append(item)
+    if missing:
+        preview = ", ".join([f"{split}/{snr}/{sample}" for split, snr, sample in missing[:8]])
+        raise RuntimeError(f"Missing benefit feature rows for {len(missing)} adaptive rows: {preview}")
+    return replaced, {
+        "target_mode": mode,
+        "target_source": project_relative(features_csv),
+        "target_field": target_field,
+        "target_counts": alpha_class_counts(replaced, len(alphas)),
+        "adaptive_pseudo_target_counts": alpha_class_counts(rows, len(alphas)),
+    }
+
+
+def load_target_rows(config: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    rows = select_policy_rows(
+        config,
+        read_csv(resolve_project_path(config["inputs"]["adaptive_per_sample_csv"])),
+        str(config["source_policy"]["target"]),
+    )
+    return apply_target_mode(config, rows)
+
+
 def validate_inputs(config: dict[str, Any], snrs: list[float]) -> dict[str, Any]:
     base_checkpoint = resolve_project_path(config["inputs"]["base_refiner_checkpoint"])
     adaptive_csv = resolve_project_path(config["inputs"]["adaptive_per_sample_csv"])
@@ -223,6 +282,10 @@ def validate_inputs(config: dict[str, Any], snrs: list[float]) -> dict[str, Any]
     two_stage_summary = resolve_project_path(config["inputs"]["two_stage_summary_csv"])
     classifier_weights = resolve_project_path(config["classifier"]["weights_file"])
     paths = [base_checkpoint, adaptive_csv, adaptive_summary, two_stage_summary, classifier_weights]
+    benefit_features_csv = None
+    if target_mode(config) == "benefit_utility_alpha":
+        benefit_features_csv = resolve_project_path(config["inputs"]["benefit_features_csv"])
+        paths.append(benefit_features_csv)
     missing = [str(path) for path in paths if not path.exists()]
     if missing:
         raise FileNotFoundError("Missing required inputs:\n" + "\n".join(missing))
@@ -230,9 +293,8 @@ def validate_inputs(config: dict[str, Any], snrs: list[float]) -> dict[str, Any]
         raise RuntimeError(f"Classifier weights missing from local cache: {classifier_weights}")
 
     validate_monotonic_gates(config, snrs)
-    rows = read_csv(adaptive_csv)
     target_policy = str(config["source_policy"]["target"])
-    target_rows = select_policy_rows(config, rows, target_policy)
+    target_rows, target_metadata = load_target_rows(config)
     eval_splits = [str(item) for item in config["splits"]["eval_splits"]]
     train_split = str(config["splits"]["train_split"])
     split_counts = {split: 0 for split in eval_splits}
@@ -249,15 +311,19 @@ def validate_inputs(config: dict[str, Any], snrs: list[float]) -> dict[str, Any]
     absent = [split for split, count in split_counts.items() if count == 0]
     if absent:
         raise RuntimeError(f"Missing eval split rows: {absent}")
+    path_manifest = {
+        "base_refiner_checkpoint": project_relative(base_checkpoint),
+        "adaptive_per_sample_csv": project_relative(adaptive_csv),
+        "adaptive_summary_csv": project_relative(adaptive_summary),
+        "two_stage_summary_csv": project_relative(two_stage_summary),
+        "classifier_weights": project_relative(classifier_weights),
+    }
+    if benefit_features_csv is not None:
+        path_manifest["benefit_features_csv"] = project_relative(benefit_features_csv)
     return {
-        "paths": {
-            "base_refiner_checkpoint": project_relative(base_checkpoint),
-            "adaptive_per_sample_csv": project_relative(adaptive_csv),
-            "adaptive_summary_csv": project_relative(adaptive_summary),
-            "two_stage_summary_csv": project_relative(two_stage_summary),
-            "classifier_weights": project_relative(classifier_weights),
-        },
+        "paths": path_manifest,
         "target_policy": target_policy,
+        "target_metadata": target_metadata,
         "split_counts": split_counts,
         "train_split": train_split,
         "snrs": snrs,
@@ -639,12 +705,31 @@ def make_report(summary_rows: list[dict[str, Any]], config: dict[str, Any]) -> s
         "full_strength_top1_fallback",
         "alpha_head_predicted_top1_fallback",
     ]
+    mode = target_mode(config)
+    if mode == "benefit_utility_alpha":
+        title = "# Benefit-Aware Alpha-Head Residual Refiner Pilot"
+        target_description = (
+            "The residual refiner is frozen by default; only the alpha head is trained on "
+            "benefit/risk utility alpha labels from the previous benefit predictor feature table."
+        )
+        caveat = (
+            "- The alpha target is a validation-derived safe-PSNR utility target; originals are used "
+            "for label construction and evaluation, not as model input."
+        )
+    else:
+        title = "# Alpha-Head Residual Refiner Pilot"
+        target_description = (
+            "The residual refiner is frozen by default; only the alpha head is trained on validation "
+            "pseudo targets from adaptive alpha."
+        )
+        caveat = "- The alpha target is a pseudo target from `adaptive_max_top1_consistent_alpha`, not supervised semantic truth."
     lines = [
-        "# Alpha-Head Residual Refiner Pilot",
+        title,
         "",
         "This pilot attaches a learned alpha head to the EXP-S4-006 residual refiner.",
-        "The residual refiner is frozen by default; only the alpha head is trained on validation pseudo targets from adaptive alpha.",
+        target_description,
         "No diffusion, LPIPS weight loading, or external download is used.",
+        f"Target mode: `{mode}`.",
         f"Class weighting: `{config['training'].get('class_weighting', 'none')}`.",
         "",
         "## Bottom Line",
@@ -686,7 +771,7 @@ def make_report(summary_rows: list[dict[str, Any]], config: dict[str, Any]) -> s
             "",
             "## Caveats",
             "",
-            "- The alpha target is a pseudo target from `adaptive_max_top1_consistent_alpha`, not supervised semantic truth.",
+            caveat,
             "- This is a training-side exploration pilot, not a new strongest M3 claim.",
             "- The final decision still uses the frozen AlexNet top-1 consistency gate.",
             "- LPIPS is omitted to avoid external weight loading; compare PSNR/SSIM/MS-SSIM and semantic counts only.",
@@ -770,7 +855,12 @@ def evaluate(
                     "split": split,
                     "snr_db": float(snr),
                     "sample": row["sample"],
+                    "target_mode": target_mode(config),
                     "target_alpha": target_alpha,
+                    "pseudo_target_alpha": row.get("pseudo_target_alpha", ""),
+                    "utility_target_alpha": row.get("utility_target_alpha", ""),
+                    "utility_values": row.get("utility_values", ""),
+                    "utility_soft_targets": row.get("utility_soft_targets", ""),
                     "predicted_alpha": predicted_alpha,
                     "target_alpha_index": int(row["target_alpha_index"]),
                     "predicted_alpha_index": int(render["predicted_indices"][idx]),
@@ -926,11 +1016,7 @@ def main() -> None:
     if device.type == "cuda":
         torch.cuda.manual_seed_all(seed)
 
-    all_rows = select_policy_rows(
-        config,
-        read_csv(resolve_project_path(config["inputs"]["adaptive_per_sample_csv"])),
-        str(config["source_policy"]["target"]),
-    )
+    all_rows, target_metadata = load_target_rows(config)
     train_rows = [row for row in all_rows if str(row["split"]) == str(config["splits"]["train_split"])]
     class_weights_list = class_weight_values(config, train_rows)
     train_dataset = AlphaPolicyDataset(train_rows, float(config["model"]["snr_norm_max"]))
@@ -1047,6 +1133,7 @@ def main() -> None:
         "training": config["training"],
         "classifier": config["classifier"],
         "base_info": base_info,
+        "target_metadata": target_metadata,
         "target_alpha_train_counts": alpha_class_counts(train_rows, len(config["alphas"])),
         "class_weights": class_weights_list or [],
         "proxy_environment_present": proxy_environment_present(),
