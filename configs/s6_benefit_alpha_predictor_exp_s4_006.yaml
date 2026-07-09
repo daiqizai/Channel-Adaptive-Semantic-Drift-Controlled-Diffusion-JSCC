@@ -1,0 +1,93 @@
+phase: S6
+analysis_id: exp_s4_006_benefit_alpha_predictor
+method: BenefitAwareAlphaPredictor
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  adaptive_summary_csv: outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv
+  adaptive_per_sample_csv: outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv
+  two_stage_summary_csv: outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/summary.csv
+
+splits:
+  - name: validation
+    role: train
+    candidate_root: outputs/analysis/exp_s4_006_residual_shrink_selection/candidates
+  - name: held-out
+    role: eval
+    candidate_root: outputs/analysis/exp_s4_006_heldout_residual_shrink_schedule_check/candidates
+  - name: test-like
+    role: eval
+    candidate_root: outputs/analysis/exp_s4_006_testlike_residual_shrink_schedule_check/candidates
+
+alphas: [0.0, 0.25, 0.5, 0.75, 1.0]
+alpha_labels:
+  "0.0": fallback_m0
+  "0.25": alpha_0p25
+  "0.5": alpha_0p5
+  "0.75": alpha_0p75
+  "1.0": alpha_1
+
+source_policies:
+  m0: m0
+  full: top1_full_strength
+  fixed: fixed_validation_top1_shrink_schedule
+  oracle: adaptive_max_top1_consistent_alpha
+
+predictor:
+  model_type: small_mlp
+  hidden_units: 16
+  epochs: 800
+  learning_rate: 0.01
+  weight_decay: 0.001
+  class_weighting: none
+  target_mode: utility_soft_labels
+  target_policy: validation_best_safe_psnr_alpha
+  train_split: validation
+  seed: 42
+  utility:
+    semantic_safe_rule: candidate_top1_equals_m0_top1
+    objective: delta_psnr_vs_m0_db
+    fallback_utility_db: 0.0
+    unsafe_penalty_db: -2.0
+    temperature: 0.20
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 32
+  topk: 5
+
+evaluation:
+  image_batch_size: 16
+  metrics:
+    - psnr
+    - ssim
+    - ms_ssim
+    - pseudo_final_failure
+    - accept_rate
+    - predicted_alpha
+    - accepted_new_error_count
+    - missed_repair_count
+  lpips: omitted_to_avoid_weight_loading_or_download
+
+notes:
+  - This derived analysis reuses the receiver alpha predictor but changes the training target.
+  - Training labels are soft utility targets from validation-only best safe PSNR gain over alpha candidates.
+  - Utility marks a candidate safe only when its AlexNet top-1 matches the M0 top-1; unsafe candidates receive a negative utility.
+  - Predictor features remain receiver-visible and do not include the original image or PSNR.
+  - At evaluation time the predicted alpha candidate is still protected by the same top-1 consistency gate before acceptance.
+  - The run loads only the local frozen AlexNet classifier weight and intentionally omits LPIPS to avoid external weight loading.
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_benefit_alpha_predictor
+  policy_name: benefit_alpha_predictor_top1_fallback
+  policy_label: benefit

@@ -50,6 +50,7 @@
 | ANALYSIS-S6-012 | 2026-07-09 | 4a466e8 + local script/config | MinimalClosureReportWithReceiverAlphaPredictor | COCO2017 val2017 existing outputs and analysis CSVs | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | method summary, residual shrink/adaptive/two-stage/predictor alpha tradeoff, pseudo semantic failure, accepted new error | 完成（派生汇总；纳入 receiver predictor；不训练不下载） | `outputs/analysis/minimal_closure_report/` |
 | ANALYSIS-S6-013 | 2026-07-09 | a7076eb + local script/config | AlphaHeadResidualRefinerPilot | COCO2017 val2017 validation/held-out/test-like adaptive-alpha pseudo targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, target alpha accuracy, accept/new-error | 完成（冻结 residual CNN，仅训练 alpha head；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_pilot/` |
 | ANALYSIS-S6-014 | 2026-07-09 | 594db31 + local script/config | WeightedAlphaHeadResidualRefiner | COCO2017 val2017 validation/held-out/test-like adaptive-alpha pseudo targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, target alpha accuracy, accept/new-error | 完成（冻结 residual CNN，仅训练 class-weighted alpha head；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_weighted/` |
+| ANALYSIS-S6-015 | 2026-07-09 | 050b0c2 + local script/config | BenefitAwareAlphaPredictor | COCO2017 val2017 validation/held-out/test-like alpha candidates | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, utility target accuracy, accept/new-error | 完成（validation-derived safe-PSNR utility soft labels；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_benefit_alpha_predictor/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -2720,6 +2721,75 @@ Weighted CE 把普通 CE 的 majority collapse 缓和了，但没有变成更好
 #### 复现备注
 
 正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。正式脚本只使用本地 `EXP-S4-006` checkpoint 和本地 AlexNet 权重，不加载 LPIPS，不下载任何模型或数据。运行时 `git_dirty_state=dirty` 是因为脚本和配置为本轮新增本地文件，结果记录为 `594db31 + local script/config`。
+
+### ANALYSIS-S6-015：Benefit-Aware Alpha Predictor
+
+- 日期：2026-07-09
+- 项目版本：`050b0c2` + local script/config at run time
+- 阶段：S6 receiver-side learned alpha-control exploration
+- 方法：BenefitAwareAlphaPredictor
+- 数据集：COCO2017 `val2017` validation / held-out / test-like alpha candidates
+- 数据 split：validation `320` 行用于训练小型 predictor；held-out `160` 行和 test-like `320` 行只评估
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_benefit_alpha_predictor_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_train_receiver_alpha_predictor.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_receiver_alpha_predictor.py --config configs/s6_benefit_alpha_predictor_exp_s4_006.yaml --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_receiver_alpha_predictor.py --config configs/s6_benefit_alpha_predictor_exp_s4_006.yaml --device cuda:0 --overwrite
+```
+
+- 关键源码：`scripts/s6_train_receiver_alpha_predictor.py`
+- 输入：
+  - `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/summary.csv`
+  - `outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/summary.csv`
+  - validation/held-out/test-like residual alpha candidate PNG roots
+  - `outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth`
+- 输出路径：`outputs/analysis/exp_s4_006_benefit_alpha_predictor/`
+- 状态：完成；只训练小型 tabular predictor，不训练图像模型、不运行 diffusion、不下载、不加载 LPIPS
+
+#### 方法
+
+上一版 `ReceiverAlphaPredictor` 直接把 `adaptive_max_top1_consistent_alpha` 当 hard pseudo-label 分类。这个 follow-up 改为 utility soft labels：
+
+- 对每个样本枚举 `alpha in [0.0, 0.25, 0.5, 0.75, 1.0]`；
+- 若候选 alpha 的 AlexNet top-1 与 M0 top-1 一致，则 utility 为该候选相对 M0 的 PSNR delta；
+- 若候选不满足 top-1 安全，则 utility 设为 `-2.0`；
+- `alpha=0.0` 表示 fallback M0，utility 为 `0.0`；
+- 用 temperature `0.20` 把 utility 转成 soft label 训练 predictor。
+
+训练标签可用 validation 原图计算 PSNR，但 predictor 输入仍只包含接收端可见特征：SNR、M0/full candidate 的分类器置信度、full candidate 是否与 M0 top-1 一致，以及 M0 到 full candidate 的 residual 图像统计。评估时仍对预测 alpha 候选执行 top-1 fallback。
+
+#### 指标
+
+| Split | Policy | Delta PSNR | Failure Delta | Accept | Target Acc | New Error | Missed Repair |
+|---|---|---:|---:|---:|---:|---:|---:|
+| validation | benefit_alpha_predictor_top1_fallback | +0.5538 | +0.0000 | 0.8906 | 0.7188 | 0 | 45 |
+| held-out | benefit_alpha_predictor_top1_fallback | +0.4474 | +0.0000 | 0.7562 | 0.3812 | 0 | 31 |
+| test-like | benefit_alpha_predictor_top1_fallback | +0.4627 | +0.0000 | 0.7469 | 0.4250 | 0 | 70 |
+
+对比当前 alpha-control 线：
+
+| Policy | validation | held-out | test-like | New Error |
+|---|---:|---:|---:|---:|
+| benefit-aware predictor | +0.5538 | +0.4474 | +0.4627 | 0/0/0 |
+| receiver alpha predictor | +0.5584 | +0.5099 | +0.4871 | 0/0/0 |
+| full_then_fixed_schedule | +0.4831 | +0.5009 | +0.4875 | 0/0/0 |
+| adaptive_max_top1_consistent_alpha | +0.5584 | +0.5664 | +0.5691 | 0/0/0 |
+
+#### 结果总结
+
+Benefit-aware 目标在 validation 上有效：PSNR delta `+0.5538` dB，几乎追上 exhaustive adaptive alpha 的 `+0.5584` dB。但它没有在 held-out/test-like 上迁移，分别只有 `+0.4474/+0.4627` dB，低于 two-stage 和上一版 receiver predictor。utility target 分布比原 adaptive pseudo target 更均衡，validation target 为 `0.0/0.25/0.5/0.75/1.0 = 30/34/35/115/106`，但 held-out/test-like target accuracy 只有 `0.3812/0.4250`。
+
+结论：把 alpha 目标改成“安全前提下的质量收益”是更贴近问题的方向，但当前 tabular feature + 小 MLP 泛化不足。下一步不宜继续只换浅层 predictor loss；更合理的是把 benefit/risk 约束前移到 residual CNN joint fine-tune，或让模型内部特征直接预测 residual amplitude/risk。
+
+#### 复现备注
+
+正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。正式脚本只使用本地 candidate PNG 和本地 AlexNet 权重，不加载 LPIPS，不下载任何模型或数据。运行时 `git_dirty_state=dirty` 是因为脚本和配置为本轮新增本地文件，结果记录为 `050b0c2 + local script/config`。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 

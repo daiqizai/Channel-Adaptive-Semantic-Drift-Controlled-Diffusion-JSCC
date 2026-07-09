@@ -1631,6 +1631,12 @@ outputs/analysis/exp_s4_006_two_stage_residual_alpha_policy/figures/two_stage_po
 configs/s6_receiver_alpha_predictor_exp_s4_006.yaml
 ```
 
+benefit-aware follow-up 配置：
+
+```text
+configs/s6_benefit_alpha_predictor_exp_s4_006.yaml
+```
+
 先检查输入和本地权重：
 
 ```bash
@@ -1643,6 +1649,12 @@ python3 scripts/s6_train_receiver_alpha_predictor.py --dry-run
 env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_receiver_alpha_predictor.py --device cuda:0
 ```
 
+benefit-aware 运行：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_receiver_alpha_predictor.py --config configs/s6_benefit_alpha_predictor_exp_s4_006.yaml --device cuda:0
+```
+
 输出：
 
 ```text
@@ -1653,9 +1665,14 @@ outputs/analysis/exp_s4_006_receiver_alpha_predictor/features.csv
 outputs/analysis/exp_s4_006_receiver_alpha_predictor/model_metadata.json
 outputs/analysis/exp_s4_006_receiver_alpha_predictor/training_history.csv
 outputs/analysis/exp_s4_006_receiver_alpha_predictor/figures/receiver_alpha_predictor_tradeoff.png
+outputs/analysis/exp_s4_006_benefit_alpha_predictor/REPORT.md
+outputs/analysis/exp_s4_006_benefit_alpha_predictor/summary.csv
+outputs/analysis/exp_s4_006_benefit_alpha_predictor/per_sample.csv
+outputs/analysis/exp_s4_006_benefit_alpha_predictor/features.csv
+outputs/analysis/exp_s4_006_benefit_alpha_predictor/model_metadata.json
 ```
 
-核心结论：receiver predictor 在 validation/held-out/test-like 上 PSNR delta 为 `+0.5584/+0.5099/+0.4871` dB，accepted new error 为 `0/0/0`。它在 validation 上完全拟合 adaptive alpha pseudo target，held-out 比 two-stage 略高，test-like 与 two-stage 基本持平，但仍低于 exhaustive adaptive alpha。这说明“学 alpha”方向值得继续，但当前 tabular 特征还不够，应把 alpha/risk 控制进一步放进 residual CNN 训练或更强的 receiver-side predictor。
+核心结论：receiver predictor 在 validation/held-out/test-like 上 PSNR delta 为 `+0.5584/+0.5099/+0.4871` dB，accepted new error 为 `0/0/0`。它在 validation 上完全拟合 adaptive alpha pseudo target，held-out 比 two-stage 略高，test-like 与 two-stage 基本持平，但仍低于 exhaustive adaptive alpha。benefit-aware follow-up 把训练目标换成 validation-derived safe-PSNR utility soft labels，在 validation 上几乎追上 adaptive alpha（`+0.5538` dB），但 held-out/test-like 只有 `+0.4474/+0.4627` dB，低于 two-stage 和原 receiver predictor。这说明收益/风险目标更贴近问题，但当前 tabular receiver 特征泛化不足；下一步应把 alpha/risk 控制放进 residual CNN joint fine-tune 或模型内部特征，而不是继续只换浅层 predictor loss。
 
 ## S6 Alpha-Head Residual Refiner Pilot
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import os
 import platform
 import shutil
@@ -168,6 +169,30 @@ def alpha_text(alpha: float) -> str:
     return str(float(alpha))
 
 
+def output_policy_name(config: dict[str, Any]) -> str:
+    return str(config.get("outputs", {}).get("policy_name", "receiver_alpha_predictor_top1_fallback"))
+
+
+def predictor_label(config: dict[str, Any]) -> str:
+    return str(config.get("outputs", {}).get("policy_label", "predictor"))
+
+
+def image_psnr(reference: torch.Tensor, image: torch.Tensor) -> float:
+    mse = float(((reference - image) ** 2).mean().item())
+    if mse <= 1e-12:
+        return 120.0
+    return float(-10.0 * math.log10(mse))
+
+
+def softmax_values(values: list[float], temperature: float) -> list[float]:
+    temp = max(float(temperature), 1e-6)
+    shifted = [float(value) / temp for value in values]
+    max_value = max(shifted)
+    exps = [math.exp(value - max_value) for value in shifted]
+    total = sum(exps)
+    return [float(value / total) for value in exps]
+
+
 def split_candidate_roots(config: dict[str, Any]) -> dict[str, Path]:
     return {str(item["name"]): resolve_project_path(item["candidate_root"]) for item in config["splits"]}
 
@@ -303,6 +328,7 @@ def build_examples(config: dict[str, Any], source_rows: list[dict[str, str]]) ->
                 "snr_db": snr,
                 "sample": sample,
                 "features": [float(feature_map[name]) for name in feature_names],
+                "pseudo_target_alpha": target_alpha,
                 "target_alpha": target_alpha,
                 "m0": m0,
                 "full": full,
@@ -311,6 +337,124 @@ def build_examples(config: dict[str, Any], source_rows: list[dict[str, str]]) ->
             }
         )
     return examples, feature_names
+
+
+def classify_all_alpha_candidates(
+    config: dict[str, Any],
+    examples: list[dict[str, Any]],
+    classifier_model,
+    classifier_preprocess,
+    device: torch.device,
+) -> tuple[dict[tuple[str, float, str, float], dict[str, Any]], dict[str, float]]:
+    alphas = [float(alpha) for alpha in config["alphas"] if float(alpha) > 0.0]
+    to_classify: list[dict[str, Any]] = []
+    for item in examples:
+        for alpha in alphas:
+            to_classify.append(
+                {
+                    "split": item["split"],
+                    "snr_db": float(item["snr_db"]),
+                    "sample": item["sample"],
+                    "alpha": alpha,
+                    "candidate_path": candidate_path(config, item["split"], alpha, float(item["snr_db"]), item["sample"]),
+                }
+            )
+    classified: dict[tuple[str, float, str, float], dict[str, Any]] = {}
+    times: dict[str, float] = {}
+    batch_size = int(config["classifier"]["batch_size"])
+    topk = int(config["classifier"]["topk"])
+    for split in sorted({item["split"] for item in to_classify}):
+        split_items = [item for item in to_classify if item["split"] == split]
+        preds, elapsed = classify_paths(
+            classifier_model,
+            classifier_preprocess,
+            [item["candidate_path"] for item in split_items],
+            batch_size,
+            topk,
+            device,
+        )
+        times[f"{split}_all_alpha_candidates"] = elapsed
+        for item, pred in zip(split_items, preds):
+            classified[(item["split"], float(item["snr_db"]), item["sample"], float(item["alpha"]))] = {
+                "candidate_path": item["candidate_path"],
+                "candidate_top1_index": int(pred["top_indices"][0]),
+                "candidate_top1_prob": float(pred["top_probs"][0]),
+            }
+    return classified, times
+
+
+def add_utility_targets(
+    config: dict[str, Any],
+    examples: list[dict[str, Any]],
+    all_candidate_predictions: dict[tuple[str, float, str, float], dict[str, Any]],
+) -> dict[str, Any]:
+    utility_cfg = config["predictor"].get("utility", {})
+    unsafe_penalty = float(utility_cfg.get("unsafe_penalty_db", -2.0))
+    temperature = float(utility_cfg.get("temperature", 0.20))
+    alphas = [float(item) for item in config["alphas"]]
+    target_counts = {str(alpha): 0 for alpha in alphas}
+    safe_counts = {str(alpha): 0 for alpha in alphas}
+    positive_safe_counts = {str(alpha): 0 for alpha in alphas}
+
+    for item in examples:
+        reference = load_rgb_tensor(resolve_project_path(item["m0"]["original"]))
+        m0_tensor = load_rgb_tensor(resolve_project_path(item["m0"]["m0_reconstruction"]))
+        m0_psnr = image_psnr(reference, m0_tensor)
+        m0_top1 = int(item["m0"]["m0_top1_index"])
+        utilities: list[float] = []
+        candidate_details: dict[str, dict[str, Any]] = {}
+        for alpha in alphas:
+            if alpha == 0.0:
+                candidate_psnr = m0_psnr
+                delta_psnr = 0.0
+                safe = True
+                top1_index = m0_top1
+                top1_prob = float(item["m0"]["m0_top1_prob"])
+                path = resolve_project_path(item["m0"]["m0_reconstruction"])
+                utility = float(utility_cfg.get("fallback_utility_db", 0.0))
+            else:
+                pred = all_candidate_predictions[(item["split"], float(item["snr_db"]), item["sample"], alpha)]
+                path = pred["candidate_path"]
+                candidate_tensor = load_rgb_tensor(path)
+                candidate_psnr = image_psnr(reference, candidate_tensor)
+                delta_psnr = candidate_psnr - m0_psnr
+                top1_index = int(pred["candidate_top1_index"])
+                top1_prob = float(pred["candidate_top1_prob"])
+                safe = top1_index == m0_top1
+                utility = delta_psnr if safe else unsafe_penalty
+            if safe:
+                safe_counts[str(alpha)] += 1
+            if safe and delta_psnr > 0.0:
+                positive_safe_counts[str(alpha)] += 1
+            utilities.append(float(utility))
+            candidate_details[str(alpha)] = {
+                "path": project_relative(path),
+                "top1_index": top1_index,
+                "top1_prob": top1_prob,
+                "top1_matches_m0": safe,
+                "psnr_db": candidate_psnr,
+                "delta_psnr_vs_m0_db": delta_psnr,
+                "utility": utility,
+            }
+        best_index = max(range(len(alphas)), key=lambda idx: (utilities[idx], alphas[idx]))
+        best_alpha = alphas[best_index]
+        soft_targets = softmax_values(utilities, temperature)
+        item["target_alpha"] = best_alpha
+        item["utility_target_alpha"] = best_alpha
+        item["utility_values"] = utilities
+        item["utility_soft_targets"] = soft_targets
+        item["alpha_candidate_details"] = candidate_details
+        item["pseudo_target_alpha"] = float(item.get("pseudo_target_alpha", best_alpha))
+        target_counts[str(best_alpha)] += 1
+
+    return {
+        "target_mode": "utility_soft_labels",
+        "utility_temperature": temperature,
+        "unsafe_penalty_db": unsafe_penalty,
+        "target_counts": target_counts,
+        "safe_counts": safe_counts,
+        "positive_safe_counts": positive_safe_counts,
+    }
 
 
 class AlphaPredictor(nn.Module):
@@ -353,6 +497,13 @@ def train_predictor(
     feature_std = raw_train.std(dim=0, unbiased=False).clamp_min(1e-6)
     x_train = tensorize_features(train_examples, feature_mean, feature_std).to(device)
     y_train = torch.tensor([alpha_to_index[float(example["target_alpha"])] for example in train_examples], dtype=torch.long).to(device)
+    target_mode = str(config["predictor"].get("target_mode", "pseudo_alpha_ce"))
+    if target_mode == "utility_soft_labels":
+        y_soft = torch.tensor([example["utility_soft_targets"] for example in train_examples], dtype=torch.float32).to(device)
+    elif target_mode == "pseudo_alpha_ce":
+        y_soft = None
+    else:
+        raise ValueError(f"Unsupported predictor target_mode: {target_mode}")
 
     counts = torch.bincount(y_train.detach().cpu(), minlength=len(alphas)).float()
     if str(config["predictor"].get("class_weighting", "")) == "inverse_frequency":
@@ -376,7 +527,11 @@ def train_predictor(
         model.train()
         optimizer.zero_grad(set_to_none=True)
         logits = model(x_train)
-        loss = loss_fn(logits, y_train)
+        if target_mode == "utility_soft_labels":
+            log_probs = torch.log_softmax(logits, dim=1)
+            loss = -(y_soft * log_probs).sum(dim=1).mean()
+        else:
+            loss = loss_fn(logits, y_train)
         loss.backward()
         optimizer.step()
         if epoch == 1 or epoch % 25 == 0 or epoch == int(config["predictor"]["epochs"]):
@@ -391,6 +546,7 @@ def train_predictor(
         "feature_names": feature_names,
         "feature_mean": feature_mean.tolist(),
         "feature_std": feature_std.tolist(),
+        "target_mode": target_mode,
         "class_counts_validation": {str(alphas[idx]): int(counts[idx].item()) for idx in range(len(alphas))},
         "class_weights": {str(alphas[idx]): float(weights[idx].item()) for idx in range(len(alphas))},
         "train_history": history,
@@ -465,10 +621,12 @@ def classify_predicted_candidates(
 
 
 def make_policy_rows(
+    config: dict[str, Any],
     predictions: list[dict[str, Any]],
     classified: dict[tuple[str, float, str], dict[str, Any]],
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    policy_name = output_policy_name(config)
     for item in predictions:
         m0 = item["m0"]
         oracle = item["oracle"]
@@ -500,10 +658,12 @@ def make_policy_rows(
         rows.append(
             {
                 "split": item["split"],
-                "policy": "receiver_alpha_predictor_top1_fallback",
+                "policy": policy_name,
                 "snr_db": snr,
                 "sample": item["sample"],
                 "target_alpha": item["target_alpha"],
+                "pseudo_target_alpha": item.get("pseudo_target_alpha", item["target_alpha"]),
+                "utility_target_alpha": item.get("utility_target_alpha", ""),
                 "predicted_alpha": predicted_alpha,
                 "predicted_alpha_prob": item["predicted_alpha_prob"],
                 "prediction_matches_target_alpha": abs(predicted_alpha - float(item["target_alpha"])) < 1e-9,
@@ -535,6 +695,8 @@ def make_policy_rows(
                 "any_candidate_matches_original_top1": any_candidate_matches_origin,
                 "missed_repair": (not m0_matches_origin) and final_top1 != original_top1 and any_candidate_matches_origin,
                 "class_probabilities": item["class_probabilities"],
+                "utility_values": item.get("utility_values", ""),
+                "utility_soft_targets": item.get("utility_soft_targets", ""),
             }
         )
     return rows
@@ -603,7 +765,7 @@ def summarize_rows(
 def build_summary(config: dict[str, Any], policy_rows: list[dict[str, Any]], device: torch.device) -> list[dict[str, Any]]:
     summaries: list[dict[str, Any]] = []
     batch_size = int(config["evaluation"]["image_batch_size"])
-    policy = "receiver_alpha_predictor_top1_fallback"
+    policy = output_policy_name(config)
     for split in [str(item["name"]) for item in config["splits"]]:
         split_rows = [row for row in policy_rows if row["split"] == split]
         for snr in config["snrs"]:
@@ -634,11 +796,12 @@ def load_comparison_rows(config: dict[str, Any]) -> list[dict[str, Any]]:
 
 def plot_tradeoff(config: dict[str, Any], summary_rows: list[dict[str, Any]], output_path: Path) -> None:
     splits = [str(item["name"]) for item in config["splits"]]
+    predictor_policy = output_policy_name(config)
     policies = [
         "top1_full_strength",
         "fixed_validation_top1_shrink_schedule",
         "full_then_fixed_schedule",
-        "receiver_alpha_predictor_top1_fallback",
+        predictor_policy,
         "adaptive_max_top1_consistent_alpha",
         "always_full_strength",
     ]
@@ -646,7 +809,7 @@ def plot_tradeoff(config: dict[str, Any], summary_rows: list[dict[str, Any]], ou
         "top1_full_strength": "full",
         "fixed_validation_top1_shrink_schedule": "fixed",
         "full_then_fixed_schedule": "2-stage",
-        "receiver_alpha_predictor_top1_fallback": "predictor",
+        predictor_policy: predictor_label(config),
         "adaptive_max_top1_consistent_alpha": "adaptive",
         "always_full_strength": "always",
     }
@@ -698,9 +861,17 @@ def markdown_table(rows: list[dict[str, Any]], columns: list[tuple[str, str]]) -
 
 def make_report(config: dict[str, Any], summary_rows: list[dict[str, Any]], metadata: dict[str, Any]) -> str:
     splits = [str(item["name"]) for item in config["splits"]]
-    predictor = "receiver_alpha_predictor_top1_fallback"
+    predictor = output_policy_name(config)
     adaptive = "adaptive_max_top1_consistent_alpha"
     two_stage = "full_then_fixed_schedule"
+    target_mode = str(config["predictor"].get("target_mode", "pseudo_alpha_ce"))
+    if target_mode == "utility_soft_labels":
+        target_caveat = (
+            "- The predictor target is a validation-derived utility distribution over alpha candidates, "
+            "not supervised semantic truth."
+        )
+    else:
+        target_caveat = "- The predictor target is the pseudo-label adaptive alpha, not supervised semantic truth."
     predictor_psnr = "/".join(signed(all_row(summary_rows, split, predictor)["delta_psnr_vs_m0_db"]) for split in splits)
     predictor_new = "/".join(str(all_row(summary_rows, split, predictor)["accepted_new_error_count"]) for split in splits)
     two_stage_psnr = "/".join(signed(all_row(summary_rows, split, two_stage)["delta_psnr_vs_m0_db"]) for split in splits)
@@ -729,7 +900,7 @@ def make_report(config: dict[str, Any], summary_rows: list[dict[str, Any]], meta
                 }
             )
     lines = [
-        "# Receiver Alpha Predictor",
+        f"# {config.get('method', 'ReceiverAlphaPredictor')}",
         "",
         "This derived analysis trains a tiny tabular receiver-side alpha predictor on validation only.",
         "It predicts one residual alpha from receiver-visible features, then applies the same top-1 consistency gate before accepting the candidate.",
@@ -774,7 +945,8 @@ def make_report(config: dict[str, Any], summary_rows: list[dict[str, Any]], meta
             "",
             "## Caveats",
             "",
-            "- The predictor target is the pseudo-label adaptive alpha, not supervised semantic truth.",
+            target_caveat,
+            "- If `target_mode=utility_soft_labels`, utility targets may use validation originals for training labels, but predictor features remain receiver-visible.",
             "- The final acceptance still uses the frozen AlexNet top-1 gate, so this is not semantic repair.",
             "- LPIPS is intentionally omitted to avoid external weight loading; compare PSNR/SSIM/MS-SSIM and semantic counts only.",
             "",
@@ -811,18 +983,36 @@ def main() -> None:
     device = resolve_device(args.device)
     source_rows = read_csv(resolve_project_path(config["inputs"]["adaptive_per_sample_csv"]))
     examples, feature_names = build_examples(config, source_rows)
+    target_mode = str(config["predictor"].get("target_mode", "pseudo_alpha_ce"))
+    classifier_model = None
+    classifier_preprocess = None
+    utility_metadata: dict[str, Any] = {}
+    classification_times: dict[str, float] = {}
+    if target_mode == "utility_soft_labels":
+        classifier_model, classifier_preprocess, _categories = load_classifier(config, device)
+        all_candidate_predictions, utility_classification_times = classify_all_alpha_candidates(
+            config,
+            examples,
+            classifier_model,
+            classifier_preprocess,
+            device,
+        )
+        classification_times.update(utility_classification_times)
+        utility_metadata = add_utility_targets(config, examples, all_candidate_predictions)
     model, model_metadata = train_predictor(config, examples, feature_names, device)
     predictions = predict_examples(model, examples, model_metadata, device)
 
-    classifier_model, classifier_preprocess, _categories = load_classifier(config, device)
-    classified, classification_times = classify_predicted_candidates(
+    if classifier_model is None or classifier_preprocess is None:
+        classifier_model, classifier_preprocess, _categories = load_classifier(config, device)
+    classified, predicted_classification_times = classify_predicted_candidates(
         config,
         predictions,
         classifier_model,
         classifier_preprocess,
         device,
     )
-    policy_rows = make_policy_rows(predictions, classified)
+    classification_times.update(predicted_classification_times)
+    policy_rows = make_policy_rows(config, predictions, classified)
     predictor_summary = build_summary(config, policy_rows, device)
     comparison_rows = load_comparison_rows(config)
     summary_rows = [*comparison_rows, *predictor_summary]
@@ -849,6 +1039,10 @@ def main() -> None:
                 "snr_db": item["snr_db"],
                 "sample": item["sample"],
                 "target_alpha": item["target_alpha"],
+                "pseudo_target_alpha": item.get("pseudo_target_alpha", item["target_alpha"]),
+                "utility_target_alpha": item.get("utility_target_alpha", ""),
+                "utility_values": item.get("utility_values", ""),
+                "utility_soft_targets": item.get("utility_soft_targets", ""),
                 **{name: value for name, value in zip(feature_names, item["features"])},
             }
             for item in examples
@@ -876,6 +1070,7 @@ def main() -> None:
         "metadata_json": project_relative(metadata_json),
         "device": str(device),
         "classification_times_sec": classification_times,
+        "utility_metadata": utility_metadata,
         "lpips": "omitted",
         "proxy_environment_present": proxy_environment_present(),
         "notes": config.get("notes", []),
