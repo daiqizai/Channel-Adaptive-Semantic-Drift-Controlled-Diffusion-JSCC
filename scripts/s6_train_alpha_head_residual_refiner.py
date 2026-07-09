@@ -166,6 +166,22 @@ def alpha_index(alpha: float, alphas: list[float]) -> int:
     return min(range(len(alphas)), key=lambda idx: abs(float(alphas[idx]) - float(alpha)))
 
 
+def alpha_mode(config: dict[str, Any]) -> str:
+    mode = str(config["model"].get("alpha_mode", "classification"))
+    if mode not in {"classification", "regression"}:
+        raise ValueError(f"Unsupported model.alpha_mode: {mode}")
+    return mode
+
+
+def alpha_head_output_dim(config: dict[str, Any]) -> int:
+    return 1 if alpha_mode(config) == "regression" else len(config["alphas"])
+
+
+def nearest_alpha_indices(alpha: torch.Tensor, alphas_tensor: torch.Tensor) -> torch.Tensor:
+    distances = torch.abs(alpha.view(-1, 1) - alphas_tensor.view(1, -1))
+    return torch.argmin(distances, dim=-1)
+
+
 def alpha_class_counts(rows: list[dict[str, Any]], num_classes: int) -> list[int]:
     counts = [0 for _ in range(num_classes)]
     for row in rows:
@@ -353,6 +369,7 @@ def validate_inputs(config: dict[str, Any], snrs: list[float]) -> dict[str, Any]
         "snrs": snrs,
         "residual_gates": validate_monotonic_gates(config, snrs),
         "trainable_refiner_parts": refiner_trainable_parts(config),
+        "alpha_mode": alpha_mode(config),
         "proxy_environment_present": proxy_environment_present(),
     }
 
@@ -403,7 +420,7 @@ class AlphaHeadResidualRefiner(nn.Module):
             nn.Linear(base_channels, hidden),
             nn.SiLU(inplace=True),
             nn.Dropout(dropout),
-            nn.Linear(hidden, len(config["alphas"])),
+            nn.Linear(hidden, alpha_head_output_dim(config)),
         )
 
     def refiner_modules(self) -> dict[str, nn.Module]:
@@ -437,8 +454,8 @@ class AlphaHeadResidualRefiner(nn.Module):
         residual = torch.tanh(self.tail(features))
         full_refined = (m0 + residual_gate_value.view(b, 1, 1, 1) * residual).clamp(0.0, 1.0)
         alpha_features = features.detach() if detach_features else features
-        alpha_logits = self.alpha_head(alpha_features)
-        return full_refined, alpha_logits
+        alpha_output = self.alpha_head(alpha_features)
+        return full_refined, alpha_output
 
 
 def build_model(config: dict[str, Any]) -> AlphaHeadResidualRefiner:
@@ -493,6 +510,48 @@ def trainable_parameter_summary(model: AlphaHeadResidualRefiner) -> dict[str, di
     return summary
 
 
+def alpha_prediction_from_output(
+    output: torch.Tensor,
+    config: dict[str, Any],
+    alphas_tensor: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    if alpha_mode(config) == "regression":
+        alpha = torch.sigmoid(output).view(-1).clamp(0.0, 1.0)
+        indices = nearest_alpha_indices(alpha, alphas_tensor)
+        return indices, alpha, alpha
+    probs = torch.softmax(output, dim=-1)
+    indices = torch.argmax(probs, dim=-1)
+    hard_alpha = alphas_tensor[indices]
+    soft_alpha = torch.matmul(probs, alphas_tensor)
+    return indices, hard_alpha, soft_alpha
+
+
+def alpha_supervision_loss(
+    output: torch.Tensor,
+    target_index: torch.Tensor,
+    target_alpha: torch.Tensor,
+    config: dict[str, Any],
+    alphas_tensor: torch.Tensor,
+    class_weights: torch.Tensor | None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    pred_index, predicted_alpha, soft_alpha = alpha_prediction_from_output(output, config, alphas_tensor)
+    if alpha_mode(config) == "regression":
+        target = target_alpha.view(-1)
+        loss_name = str(config["training"].get("regression_loss", "smooth_l1"))
+        if loss_name == "mse":
+            loss = F.mse_loss(soft_alpha, target)
+        elif loss_name == "l1":
+            loss = F.l1_loss(soft_alpha, target)
+        elif loss_name == "smooth_l1":
+            beta = float(config["training"].get("regression_beta", 0.10))
+            loss = F.smooth_l1_loss(soft_alpha, target, beta=beta)
+        else:
+            raise ValueError(f"Unsupported training.regression_loss: {loss_name}")
+        return loss, pred_index, predicted_alpha, soft_alpha
+    loss = F.cross_entropy(output, target_index, weight=class_weights)
+    return loss, pred_index, predicted_alpha, soft_alpha
+
+
 def train_one_epoch(
     model: AlphaHeadResidualRefiner,
     loader: DataLoader,
@@ -514,6 +573,7 @@ def train_one_epoch(
     full_l1_losses: list[float] = []
     accuracies: list[float] = []
     detach_refiner_for_soft_loss = bool(config["training"].get("soft_refiner_detach", True))
+    supervision_weight = float(config["training"].get("alpha_loss_weight", config["training"]["ce_weight"]))
     for batch in loader:
         m0 = batch["m0"].to(device, non_blocking=True)
         target = batch["target"].to(device, non_blocking=True)
@@ -524,10 +584,11 @@ def train_one_epoch(
         gate = gate_tensor(config, snr_db, device)
 
         optimizer.zero_grad(set_to_none=True)
-        full_refined, logits = model(m0, snr_norm, gate, detach_features=freeze_refiner)
-        ce_loss = F.cross_entropy(logits, target_index, weight=class_weights)
-        probs = torch.softmax(logits, dim=-1)
-        soft_alpha = torch.matmul(probs, alphas_tensor).view(-1, 1, 1, 1)
+        full_refined, alpha_output = model(m0, snr_norm, gate, detach_features=freeze_refiner)
+        alpha_loss, pred, _, soft_alpha = alpha_supervision_loss(
+            alpha_output, target_index, target_alpha.view(-1), config, alphas_tensor, class_weights
+        )
+        soft_alpha = soft_alpha.view(-1, 1, 1, 1)
         residual_delta = full_refined.detach() - m0 if detach_refiner_for_soft_loss else full_refined - m0
         soft_refined = (m0 + soft_alpha * residual_delta).clamp(0.0, 1.0)
         target_alpha_refined = (m0 + target_alpha * (full_refined - m0)).clamp(0.0, 1.0)
@@ -538,7 +599,7 @@ def train_one_epoch(
         full_mse = F.mse_loss(full_refined, target)
         full_l1 = F.l1_loss(full_refined, target)
         loss = (
-            float(config["training"]["ce_weight"]) * ce_loss
+            supervision_weight * alpha_loss
             + float(config["training"].get("soft_mse_weight", 0.0)) * soft_mse
             + float(config["training"].get("soft_l1_weight", 0.0)) * soft_l1
             + float(config["training"].get("target_alpha_mse_weight", 0.0)) * target_alpha_mse
@@ -552,9 +613,8 @@ def train_one_epoch(
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
 
-        pred = torch.argmax(logits.detach(), dim=-1)
         losses.append(float(loss.detach().cpu()))
-        ce_losses.append(float(ce_loss.detach().cpu()))
+        ce_losses.append(float(alpha_loss.detach().cpu()))
         soft_mse_losses.append(float(soft_mse.detach().cpu()))
         soft_l1_losses.append(float(soft_l1.detach().cpu()))
         target_alpha_mse_losses.append(float(target_alpha_mse.detach().cpu()))
@@ -565,6 +625,7 @@ def train_one_epoch(
     return {
         "loss": float(mean(losses) or 0.0),
         "ce_loss": float(mean(ce_losses) or 0.0),
+        "alpha_loss": float(mean(ce_losses) or 0.0),
         "soft_mse": float(mean(soft_mse_losses) or 0.0),
         "soft_l1": float(mean(soft_l1_losses) or 0.0),
         "target_alpha_mse": float(mean(target_alpha_mse_losses) or 0.0),
@@ -586,19 +647,23 @@ def quick_eval(
     model.eval()
     losses: list[float] = []
     accuracies: list[float] = []
+    alphas_tensor = torch.tensor([float(item) for item in config["alphas"]], dtype=torch.float32, device=device)
     for batch in loader:
         m0 = batch["m0"].to(device, non_blocking=True)
         snr_db = batch["snr_db"].to(device, non_blocking=True)
         snr_norm = batch["snr_norm"].to(device, non_blocking=True)
         target_index = batch["target_alpha_index"].to(device, non_blocking=True)
+        target_alpha = batch["target_alpha"].to(device, non_blocking=True)
         gate = gate_tensor(config, snr_db, device)
-        _, logits = model(m0, snr_norm, gate, detach_features=True)
-        ce_loss = F.cross_entropy(logits, target_index, weight=class_weights)
-        pred = torch.argmax(logits, dim=-1)
-        losses.append(float(ce_loss.detach().cpu()))
+        _, alpha_output = model(m0, snr_norm, gate, detach_features=True)
+        alpha_loss, pred, _, _ = alpha_supervision_loss(
+            alpha_output, target_index, target_alpha, config, alphas_tensor, class_weights
+        )
+        losses.append(float(alpha_loss.detach().cpu()))
         accuracies.append(float((pred == target_index).float().mean().detach().cpu()))
     return {
         "eval_ce_loss": float(mean(losses) or 0.0),
+        "eval_alpha_loss": float(mean(losses) or 0.0),
         "eval_alpha_accuracy": float(mean(accuracies) or 0.0),
     }
 
@@ -652,15 +717,20 @@ def render_split_snr(
         if device.type == "cuda":
             torch.cuda.synchronize(device)
         begin = time.perf_counter()
-        full_refined, logits = model(m0, snr_norm, gate, detach_features=True)
-        probs = torch.softmax(logits, dim=-1)
-        pred_index = torch.argmax(probs, dim=-1)
-        pred_alpha = alphas_tensor[pred_index].view(-1, 1, 1, 1)
+        full_refined, alpha_output = model(m0, snr_norm, gate, detach_features=True)
+        pred_index, pred_alpha_values, _ = alpha_prediction_from_output(alpha_output, config, alphas_tensor)
+        pred_alpha = pred_alpha_values.view(-1, 1, 1, 1)
         alpha_refined = (m0 + pred_alpha * (full_refined - m0)).clamp(0.0, 1.0)
         if device.type == "cuda":
             torch.cuda.synchronize(device)
         elapsed += time.perf_counter() - begin
-        for row, full_img, alpha_img, idx in zip(batch_rows, full_refined.cpu(), alpha_refined.cpu(), pred_index.cpu()):
+        for row, full_img, alpha_img, idx, alpha_value in zip(
+            batch_rows,
+            full_refined.cpu(),
+            alpha_refined.cpu(),
+            pred_index.cpu(),
+            pred_alpha_values.detach().cpu(),
+        ):
             full_path = full_dir / str(row["sample"])
             alpha_path = alpha_dir / str(row["sample"])
             save_image(full_img, full_path)
@@ -668,7 +738,7 @@ def render_split_snr(
             full_paths.append(full_path)
             alpha_paths.append(alpha_path)
             predicted_indices.append(int(idx))
-            predicted_alphas.append(float(config["alphas"][int(idx)]))
+            predicted_alphas.append(float(alpha_value))
     return {
         "rows": split_rows,
         "full_paths": full_paths,
@@ -801,6 +871,7 @@ def make_report(summary_rows: list[dict[str, Any]], config: dict[str, Any]) -> s
         "alpha_head_predicted_top1_fallback",
     ]
     mode = target_mode(config)
+    alpha_prediction_mode = alpha_mode(config)
     trainable_parts = refiner_trainable_parts(config)
     refiner_frozen = not trainable_parts
     if refiner_frozen:
@@ -814,10 +885,16 @@ def make_report(summary_rows: list[dict[str, Any]], config: dict[str, Any]) -> s
         )
     if mode == "benefit_utility_alpha":
         title = "# Benefit-Aware Alpha-Head Residual Refiner Pilot"
+        if alpha_prediction_mode == "regression":
+            title = "# Benefit-Aware Continuous-Alpha Residual Refiner Pilot"
         if not refiner_frozen and trainable_parts == ["head", "body", "tail"]:
             title = "# Benefit-Aware Joint Alpha-Head Residual Refiner Pilot"
+            if alpha_prediction_mode == "regression":
+                title = "# Benefit-Aware Joint Continuous-Alpha Residual Refiner Pilot"
         elif not refiner_frozen:
             title = "# Benefit-Aware Partial Alpha-Head Residual Refiner Pilot"
+            if alpha_prediction_mode == "regression":
+                title = "# Benefit-Aware Partial Continuous-Alpha Residual Refiner Pilot"
         target_description = (
             f"{refiner_phrase} The alpha target is a benefit/risk utility label "
             "from the previous benefit predictor feature table."
@@ -839,6 +916,7 @@ def make_report(summary_rows: list[dict[str, Any]], config: dict[str, Any]) -> s
         target_description,
         "No diffusion, LPIPS weight loading, or external download is used.",
         f"Target mode: `{mode}`.",
+        f"Alpha mode: `{alpha_prediction_mode}`.",
         f"Freeze refiner: `{str(refiner_frozen).lower()}`.",
         f"Trainable refiner parts: `{trainable_parts}`.",
         f"Class weighting: `{config['training'].get('class_weighting', 'none')}`.",

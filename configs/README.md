@@ -51,3 +51,4 @@
 - `s6_alpha_head_residual_refiner_benefit_exp_s4_006.yaml`：把冻结 residual CNN alpha-head 的训练目标替换为 safe-PSNR utility alpha，检查 benefit/risk 目标在模型内部特征上是否更可迁移。
 - `s6_alpha_head_residual_refiner_joint_benefit_exp_s4_006.yaml`：解冻 residual CNN，用 safe-PSNR utility alpha、soft-alpha reconstruction 和 target-alpha reconstruction loss 做 joint fine-tune，检查训练侧 amplitude/risk loss 是否会改善 residual control。
 - `s6_alpha_head_residual_refiner_tail_benefit_exp_s4_006.yaml`：冻结 residual CNN 的 head/body，只微调 tail 与 alpha head，并用 reconstruction-dominant loss 检查 partial fine-tune 能否避免全量 joint 损伤 restoration anchor。
+- `s6_alpha_head_residual_refiner_tail_regression_benefit_exp_s4_006.yaml`：在 tail-only partial fine-tune 基础上把 alpha head 改为连续 alpha regression，检查显式幅度回归是否优于离散 alpha 分类。

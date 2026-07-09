@@ -54,6 +54,7 @@
 | ANALYSIS-S6-016 | 2026-07-09 | 53b71b3 + local script/config | BenefitAwareAlphaHeadResidualRefiner | COCO2017 val2017 validation/held-out/test-like benefit utility alpha targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, utility target accuracy, accept/new-error | 完成（冻结 residual CNN，仅训练 benefit-aware alpha head；不运行 diffusion 不下载；LPIPS 省略） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_benefit/` |
 | ANALYSIS-S6-017 | 2026-07-09 | 901420f + local script/config | BenefitAwareJointAlphaHeadResidualRefiner | COCO2017 val2017 validation/held-out/test-like benefit utility alpha targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, utility target accuracy, accept/new-error | 完成（解冻 residual CNN joint fine-tune；不运行 diffusion 不下载；LPIPS 省略；负/诊断结果） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_joint_benefit/` |
 | ANALYSIS-S6-018 | 2026-07-09 | c69743a + local script/config | BenefitAwareTailAlphaHeadResidualRefiner | COCO2017 val2017 validation/held-out/test-like benefit utility alpha targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, utility target accuracy, accept/new-error | 完成（只微调 residual tail + alpha head；不运行 diffusion 不下载；LPIPS 省略；训练侧正向阶段结果） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_benefit/` |
+| ANALYSIS-S6-019 | 2026-07-09 | 9b6f74a + local script/config | BenefitAwareTailContinuousAlphaResidualRefiner | COCO2017 val2017 validation/held-out/test-like benefit utility alpha targets | AWGN | [1, 4, 7, 13, 19] dB | 0.17 | PSNR, SSIM, MS-SSIM, pseudo final failure, continuous alpha, accept/new-error | 完成（只微调 residual tail + continuous alpha head；不运行 diffusion 不下载；LPIPS 省略；训练侧正向突破） | `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/` |
 
 `项目版本` 优先填写 git commit。若当前项目目录不是 git 仓库，填写 `N/A (not a project git repo)`，并在单实验记录中写明 config、脚本和关键源码路径。
 
@@ -3012,6 +3013,90 @@ Tail-only partial fine-tune 是训练侧正向阶段结果：它明显恢复了�
 #### 复现备注
 
 正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。正式脚本只使用本地 `EXP-S4-006` checkpoint、本地 benefit feature table 和本地 AlexNet 权重，不加载 LPIPS，不下载任何模型或数据。运行时 `git_dirty_state=dirty` 是因为脚本和配置为本轮新增本地文件，结果记录为 `c69743a + local script/config`。
+
+### ANALYSIS-S6-019：Benefit-Aware Tail-Only Continuous-Alpha Residual Refiner
+
+- 日期：2026-07-09
+- 项目版本：`9b6f74a` + local script/config at run time
+- 阶段：S6 training-side residual amplitude-control exploration
+- 方法：BenefitAwareTailContinuousAlphaResidualRefiner
+- 数据集：COCO2017 `val2017` validation / held-out / test-like alpha candidates
+- 数据 split：validation `320` 行用于训练；held-out `160` 行和 test-like `320` 行只评估
+- 信道：AWGN
+- SNR：`[1, 4, 7, 13, 19]` dB
+- CBR：0.17
+- config：`configs/s6_alpha_head_residual_refiner_tail_regression_benefit_exp_s4_006.yaml`
+- 运行命令：
+
+```bash
+python3 -m py_compile scripts/s6_train_alpha_head_residual_refiner.py
+python3 scripts/s6_train_alpha_head_residual_refiner.py --dry-run
+python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_tail_benefit_exp_s4_006.yaml --dry-run
+python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_tail_regression_benefit_exp_s4_006.yaml --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_tail_regression_benefit_exp_s4_006.yaml --device cuda:0
+```
+
+- 关键源码：`scripts/s6_train_alpha_head_residual_refiner.py`
+- 输入：
+  - `outputs/EXP-S4-006/checkpoints/best.pt`
+  - `outputs/analysis/exp_s4_006_adaptive_residual_alpha_policy/per_sample.csv`
+  - `outputs/analysis/exp_s4_006_benefit_alpha_predictor/features.csv`
+  - `outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth`
+- 输出路径：`outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/`
+- 状态：完成；只训练 residual tail 与 continuous alpha head，不运行 diffusion、不下载、不加载 LPIPS
+
+#### 方法
+
+该实验接续 `ANALYSIS-S6-018` 的限制：离散 alpha 分类仍几乎不预测 `alpha=0.25`。本轮保持 head/body 冻结、只训练 residual tail 和 alpha head，但把 alpha head 输出从 5 类 logits 改为单个连续 alpha：
+
+- `model.alpha_mode: regression`：alpha head 输出经 `sigmoid` 映射到 `[0, 1]`；
+- `trainable_refiner_parts: [tail]`：冻结 residual head/body，只微调 residual tail；
+- `alpha_loss_weight: 0.20`，`regression_loss: smooth_l1`，`regression_beta: 0.10`；
+- `full_mse_weight: 100.0`、`soft_mse_weight: 25.0`、`target_alpha_mse_weight: 25.0`：继续用 reconstruction-dominant loss 保护 restoration anchor；
+- 评估时使用连续 predicted alpha 生成 candidate，再用同一冻结 AlexNet top-1 fallback 做 final decision。
+
+metadata 记录的可训练参数为：head `0/1776`、body `0/207840`、tail `1299/1299`、alpha head `3201/3201`。
+
+#### 指标
+
+| Split | Policy | Delta PSNR | Failure Delta | Accept | Target Acc | Mean Alpha | New Error | Missed Repair |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| validation | full_strength_top1_fallback | +0.4463 | +0.0000 | 0.6281 |  |  | 0 | 41 |
+| validation | continuous_alpha_top1_fallback | +0.5010 | +0.0000 | 0.7125 | 0.4188 | 0.7270 | 0 | 41 |
+| held-out | full_strength_top1_fallback | +0.4824 | +0.0000 | 0.6687 |  |  | 0 | 27 |
+| held-out | continuous_alpha_top1_fallback | +0.5049 | +0.0000 | 0.7438 | 0.3625 | 0.7381 | 0 | 23 |
+| test-like | full_strength_top1_fallback | +0.4298 | +0.0000 | 0.5969 |  |  | 0 | 52 |
+| test-like | continuous_alpha_top1_fallback | +0.5012 | +0.0000 | 0.7250 | 0.3469 | 0.7123 | 0 | 40 |
+
+对比 learned / deployable alpha control：
+
+| Policy | validation | held-out | test-like | New Error |
+|---|---:|---:|---:|---:|
+| tail-only discrete alpha head | +0.4749 | +0.4552 | +0.4061 | 0/0/0 |
+| two-stage alpha policy | +0.4831 | +0.5009 | +0.4875 | 0/0/0 |
+| receiver alpha predictor | +0.5584 | +0.5099 | +0.4871 | 0/0/0 |
+| tail-only continuous alpha head | +0.5010 | +0.5049 | +0.5012 | 0/0/0 |
+| posterior adaptive alpha upper bound | +0.5584 | +0.5664 | +0.5691 | 0/0/0 |
+
+连续 alpha 分布：
+
+| Split | Mean | Min | Q1 | Median | Q3 | Max | Nearest Alpha Counts `0/0.25/0.5/0.75/1.0` |
+|---|---:|---:|---:|---:|---:|---:|---|
+| validation | 0.7270 | 0.2574 | 0.6490 | 0.7437 | 0.8281 | 0.9955 | `0/6/66/206/42` |
+| held-out | 0.7381 | 0.3104 | 0.6218 | 0.7654 | 0.8650 | 0.9938 | `0/2/38/87/33` |
+| test-like | 0.7123 | 0.1219 | 0.6072 | 0.7407 | 0.8379 | 0.9815 | `1/11/78/176/54` |
+
+#### 结果总结
+
+这是当前训练侧 amplitude-control 最明确的正向结果。连续 alpha head 在三段 split 上都保持 accepted new error 为 0，同时 PSNR delta 达到 `+0.5010/+0.5049/+0.5012` dB，明显超过离散 tail-only alpha head，并在 held-out/test-like 上达到或超过 two-stage policy 和 receiver predictor。
+
+该结果说明，上一轮离散 alpha-head 的瓶颈很可能来自分类目标和离散候选表达，而不是 tail-only 微调本身。连续 alpha 的 nearest-class target accuracy 较低并不是直接负面信号，因为它没有强行复刻离散 utility label，而是在 `[0,1]` 上学到更平滑的幅度折中；test-like 最近 alpha 分布覆盖 `0.5/0.75/1.0`，不再完全跳过中间强度。
+
+限制：该方法仍低于 posterior adaptive alpha upper bound，且本轮仍省略 LPIPS、classifier ensemble audit 和 COCO-object/CLIP 辅助诊断。因此它可以作为 learned deployable amplitude-control 的强候选，但暂不直接写成最终 M3。
+
+#### 复现备注
+
+正式运行时清空代理变量，metadata 记录 `proxy_environment_present: []`。正式脚本只使用本地 `EXP-S4-006` checkpoint、本地 benefit feature table 和本地 AlexNet 权重，不加载 LPIPS，不下载任何模型或数据。运行时 `git_dirty_state=dirty` 是因为脚本和配置为本轮新增本地文件，结果记录为 `9b6f74a + local script/config`。
 
 ### ANALYSIS-S6-002：EXP-S4-006 Residual Shrink Selection
 
