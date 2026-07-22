@@ -1,0 +1,95 @@
+phase: S31b-strong-jscc-stable-continuation
+experiment_id: EXP-S31B-STRONG-JSCC-FP32-002
+status: preregistered_before_training_output
+created_at: "2026-07-21"
+method: NativeExactRateSNRConditionedResidualJSCC_FP32Continuation
+dataset: COCO2017
+image_size: 256
+seed: 20260751
+official_imagenette_validation_accessed: false
+
+initialization:
+  type: model_only_from_frozen_checkpoint
+  source_experiment: EXP-S31-STRONG-JSCC-001
+  checkpoint: outputs/train/EXP-S31-STRONG-JSCC-001/checkpoints/best.pt
+  checkpoint_sha256: 8e8f3b7b57d85325fac12c7f7a702db1513e4f86d4db11969f50a23462fb0156
+  expected_epoch: 3
+  source_aggregate_psnr_db: 28.044782793521883
+  source_aggregate_ms_ssim: 0.9584049709141255
+
+model:
+  implementation: src/cadsd_jscc/strong_jscc.py
+  clean_room: true
+  latent_channels: 77
+  stage_channels: [64, 128, 256, 384]
+  stage_blocks: [1, 1, 2, 4]
+  condition_dim: 128
+  minimum_trainable_parameters: 25000000
+  maximum_trainable_parameters: 45000000
+
+rate:
+  source_real_dimensions: 196608
+  native_real_symbols: 19712
+  complex_channel_uses: 9856
+  exact_cbr: 0.050130208333333336
+  latent_shape: [77, 16, 16]
+  mask_or_padding: none
+
+channel:
+  type: AWGN
+  convention: complex_awgn_per_real_half_variance
+  train_snr_sampling: discrete_uniform_per_image
+  train_snrs_db: [1, 4, 7, 13, 19]
+  validation_snrs_db: [1, 4, 7, 13, 19]
+  validation_noise_seed: 20260752
+  transmitter_csi: perfect_snr
+  receiver_csi: perfect_snr
+
+data:
+  train_root: data/coco/train2017
+  val_root: data/coco/val2017
+  train_subset: null
+  val_subset: 512
+  train_crop_scale: [0.6, 1.0]
+  random_horizontal_flip: true
+
+training:
+  epochs: 8
+  batch_size: 32
+  gradient_accumulation_steps: 1
+  effective_batch_size: 32
+  num_workers: 8
+  amp: false
+  optimizer: AdamW_fresh_state
+  learning_rate: 0.00005
+  minimum_learning_rate: 0.000001
+  weight_decay: 0.0001
+  warmup_optimizer_steps: 0
+  grad_clip_norm: 1.0
+  loss: mse
+  validation_every_epochs: 1
+
+selection:
+  primary_metric: aggregate_mean_psnr_across_five_snrs
+  tie_breaker: aggregate_mean_ms_ssim
+  no_diffusion_or_perceptual_loss: true
+
+stage_gates:
+  smoke:
+    require_exact_real_symbols: 19712
+    normalized_power_abs_error_max: 0.00001
+    require_finite_forward_backward: true
+  first_curve:
+    require_finite_all_epochs: true
+    require_best_psnr_above_initial: true
+    initialization_aggregate_psnr_db: 28.044782793521883
+  comparison:
+    frozen_population: S20_Imagenette_policy_dev
+    canonical_channel_noise: external-common-v1
+    methods: [historical_B1, current_S28, author_JSCC, strong_JSCC]
+    metrics: [PSNR, MS-SSIM, LPIPS, T_cls_failure]
+
+outputs:
+  train_dir: outputs/train/EXP-S31B-STRONG-JSCC-FP32-002
+  smoke_dir: outputs/smoke/EXP-S31B-STRONG-JSCC-FP32-002
+  overwrite_forbidden: true

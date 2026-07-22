@@ -1,0 +1,79 @@
+phase: S33-exact-author-rate-strong-jscc-external-comparison
+analysis_id: ANALYSIS-S33-STRONG-JSCC-16384-COMPARISON-001
+created_at: "2026-07-21"
+
+protocol:
+  status: frozen_after_s33_checkpoint_selection
+  preregistration: reports/s33_strong_jscc_16384_external_comparison_preregistration_2026-07-21.md
+  s20_s28_s30_s32_outcomes_known: true
+  strong_16384_outcome_on_population_known: false
+  no_training_or_checkpoint_selection: true
+  official_imagenette_validation_accessed: false
+  claim_scope: exact_rate_positioning_on_known_policy_dev_not_independent_final_test
+
+inputs:
+  strong_checkpoint: outputs/train/EXP-S33B-STRONG-JSCC-16384-FP32-001/checkpoints/best.pt
+  strong_checkpoint_sha256: 2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb
+  strong_best_epoch: 7
+  s30_per_sample: outputs/external_baselines/ANALYSIS-S30-DIFFJSCC-COMPARISON-001/per_sample.csv
+  s30_per_sample_sha256: 549720b804df6cfd87a7035ba37be096b0cf8e683634ebb7f93feff47c49b6e2
+  population_reference: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/population/population_reference.yaml
+  population_reference_sha256: a08b0d3f3dead68919bea42a0a28c7854e998aea6173fe62d4669bd537ab393f
+  split_manifest: outputs/analysis/imagenette_scratch_classifiers/split_manifest.json
+  split_manifest_sha256: 0947c428a4ac03bd3907220c9305e5acceb564b95e91a6ffe0c658c132994a91
+  t_cls_checkpoint: outputs/analysis/imagenette_scratch_classifiers/T_cls/checkpoints/best.pt
+  t_cls_checkpoint_sha256: b846c8d81dc3dd604f916c82cb2ca5584ecaf88191e1a3009da1b81e3f00924d
+
+model:
+  name: S33bStrongJSCC16384
+  trainable_parameters: 31028163
+  clean_room: true
+  diffusion: false
+
+population:
+  name: S20_Imagenette_policy_dev
+  expected_sample_count: 64
+  channel_seeds: [20260748, 20260749, 20260750]
+  snrs_db: [1, 4, 7, 13, 19]
+  expected_rows: 960
+  source_transform: torchvision_resize_256_then_center_crop_256
+
+rate:
+  source_real_dimensions: 196608
+  strong_real_symbols: 16384
+  strong_complex_channel_uses: 8192
+  strong_exact_cbr: 0.041666666666666664
+  author_jscc_real_symbols: 16384
+  canonical_noise_reference_real_symbols: 19712
+  normalized_power_abs_error_max: 0.00001
+
+evaluator:
+  expected_role: T_cls
+  clean_confidence_threshold: 0.5
+  normalization_mean: [0.485, 0.456, 0.406]
+  normalization_std: [0.229, 0.224, 0.225]
+
+metrics:
+  primary_quantization: floor_uint8
+  float_output_sensitivity: true
+  quality: [PSNR, MS_SSIM, LPIPS]
+  semantic: [T_cls_prediction, T_cls_failure, new_error, repair]
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260784
+  bootstrap_unit: source_image_cluster_across_channel_seeds_and_snrs
+
+claim_rule:
+  comparison: strong_minus_author_jscc
+  significant_superiority: two_sided_95pct_ci_lower_gt_0_db
+  noninferiority_margin_db: 0.10
+  noninferior_if: two_sided_95pct_ci_lower_gt_minus_margin
+  inferior_if: two_sided_95pct_ci_lower_lt_minus_margin
+  conflicting_secondary_metrics: pareto_not_comprehensive_superiority
+
+runtime:
+  batch_size: 16
+  device: cuda:0
+
+outputs:
+  directory: outputs/external_baselines/ANALYSIS-S33-STRONG-JSCC-16384-COMPARISON-001
+  overwrite_forbidden: true

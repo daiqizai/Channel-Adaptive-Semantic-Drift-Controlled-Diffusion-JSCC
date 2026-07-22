@@ -1,0 +1,23 @@
+phase: S31-backbone-diagnostic
+analysis_id: ANALYSIS-S31-DIFFJSCC-RESIZE-ROUNDTRIP-001
+status: registered_after_ad_hoc_diagnostic_before_reproducible_output
+created_at: "2026-07-21"
+purpose: quantify_source_only_256_to_512_to_256_interpolation_distortion
+claim_boundary: does_not_isolate_model_output_smoothing_or_explain_full_backbone_gap
+
+inputs:
+  s30_config: configs/s30_diffjscc_external_comparison.yaml
+  population_reference: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/population/population_reference.yaml
+  population_reference_sha256: a08b0d3f3dead68919bea42a0a28c7854e998aea6173fe62d4669bd537ab393f
+  split_manifest: outputs/analysis/imagenette_scratch_classifiers/split_manifest.json
+  split_manifest_sha256: 0947c428a4ac03bd3907220c9305e5acceb564b95e91a6ffe0c658c132994a91
+
+transform:
+  source: torchvision_resize_256_then_center_crop_256
+  upsample: PIL_bicubic_512
+  downsample: PIL_lanczos_256
+
+metrics: [PSNR, MS_SSIM]
+expected_samples: 64
+output_dir: outputs/analysis/ANALYSIS-S31-DIFFJSCC-RESIZE-ROUNDTRIP-001
+overwrite_forbidden: true

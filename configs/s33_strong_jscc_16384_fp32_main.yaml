@@ -1,0 +1,104 @@
+phase: S33-exact-author-rate-strong-jscc-main
+experiment_id: EXP-S33-STRONG-JSCC-16384-FP32-001
+status: preregistered_before_training_output
+created_at: "2026-07-21"
+preregistration: reports/s33_strong_jscc_16384_preregistration_2026-07-21.md
+method: NativeExact16384RateSNRConditionedResidualJSCC_FP32FromScratch
+dataset: COCO2017
+image_size: 256
+seed: 20260751
+official_imagenette_validation_accessed: false
+
+model:
+  implementation: src/cadsd_jscc/strong_jscc.py
+  clean_room: true
+  latent_channels: 64
+  stage_channels: [64, 128, 256, 384]
+  stage_blocks: [1, 1, 2, 4]
+  condition_dim: 128
+  minimum_trainable_parameters: 25000000
+  maximum_trainable_parameters: 45000000
+
+rate:
+  source_real_dimensions: 196608
+  native_real_symbols: 16384
+  complex_channel_uses: 8192
+  exact_cbr: 0.041666666666666664
+  latent_shape: [64, 16, 16]
+  mask_or_padding: none
+  side_information_real_symbols: 0
+
+channel:
+  type: AWGN
+  convention: complex_awgn_per_real_half_variance
+  train_snr_sampling: discrete_uniform_per_image
+  train_snrs_db: [1, 4, 7, 13, 19]
+  validation_snrs_db: [1, 4, 7, 13, 19]
+  validation_noise_seed: 20260752
+  transmitter_csi: perfect_snr
+  receiver_csi: perfect_snr
+
+data:
+  train_root: data/coco/train2017
+  val_root: data/coco/val2017
+  train_subset: null
+  val_subset: 512
+  train_crop_scale: [0.6, 1.0]
+  random_horizontal_flip: true
+
+training:
+  initialization: random_from_frozen_seed
+  epochs: 4
+  batch_size: 32
+  gradient_accumulation_steps: 1
+  effective_batch_size: 32
+  num_workers: 8
+  amp: false
+  optimizer: AdamW
+  learning_rate: 0.0002
+  minimum_learning_rate: 0.000002
+  weight_decay: 0.0001
+  warmup_optimizer_steps: 1000
+  grad_clip_norm: 1.0
+  loss: mse
+  validation_every_epochs: 1
+
+selection:
+  primary_metric: aggregate_mean_psnr_across_five_snrs
+  tie_breaker: aggregate_mean_ms_ssim
+  no_diffusion_or_perceptual_loss: true
+  external_policy_dev_not_used_for_checkpoint_selection: true
+
+claim_rule:
+  comparison: strong_minus_author_jscc
+  significant_superiority: two_sided_95pct_ci_lower_gt_0_db
+  noninferiority_margin_db: 0.10
+  noninferior_if: two_sided_95pct_ci_lower_gt_minus_margin
+  inferior_if: two_sided_95pct_ci_lower_lt_minus_margin
+  conflicting_secondary_metrics: pareto_not_comprehensive_superiority
+
+stage_gates:
+  smoke:
+    require_exact_real_symbols: 16384
+    normalized_power_abs_error_max: 0.00001
+    require_finite_forward_backward: true
+  main_curve:
+    require_finite_all_epochs: true
+    require_best_psnr_above_initial: true
+  continuation:
+    epochs: 8
+    model_only_from_frozen_main_best: true
+    fresh_optimizer_scheduler_scaler: true
+    learning_rate: 0.00005
+    minimum_learning_rate: 0.000001
+  comparison:
+    frozen_population: S20_Imagenette_policy_dev
+    canonical_channel_noise: external-common-v1-first-16384-real-coordinates
+    methods: [author_JSCC, strong_JSCC_16384]
+    metrics: [PSNR, MS-SSIM, LPIPS, T_cls_failure]
+    official_imagenette_validation_accessed: false
+
+outputs:
+  train_dir: outputs/train/EXP-S33-STRONG-JSCC-16384-FP32-001
+  smoke_dir: outputs/smoke/EXP-S33-STRONG-JSCC-16384-FP32-001
+  overwrite_forbidden: true

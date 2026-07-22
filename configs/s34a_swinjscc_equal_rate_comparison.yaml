@@ -1,0 +1,176 @@
+phase: S34A-swinjscc-equal-rate-comparison
+status: equal_budget_dual_arm_authorized_extension_forbidden
+created_at: "2026-07-22"
+confirmed_at: "2026-07-22"
+seed: 20260753
+preregistration: reports/swinjscc_equal_rate_comparison_preregistration_2026-07-22.md
+official_imagenette_validation_accessed: false
+
+question:
+  primary: S33_strong_minus_SwinJSCC_under_exact_equal_contract
+  outcomes: [significantly_superior, noninferior_tied, inferior, pareto]
+
+source:
+  paper: https://arxiv.org/abs/2308.09361
+  official_repository: https://github.com/semcomm/SwinJSCC
+  audited_commit: a6d0e6da53548976acbe9317839a077ef31f190f
+  repository_license_found: false
+  official_weights_url_public: true
+  official_weights_used_for_training_or_ranking: false
+
+rate:
+  image_shape: [3, 256, 256]
+  source_real_dimensions: 196608
+  latent_channels_C: 64
+  latent_shape: [64, 16, 16]
+  native_real_symbols: 16384
+  complex_channel_uses: 8192
+  exact_cbr: 0.041666666666666664
+  mask_or_padding: none
+  side_information_real_symbols: 0
+
+arms_confirmed:
+  official_base_sa:
+    model: SwinJSCC_w/_SA
+    embed_dims: [128, 192, 256, 320]
+    encoder_depths: [2, 2, 6, 2]
+    decoder_depths: [2, 6, 2, 2]
+    window_size: 8
+    trainable_parameters_static_audit: 28182512
+    relative_to_s33: -0.09171187478936471
+    paper_variant: official_base_architecture
+  capacity_matched_sa:
+    model: SwinJSCC_w/_SA
+    embed_dims: [128, 192, 256, 320]
+    encoder_depths: [2, 2, 8, 2]
+    decoder_depths: [2, 8, 2, 2]
+    window_size: 8
+    trainable_parameters_static_audit: 31348752
+    relative_to_s33: 0.010332194013548346
+    paper_variant: official_code_capacity_matched_control_not_original_base
+  frozen_s33_reference:
+    trainable_parameters: 31028163
+    checkpoint: outputs/train/EXP-S33B-STRONG-JSCC-16384-FP32-001/checkpoints/best.pt
+    checkpoint_sha256: 2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb
+
+data:
+  dataset: COCO2017
+  train_root: data/coco/train2017
+  val_root: data/coco/val2017
+  train_manifest: same_as_S33
+  val_subset: 512
+  val_subset_seed: 20260752
+  validation_manifest: same_as_S33
+  train_crop_scale: [0.6, 1.0]
+  random_horizontal_flip: true
+
+channel:
+  type: AWGN
+  convention: complex_awgn_per_real_half_variance
+  train_snr_sampling: discrete_uniform_per_image
+  train_snrs_db: [1, 4, 7, 13, 19]
+  validation_snrs_db: [1, 4, 7, 13, 19]
+  validation_noise_seed: 20260752
+  transmitter_csi: perfect_snr
+  receiver_csi: perfect_snr
+  power_normalization: per_image_unit_mean_real_power
+  canonical_evaluation_noise: external-common-v1-first-16384-real-coordinates
+
+equal_budget_training:
+  initialization: random_from_frozen_seed
+  precision: FP32
+  effective_batch_size: 32
+  gradient_accumulation_allowed_only_to_preserve_effective_batch: true
+  total_epochs: 12
+  main:
+    epochs: 4
+    optimizer: AdamW
+    learning_rate: 0.0002
+    minimum_learning_rate: 0.000002
+    scheduler: cosine
+    warmup_optimizer_steps: 1000
+    weight_decay: 0.0001
+  continuation:
+    epochs: 8
+    model_only_from_frozen_main_best: true
+    fresh_optimizer_scheduler_scaler: true
+    learning_rate: 0.00005
+    minimum_learning_rate: 0.000001
+    scheduler: cosine
+  loss: mse
+  grad_clip_norm: 1.0
+  selection:
+    primary: aggregate_mean_psnr_across_five_snrs_on_coco_val512
+    tie_breaker: aggregate_mean_ms_ssim
+    external_policy_dev_not_used: true
+
+convergence_assessment:
+  status_before_equal_budget_training: unknown_not_inferable_from_one_batch_smoke
+  validation_curve: fixed_coco_val512_same_five_snrs_and_noise_each_epoch
+  clearly_not_converged_at_epoch_12_if_all:
+    - best_validation_psnr_occurs_in_epoch_11_or_12
+    - ols_psnr_slope_over_epochs_9_to_12_gte_db_per_epoch: 0.01
+    - validation_psnr_epoch_12_minus_epoch_9_gte_db: 0.03
+  if_gate_not_triggered_wording: no_clear_evidence_of_nonconvergence_not_proof_of_global_convergence
+  fully_converged_extension:
+    run_allowed: false
+    status: not_authorized_pending_equal_budget_report_and_user_decision
+    trigger_is_diagnostic_only_this_round: true
+    authorized_maximum_total_epochs: 12
+
+smoke:
+  run_allowed: false
+  arms: [official_base_sa, capacity_matched_sa]
+  batches_per_arm: 1
+  microbatch_size: 8
+  effective_batch_size_for_time_projection: 32
+  normalized_power_abs_error_max: 0.00001
+  output_dir: outputs/smoke/EXP-S34A-SWINJSCC-CALIBRATION-001
+  result: outputs/smoke/EXP-S34A-SWINJSCC-CALIBRATION-001/smoke_result.json
+  result_sha256: 010d9befe939f3c9288755888c34857e68bcfcbeb7135fd0f9f685ef944cacb3
+  verdict: PASS_both_arms
+
+formal_training:
+  run_allowed: true
+  scope: equal_budget_only
+  allowed_arms: [official_base_sa, capacity_matched_sa]
+  maximum_total_epochs_per_arm: 12
+  extension_run_allowed: false
+  gate: user_authorized_after_smoke_and_multiarms_plan_report
+  microbatch_size: 8
+  gradient_accumulation_steps: 4
+  effective_batch_size: 32
+  num_workers: 8
+  output_directories:
+    official_base_sa: outputs/train/EXP-S34A-SWINJSCC-BASE-SA-EQUAL-BUDGET-001
+    capacity_matched_sa: outputs/train/EXP-S34A-SWINJSCC-CM-SA-EQUAL-BUDGET-001
+  output_directories_created: false
+
+evaluation:
+  population: S20_Imagenette_policy_dev_same_as_S33
+  images: 64
+  channel_seeds: [20260748, 20260749, 20260750]
+  snrs_db: [1, 4, 7, 13, 19]
+  rows_per_method: 960
+  metrics: [PSNR, MS-SSIM, LPIPS, T_cls_failure, new_error, repair]
+  primary_image_quantization: floor_uint8
+  bootstrap:
+    unit: source_image_cluster
+    replicates: 10000
+    confidence: 0.95
+
+claim_rule:
+  difference: S33_minus_SwinJSCC
+  significant_superiority: two_sided_95pct_psnr_ci_lower_gt_0_db
+  noninferiority_margin_db: 0.10
+  noninferior_if: two_sided_95pct_psnr_ci_lower_gt_minus_margin_and_le_0
+  inferior_if: two_sided_95pct_psnr_ci_lower_lt_minus_margin
+  exact_margin_boundary: inconclusive_report_verbatim
+  conflicting_secondary_metrics: pareto_not_comprehensive_superiority
+  dual_arm_overall_rule: conservative_worst_arm
+
+sealed:
+  official_imagenette_validation: true
+  s34b_internal_ablation_not_started: true
+  s35_matched_diffusion_not_started: true
+  official_validation_output_directory_creation_forbidden: true
