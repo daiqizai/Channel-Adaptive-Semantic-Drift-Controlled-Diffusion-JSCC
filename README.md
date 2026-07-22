@@ -5,12 +5,241 @@
 ## 文档
 
 - `PROJECT.md`：项目定义、核心问题、假设和方法边界。
+- `METHOD_CURRENT.md`：截至 S33 当前论文方法的数据流、模块维度、名词关系和 exact-rate 说明。
 - `MILESTONES.md`：最小论文闭环、指标定义、阶段门槛和成功/失败判据。
 - `AGENTS.md`：AI agent 和贡献者的协作规则。
 - `PROGRESS.md`：当前阶段、已完成内容、下一步和开放决策。
 - `EXPERIMENTS.md`：实验记录和结果索引。
 - `LITERATURE.md`：相关工作、撞车风险和检索关键词。
 - `README.md`：环境安装、运行命令和代码结构。
+
+## S31/S31b/S32 强 JSCC 基座（阶段完成）
+
+S30 暴露的主要系统短板是旧 JSCC 保真端点。S31 已冻结并实现 clean-room 强基座：`31,118,032` 个可训练参数，四级残差编码器/解码器均带 SNR 条件，`256x256` 输入原生输出 `77x16x16=19,712` 个实符号，不使用 mask、padding 或 side information。第一阶段只训练 MSE，禁止用 diffusion、LPIPS 或语义标签挑 checkpoint；完整预注册见 `reports/s31_strong_jscc_preregistration_2026-07-21.md`。
+
+GPU smoke 历史命令如下；输出已经存在，不可覆盖：
+
+```bash
+PYTHONPATH=src python3 scripts/s31_train_strong_jscc.py \
+  --config configs/s31_strong_jscc_coco256_awgn.yaml \
+  --device cuda:0 --dry-run --max-train-batches 1 --max-val-batches 1
+```
+
+原 S31 正式训练在 epoch 3 达到五档平均 `28.0448 dB/0.958405 MS-SSIM`，随后 epoch 4 batch 418 触发 AMP gradient overflow，并按 fail-closed 规则停止；失败输出保留。修正 seed 合同后的 S31b `-002` 固定从原 best SHA `8e8f3b7b...fb0156` 仅加载模型权重，以 FP32/fresh AdamW 完成 8/8 epoch，最终 best epoch7 为 `29.360583 dB/0.967330`，checkpoint SHA `2f8972a9...57ca8`。
+
+冻结后的 S32 在 S30 同 64 图×3 seed×5 SNR 上得到 strong `30.419910 dB/0.970266 MS-SSIM/0.122824 LPIPS/14 failures`，author-JSCC 为 `29.986135/0.963092/0.128342/22`。聚合 strong−author PSNR 为 `+0.433774 dB`（95% CI `[+0.328020,+0.554007]`），LPIPS 为 `-0.005518`（`[-0.007775,-0.003147]`）。strong 使用项目完整 19,712 real，author 使用 16,384 real，因此是预算上限内胜出，不是 exact-rate matched 胜出。完整边界和下一步见 `reports/strong_jscc_backbone_stage_result_2026-07-21.md`。
+
+原 S31 正式训练历史命令（输出已经存在，不可覆盖）：
+
+```bash
+PYTHONPATH=src python3 scripts/s31_train_strong_jscc.py \
+  --config configs/s31_strong_jscc_coco256_awgn.yaml --device cuda:0
+```
+
+S31b FP32 smoke 历史命令（输出已经存在，不可覆盖）：
+
+```bash
+PYTHONPATH=src python3 scripts/s31_train_strong_jscc.py \
+  --config configs/s31b_strong_jscc_fp32_continuation_002.yaml \
+  --device cuda:0 --dry-run --max-train-batches 1 --max-val-batches 1
+```
+
+S31b 正式续训命令：
+
+```bash
+PYTHONPATH=src python3 scripts/s31_train_strong_jscc.py \
+  --config configs/s31b_strong_jscc_fp32_continuation_002.yaml --device cuda:0
+```
+
+只有同一实验意外中断且 config snapshot/checkpoint SHA 未变化时才可加 `--resume`；model-only 初始化与 `--resume` 互斥。
+早期 `EXP-S31B-STRONG-JSCC-FP32-001` 因 seed 会改变 val512 population，在任何 validation 输出前主动中止；不可续跑，修正边界见 `reports/s31b_strong_jscc_fp32_continuation_002_preregistration_2026-07-21.md`。
+
+S32 历史执行命令；输出已经存在，禁止覆盖：
+
+```bash
+PYTHONPATH=src python3 scripts/s32_strong_jscc_external_comparison.py \
+  --config configs/s32_strong_jscc_external_comparison.yaml --device cuda:0 --preflight
+PYTHONPATH=src python3 scripts/s32_strong_jscc_external_comparison.py \
+  --config configs/s32_strong_jscc_external_comparison.yaml --device cuda:0
+```
+
+## S33 严格 16,384-real 等码率 Strong JSCC（阶段完成）
+
+S33 保持 S31 的四级 SNR-conditioned clean-room 架构，把原生 latent 改为 `64x16x16=16,384 real`，与 DiffJSCC author-JSCC 严格等码率；训练使用随机初始化、FP32 4+8 epochs、`[1,4,7,13,19] dB` 离散逐图均匀采样。不得描述为连续随机 SNR。最终 checkpoint 为 `outputs/train/EXP-S33B-STRONG-JSCC-16384-FP32-001/checkpoints/best.pt`，SHA=`2daad9e7...5bfb`。
+
+历史命令如下；所有输出目录已经存在，禁止覆盖。只有同一实验意外中断且 config snapshot/checkpoint SHA 完全一致时才允许 `--resume`：
+
+```bash
+PYTHONPATH=src python3 scripts/s31_train_strong_jscc.py \
+  --config configs/s33_strong_jscc_16384_fp32_main.yaml --device cuda:0
+
+PYTHONPATH=src python3 scripts/s31_train_strong_jscc.py \
+  --config configs/s33b_strong_jscc_16384_fp32_continuation.yaml --device cuda:0
+
+PYTHONPATH=src python3 scripts/s32_strong_jscc_external_comparison.py \
+  --config configs/s33_strong_jscc_16384_external_comparison.yaml \
+  --device cuda:0 --preflight
+
+PYTHONPATH=src python3 scripts/s32_strong_jscc_external_comparison.py \
+  --config configs/s33_strong_jscc_16384_external_comparison.yaml --device cuda:0
+
+PYTHONPATH=src python3 scripts/s33_equal_rate_post_analysis.py
+```
+
+严格等码率 policy-dev 结果为 strong−author PSNR `+0.479929 dB`，source-image cluster 95% CI `[+0.370006,+0.598197]`，按预注册规则显著超过；聚合 MS-SSIM/LPIPS/failure 也显著有利。13/19 dB 感知边界和非最终测试限定见 `reports/strong_jscc_16384_equal_rate_stage_result_2026-07-21.md`。本轮没有启动 S34 消融、S35 diffusion 或 S36 official validation。
+
+## S34A SwinJSCC 公平对比（equal-budget 双臂执行中）
+
+官方 `semcomm/SwinJSCC@a6d0e6d...90f` 源码已固定，第三方源码不修改；项目侧 `src/cadsd_jscc/swinjscc_adapter.py` 负责逐图 SNR、逐图功率和 canonical paired-real AWGN。已确认 official Base-SA `28.18M` 与 capacity-matched CM-SA `31.35M` 双臂，二者均原生输出 `16,384 real`。真实 COCO microbatch=8 的单步 smoke 已通过，峰值 reserved VRAM 为 `9.75/10.40 GiB`；正式训练使用 microbatch=8、gradient accumulation=4 保持 effective batch=32。
+
+本轮只授权两臂各 12 epochs，并在同一固定 COCO val512 上检查 epoch 9--12 收敛曲线。训练器对 epoch 12 设硬上限，extension 无论 gate 是否触发都不会自动运行；official Imagenette validation 继续封存。
+
+12-epoch equal-budget 与充分训练结论分开：先按 S33 的 FP32 4+8 epoch 合同训练双臂，再依据预注册 epoch 9--12 val-PSNR slope gate 决定是否为每个仍明显上升的架构增加 extension。完整判据见 `reports/swinjscc_equal_rate_comparison_preregistration_2026-07-22.md`。当前正式训练 gate 仍关闭，official Imagenette validation 继续封存。
+
+历史 smoke 命令如下；输出已经存在，禁止覆盖：
+
+```bash
+PYTHONPATH=src python3 scripts/s34a_swinjscc_smoke.py \
+  --config configs/s34a_swinjscc_equal_rate_comparison.yaml --device cuda:0
+```
+
+当前正式训练入口（先用 `--preflight-only` 无写入审计，再逐臂运行；已有目录只能显式 `--resume`）：
+
+```bash
+.venv-sgdjscc/bin/python scripts/s34a_train_swinjscc_equal_budget.py \
+  --arm official_base_sa --preflight-only
+.venv-sgdjscc/bin/python scripts/s34a_train_swinjscc_equal_budget.py \
+  --arm official_base_sa --device cuda:0
+.venv-sgdjscc/bin/python scripts/s34a_train_swinjscc_equal_budget.py \
+  --arm capacity_matched_sa --device cuda:0
+```
+
+## 最新 S30 官方 DiffJSCC 完整对比
+
+官方 OpenImage C16 DiffJSCC 已在冻结 S20/S28 64 图×3 AWGN seed×5 SNR 上完成 `960/960` 行严格对比。current 相对 DiffJSCC 最终输出的 PSNR 为 `+0.625280 dB`（source-image cluster 95% CI `[+0.423123,+0.824753]`），但 LPIPS `+0.051861`（显著更差），failure `29 vs 23` 的 CI 跨零，因此 verdict 为 `PARETO_OR_INCONCLUSIVE`。
+
+关键新发现不是“谁单轴第一”，而是 DiffJSCC 的纯 JSCC 前端本身明显强于 current：仅用 `16,384 real`（项目预算的 `83.1169%`）即达到 `29.986135 dB / 0.128342 LPIPS / 22 failures`，current 为 `28.223678 / 0.152084 / 29`。固定 100-step diffusion 把该前端推向感知端：LPIPS 改善 `-0.028119`，但 PSNR 损失 `-2.387737 dB`，并产生 `10 new / 9 repair`；1/4 dB 为净修复，7 dB 转为净风险，13 dB 为 `3 new / 0 repair`。完整中文报告和下一阶段建议见 `reports/diffjscc_external_comparison_stage_result_2026-07-21.md`。
+
+历史执行顺序如下；这些输出已经存在，禁止覆盖：
+
+```bash
+python3 scripts/s30_diffjscc_preflight.py
+.venv-sgdjscc/bin/python scripts/s30_diffjscc_checkpoint_audit.py
+.venv-sgdjscc/bin/python scripts/s30_diffjscc_external_comparison.py --stage preload --device cuda:0
+.venv-sgdjscc/bin/python scripts/s30_diffjscc_external_comparison.py --stage smoke --device cuda:0
+.venv-sgdjscc/bin/python scripts/s30_diffjscc_external_comparison.py --stage first-seed --device cuda:0
+.venv-sgdjscc/bin/python scripts/s30_diffjscc_external_comparison.py --stage full --device cuda:0 --resume
+python3 scripts/s30_diffjscc_post_analysis.py
+```
+
+`--resume` 只用于续接已有、带 config snapshot 的 formal output；新复现必须先更换配置中的 analysis ID/output path。S30 完整输出：`outputs/external_baselines/ANALYSIS-S30-DIFFJSCC-COMPARISON-001/`。
+
+## 最新 S28/S29 外部定位
+
+冻结主方法已在 S20 相同的 64 张 Imagenette policy-dev 图像、3 个 AWGN seed、5 个 SNR 上与 B1、等容量 control 和 SGD-JSCC 逐样本比较。当前方法相对 B1 为 PSNR `+0.099085 dB`（95% CI `[+0.088053,+0.111284]`）、LPIPS `-0.007314`、T_cls failure `35→29`；相对 matched control 仍为 `+0.059681 dB/-0.002990 LPIPS`。相对 SGD 免费完美文本论文上界，我们 PSNR 高 `+0.483309 dB`，但 SGD 的 MS-SSIM/LPIPS 更好，形成明确 Pareto；SGD 文本若最低计费会使 19,712-real 预算超出 `10.88%`。
+
+S28 的 batch=16 B1 重算曾因 `0.0004768 dB` 最大浮点差触发严格技术负判定；S29 恢复 S20 原 batch=64 后，960 行全部指标、预测、failure 和 noise SHA 零误差复现，确认不是合同错位。完整中文判断、通俗数据流和论文边界见 `reports/current_method_external_positioning_stage_result_2026-07-21.md`。
+
+历史命令如下；现有输出目录不可覆盖：
+
+```bash
+PYTHONPATH=src python3 scripts/s28_external_sgd_positioning.py --device cuda:0
+PYTHONPATH=src python3 scripts/s29_s28_b1_exact_batch_audit.py --device cuda:0
+```
+
+## 最新综合指标与通俗数据流
+
+S24 已把冻结的 S19、S20、S23 结果统一复核，并生成面向非专业读者的中文说明。当前结论是：S19 的融合质量增益最大，但高 SNR 有负迁移；S23 的额外增益很小，却首次同时做到非零 diffusion 注入、独立 holdout 三项质量 CI 有利、13/19 dB 精确回退 B1。完整指标表、外部 SGD-JSCC 边界、术语解释和一张图的端到端数据流程见 `reports/recent_progress_metrics_and_data_flow_2026-07-20.md`。
+
+以下是本次派生汇总的历史命令。现有 analysis 目录禁止覆盖；复跑时必须先改配置中的 analysis id/output directory：
+
+```bash
+MPLBACKEND=Agg PYTHONPATH=src python3 scripts/s24_recent_progress_metrics.py
+```
+
+脚本会先校验冻结输入 SHA，再重算同 population 指标、source-image cluster bootstrap、参数量与限定范围的接收端后处理延迟。该延迟不包含 6-step diffusion，因此不能解释为端到端系统延迟。
+
+## 最新 S27 pristine replication
+
+S26 主方法已在与 S16/S18/S19/S21 path/SHA 全部去重的 512 张新 COCO 图片上复现。相对 B1：PSNR `+0.092662 dB`（95% CI `[+0.089147,+0.096313]`）、MS-SSIM `+0.002310`、LPIPS `-0.007922`，majority failure `1561→1517`；相对等容量 control 仍为 `+0.065799 dB/-0.003494 LPIPS`。13/19 dB 精确 B1，9/9 checks PASS。完整中文报告：`reports/s19_exact_fallback_fresh_replication_stage_result_2026-07-21.md`。
+
+历史执行顺序如下，已有目录不可覆盖：
+
+```bash
+python3 scripts/s19_prepare_fusion_population.py --config configs/s27_s19_exact_fallback_fresh_replication.yaml
+python3 scripts/s19_cache_identity_diffusion.py --config configs/s27_s19_exact_fallback_fresh_replication.yaml --device cuda:0
+PYTHONPATH=src python3 scripts/s27_s19_exact_fallback_fresh_replication.py --device cuda:0
+```
+
+## 最新 S26 强融合 + exact fallback 结果
+
+当前最好的方法已更新为 `S26 = frozen S19 fusion at 1/4/7 dB + exact B1 at 13/19 dB`。在另一批 256 图×5 SNR 上，相对 B1 得到 PSNR `+0.093267 dB`（95% CI `[+0.087945,+0.098806]`）、MS-SSIM `+0.002188`、LPIPS `-0.007661`，majority failure `744→720`；相对等容量 control 仍为 `+0.065486 dB/-0.003100 LPIPS`。13/19 dB 最大逐像素差为 0，9/9 预注册检查通过。完整边界见 `reports/s19_exact_fallback_replication_stage_result_2026-07-20.md`。
+
+历史执行命令如下；现有目录禁止覆盖：
+
+```bash
+PYTHONPATH=src python3 scripts/s26_s19_exact_fallback_replication.py --device cuda:0
+```
+
+## 最新 S25 幅度上限判定
+
+S25 已证明继续在 S23 one-epoch feature direction 上训练逐图 amplitude controller 没有足够上限：即使不可部署的 semantic-safe oracle 可以读取原图和三分类器结果，相对固定 `alpha=0.15` 也只增加 `+0.001365 dB` PSNR，95% CI `[+0.001186,+0.001562]`，没有达到冻结的 `+0.02 dB` 门槛。该路线正式关闭，S23 仅保留为 exact-fallback 机制基线。完整中文结果见 `reports/b1_feature_amplitude_headroom_stage_result_2026-07-20.md`。
+
+历史命令如下；输出目录已存在，禁止覆盖：
+
+```bash
+PYTHONPATH=src python3 scripts/s25_b1_feature_amplitude_headroom.py --device cuda:0
+```
+
+## 最新 S21--S23 合并结果
+
+B1 与 matched diffusion 的简单输出层合并已经关闭：learned gate 会塌零，fixed-gate residual 会饱和，120 个单调像素凸融合候选也只选出全零 B1。S22 冻结 B1，仅新增 1,728 参数把 `D-B0` 注入 B1 feature；非零 endpoint 稳定改善 LPIPS 但轻微损失 PSNR。S23 预注册全局 shrink 后选中 `alpha=0.15`，在独立 256×5 holdout 上相对 B1 取得 PSNR `+0.000568 dB`（95% CI `[+0.000378,+0.000771]`）和 LPIPS `-0.001731`（`[-0.001849,-0.001622]`），5/5 检查通过。它证明最小安全合并可行，但 PSNR 效应量很小。完整中文结论与边界见 `reports/b1_merge_stage_result_2026-07-20.md`。
+
+历史执行命令如下；现有输出禁止覆盖，复跑必须更换 experiment/analysis id：
+
+```bash
+PYTHONPATH=src python3 scripts/s22_b1_feature_injection.py --mode smoke --device cuda:0
+PYTHONPATH=src python3 scripts/s22_b1_feature_injection.py --mode train --device cuda:0
+PYTHONPATH=src python3 scripts/s23_b1_feature_shrink.py --device cuda:0
+PYTHONPATH=src python3 scripts/s22_b1_feature_injection.py --config configs/s23_b1_feature_shrink.yaml --mode holdout --device cuda:0
+PYTHONPATH=src python3 scripts/s22_b1_feature_injection.py --config configs/s23_b1_feature_shrink.yaml --mode bootstrap
+```
+
+只有 selection 冻结出非零 checkpoint、把 SHA 和 protocol status 写回新配置后，才允许运行 `--mode holdout` 和 `--mode bootstrap`；S23 已按此顺序完成，现有目录禁止覆盖。
+
+## 最新 S20 结果
+
+64 张独立 Imagenette clean-correct 图×5 SNR×3 channel seeds 的扩展判定表明：SGD-JSCC 免费/完美文本论文上界明显强于普通 exact-rate JSCC，但没有全面支配 B1。SGD−B1 的 PSNR 为 `-0.38422 dB`（source-cluster 95% CI `[-0.61529,-0.16026]`），LPIPS 为 `-0.087297`（`[-0.100439,-0.075641]`）；failure `35→25`，但仍有 `11` 个相对 B1 new error。公开 SGD 图像+边缘支路已占满 `19,712 real`，四个 caption 的最低未保护 BPSK 成本还需 `2,144 real`，因此严格同总码率的“全程 SGD”当前不可执行。完整中文报告见 `reports/sgd_b1_decision_stage_result_2026-07-17.md`。
+
+以下是历史可复现执行顺序；现有输出禁止覆盖，复跑必须修改 analysis id 和输出目录：
+
+```bash
+PYTHONPATH=src python3 scripts/s20_prepare_sgd_b1_decision.py
+PYTHONPATH=src python3 scripts/s20_sgd_b1_decision.py --mode prepare-sgd-configs
+PYTHONPATH=src python3 scripts/s20_sgd_b1_decision.py --mode baseline
+
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+  .venv-sgdjscc/bin/python scripts/external_sgdjscc_common_pilot.py \
+  --config <sgd_seed_resolved.yaml> --run
+
+PYTHONPATH=src python3 scripts/s20_sgd_b1_decision.py --mode aggregate
+```
+
+三份 `<sgd_seed_resolved.yaml>` 位于冻结 population 目录，分别对应 seeds `20260748/20260749/20260750`。本轮全部模型和数据均来自本地缓存，无需联网。
+
+## S19 结果
+
+等容量因果消融已证明 S18 identity-controlled diffusion 对强 B1 具有互补信息：全新 256×5 holdout 上，fusion 相对同参数量 B0-only control 为 `+0.05846 dB`，cluster-bootstrap 95% CI `[+0.05198,+0.06423]`，LPIPS 同时改善 `-0.001493`；相对原 B1 为 `+0.10168 dB`。完整边界和高 SNR 负迁移见 `reports/diffusion_fusion_ablation_stage_result_2026-07-16.md`。
+
+历史可复现执行顺序如下；输出目录已存在，禁止直接覆盖，复跑必须使用新 experiment/analysis id：
+
+```bash
+python3 scripts/s19_prepare_fusion_population.py
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/s19_cache_identity_diffusion.py
+python3 scripts/s19_train_and_evaluate_fusion.py --mode train
+python3 scripts/s19_train_and_evaluate_fusion.py --mode holdout
+python3 scripts/s19_fusion_bootstrap.py
+```
 
 ## 代码结构
 
@@ -1819,6 +2048,51 @@ tail-only partial fine-tune follow-up 只训练 residual tail 和 alpha head，�
 
 tail-only continuous-alpha follow-up 把 5 类 alpha 分类改为单个连续 alpha regression，仍只训练 residual tail 和 alpha head。它在 validation/held-out/test-like 上 PSNR delta 达到 `+0.5010/+0.5049/+0.5012` dB，accepted new error 为 `0/0/0`，超过离散 tail-only alpha head，并在 held-out/test-like 上达到或超过 two-stage policy 与 receiver predictor。补充审计显示 continuous-alpha 的 LPIPS delta 为 `-0.0149/-0.0149/-0.0162`，优于同 checkpoint full-strength top-1 fallback；但 classifier ensemble 下 any-classifier new error 为 `17/9/14`，majority-vote new error 为 `1/0/0`。该结果是当前训练侧 amplitude-control 最明确的正向突破，但仍低于后验 adaptive alpha upper bound，且不能声明跨模型完全安全，因此暂不直接升级最终 M3。
 
+## SGD-inspired edge-conditioned residual refiner
+
+`EXP-S4-008` 在 residual CNN 输入中加入 receiver-visible 结构条件：从 M0 重建图计算 `sobel_magnitude` 和 `laplacian_abs`，再与 RGB M0、SNR map 一起输入 residual refiner。该设计借鉴 SGD-JSCC 的 edge/structure guidance，但不使用原图 edge，因此不引入接收端不可见信息。
+
+validation 训练与评估：
+
+```bash
+python3 scripts/s5_residual_refiner_pilot.py --config configs/s5_edge_conditioned_residual_refiner_validation_coco256_awgn.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_pilot.py --config configs/s5_edge_conditioned_residual_refiner_validation_coco256_awgn.yaml --device cuda:0 --skip-lpips
+```
+
+capacity/training-budget matched controls：
+
+```bash
+python3 scripts/s5_residual_refiner_pilot.py --config configs/s5_capacity_matched_no_edge_residual_refiner_validation_coco256_awgn.yaml --device cuda:0 --skip-lpips --dry-run
+python3 scripts/s5_residual_refiner_pilot.py --config configs/s5_small_edge_conditioned_residual_refiner_validation_coco256_awgn.yaml --device cuda:0 --skip-lpips --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_pilot.py --config configs/s5_capacity_matched_no_edge_residual_refiner_validation_coco256_awgn.yaml --device cuda:0 --skip-lpips
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_pilot.py --config configs/s5_small_edge_conditioned_residual_refiner_validation_coco256_awgn.yaml --device cuda:0 --skip-lpips
+python3 scripts/s6_compare_edge_capacity_ablation.py --config configs/s6_edge_capacity_ablation_exp_s4_006_008_009_010.yaml
+```
+
+满足 `gate×alpha` 随 SNR 非增约束的 validation selection：
+
+```bash
+python3 scripts/s6_residual_shrink_selection.py --config configs/s6_edge_monotonic_residual_shrink_selection_exp_s4_008.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_residual_shrink_selection.py --config configs/s6_edge_monotonic_residual_shrink_selection_exp_s4_008.yaml --device cuda:0
+```
+
+冻结到 held-out / test-like / fresh-holdout，并做独立分类器审计：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_heldout_gate_eval.py --config configs/s5_edge_residual_refiner_heldout_gate_exp_s4_008.yaml --device cuda:0 --skip-lpips
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_heldout_gate_eval.py --config configs/s5_edge_residual_refiner_testlike_gate_exp_s4_008.yaml --device cuda:0 --skip-lpips
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_heldout_gate_eval.py --config configs/s5_edge_residual_refiner_fresh_holdout_gate_exp_s4_008.yaml --device cuda:0 --skip-lpips
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_apply_residual_shrink_schedule.py --config configs/s6_edge_monotonic_heldout_residual_shrink_schedule_check_exp_s4_008.yaml --device cuda:0
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_apply_residual_shrink_schedule.py --config configs/s6_edge_monotonic_testlike_residual_shrink_schedule_check_exp_s4_008.yaml --device cuda:0
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_apply_residual_shrink_schedule.py --config configs/s6_edge_monotonic_fresh_holdout_residual_shrink_schedule_check_exp_s4_008.yaml --device cuda:0
+python3 scripts/s6_compare_matched_edge_holdouts.py --config configs/s6_matched_edge_holdout_audit_exp_s4_008_009.yaml
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_audit_residual_policy.py --config configs/s6_edge_monotonic_policy_ensemble_audit_exp_s4_008.yaml --device cuda:0 --skip-lpips --skip-quality-metrics
+```
+
+核心结果：2×2 paired bootstrap 证明 edge 的独立 raw PSNR 增益在 small/large 模型上为 `+0.0501/+0.1389` dB，95% CI 均排除 0；large matched pair 在 validation/held-out/test-like/fresh-holdout 上净增 `+0.1389/+0.1565/+0.1585/+0.1411` dB，所有 split 的 5 个 SNR 同向。单调 frozen schedule 在四段上的 PSNR delta 为 `+0.5734/+0.6128/+0.5700/+0.5668` dB，LPIPS delta 为 `-0.0145/-0.0148/-0.0163/-0.0162`。但 ensemble majority new error 为 `1/1/0/3`，因此当前应写成“结构条件带来稳定质量/感知收益，但 raw/跨模型语义风险仍需控制”，不能写成跨模型完全安全。
+
+可直接用于组会/论文讨论的受控结果总结见 `reports/edge_conditioning_significant_result_2026-07-10.md`。
+
 ## 项目进度可视化汇总
 
 可从已有 metrics、CSV 和 failure gallery 生成一套派生总览报告；该流程不跑训练、不跑 diffusion、不重新计算模型指标：
@@ -1843,3 +2117,503 @@ outputs/analysis/project_progress_visual_summary/figures/representative_visual_o
 ```
 
 该报告适合快速查看当前项目进度、正式 M0 COCO-256 baseline、M1 负结果和已有 semantic drift failure case。
+
+## Imagenette 严格监督语义审计（2026-07-10）
+
+主实验入口：
+
+```bash
+python3 scripts/s6_train_imagenette_scratch_classifiers.py --config configs/s6_imagenette_supervised_clean_eval.yaml --device cuda:0
+python3 scripts/s6_imagenette_supervised_clean_eval.py --config configs/s6_imagenette_supervised_clean_eval.yaml --split policy_dev --device cuda:0
+```
+
+该 protocol 使用官方 WNID 真值、随机初始化的独立 `G_gate`/`T_cls`、严格 `cls_train/cls_cal/policy_dev/official-val` 隔离，并模拟 PNG 量化。policy-dev 结果为：M2 edge scheduled 相对 M0 的 clean-correct failure 下降 `2.02 pp`、PSNR `+0.7434 dB`；当前 M3 top-1 fallback 相对 M2 failure 上升 `0.7857 pp`，accepted-new-error 保守上界 `1.0795%`，超过预注册 `0.5%`，所以 official val 保持封存，M3 不称为 supervised-safe。完整结果见 `outputs/analysis/imagenette_supervised_policy_dev/REPORT.md` 和 `reports/imagenette_supervised_preregistration_2026-07-10.md`。
+
+## SGD-inspired sender semantic description 与 source-edge oracle（2026-07-10）
+
+coarse source-description 的嵌套开发/审计：
+
+```bash
+python3 scripts/s6_imagenette_source_semantic_description_eval.py --config configs/s6_imagenette_source_semantic_description_eval.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s6_imagenette_source_semantic_description_eval.py --config configs/s6_imagenette_source_semantic_description_eval.yaml --device cuda:0
+```
+
+该诊断发送 scratch `G_gate(original)` 的 4-bit top-1 或 80-bit uint8 probability vector，并假设无噪声。policy-dev 内按 WNID+SHA256 固定拆为 `945/949` 张 select/audit；连续匹配规则在 audit 上 failure 比 M2 高 `+1.6078 pp`（95% CI `[+0.8627,+2.3922] pp`），且只保留 `3.26%` M2 PSNR。因此 coarse description 只用于末端 gate 是负结果，official val 仍封存。
+
+fine source-edge feasibility oracle：
+
+```bash
+python3 scripts/s5_residual_refiner_pilot.py --config configs/s5_source_edge_oracle_residual_refiner_validation_coco256_awgn.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy python3 scripts/s5_residual_refiner_pilot.py --config configs/s5_source_edge_oracle_residual_refiner_validation_coco256_awgn.yaml --device cuda:0
+python3 scripts/s6_compare_source_edge_oracle.py --config configs/s6_source_edge_oracle_comparison_exp_s4_008_011.yaml
+```
+
+`EXP-S4-011` 与 receiver-edge `EXP-S4-008` 匹配容量、训练预算、split、seed、loss 和 gates，仅把 Sobel/Laplacian 来源换成 sender original。paired bootstrap 得到 source-edge 相对 receiver-edge raw PSNR `+3.5149 dB`，95% CI `[+3.2602,+3.7652]`，五个 SNR 全为正。这只是 perfect-edge feasibility upper bound：edge rate/channel error 未计、总 CBR 未定义，不能作为公平通信增益。下一步必须训练 main≈`1/8` + edge≈`1/24` 的 matched-total-CBR 系统。完整正负边界见 `reports/source_semantic_guidance_significant_result_2026-07-10.md`。
+
+## 精确等总码率 main + decoded-structure 结果（2026-07-11）
+
+当前已经补齐 source-edge oracle 缺失的码率/信道闭环：reference 使用 `c=8` RGB，proposed 使用 `c=6` RGB main 加 `c=2` Sobel/Laplacian structure，total CBR 都严格为 `8/48=1/6`。结构描述经过独立 AWGN DeepJSCC，不向接收端泄漏 perfect edge。
+
+复现入口：
+
+```bash
+python3 scripts/s7_train_matched_rate_jscc.py --config configs/s7_matched_rate_jscc_pilot_coco256_awgn.yaml --arm main --device cuda:0 --dry-run
+python3 scripts/s7_train_matched_rate_jscc.py --config configs/s7_matched_rate_jscc_pilot_coco256_awgn.yaml --arm structure --device cuda:0 --dry-run
+python3 scripts/s7_export_matched_rate_jscc.py --config configs/s7_matched_rate_jscc_export_coco256_awgn.yaml --device cuda:0 --dry-run
+python3 scripts/s7_compare_matched_rate_system.py --config configs/s7_matched_rate_system_cross_split_comparison.yaml
+python3 scripts/s7_imagenette_matched_rate_eval.py --config configs/s7_imagenette_matched_rate_supervised_eval.yaml --device cuda:0 --dry-run
+```
+
+COCO frozen downstream 三段合并的 raw PSNR 增益为 `+0.3772 dB`，95% CI `[+0.3274,+0.4253]`；四个 split、五个 SNR 的 20 个点估计全部为正。预注册 Imagenette policy-dev 上，matched raw 相对 `c=8` 的 PSNR 为 `+1.8341 dB`、LPIPS 为 `-0.0305`，主 SNR supervised failure 从 `3.3785%` 降至 `1.2375%`。但 new-error 保守上界为 `2.4764%`，未过 `0.5%` 安全门槛，因此 official val 仍封存，当前结论是“等码率质量和净语义失败显著改善”，不是“语义无损”。
+
+完整结果、允许表述和下一方向见 `reports/matched_rate_significant_result_2026-07-11.md`。下一版不再扫描浅层 fallback 阈值，而是把 `c=2` 从纯 edge packet 升级为 evaluator-independent 的语义描述/校验通道，并在 restoration 内部融合。
+
+## Hybrid structure + semantic sketch（2026-07-11）
+
+S8 在不增加总码率的前提下，把 frozen AlexNet probability 的 32-D 固定投影塞入已有 `c=2` latent。最终 repetition-4 payload 只占 `128/16384=0.78125%` 的结构 latent；1 dB 恢复 cosine `0.9552`，19 dB `0.9992`，结构前两通道 MSE 只增加 `3.24%-5.84%`。
+
+主要入口：
+
+```bash
+python3 scripts/s8_export_hybrid_semantic_structure.py --config configs/s8_hybrid_structure_semantic_export_r4_coco256_awgn.yaml --device cuda:0 --dry-run
+python3 scripts/s5_residual_refiner_pilot.py --config configs/s8_per_sample_counterfactual_semantic_refiner_validation.yaml --device cuda:0 --dry-run
+python3 scripts/s8_semantic_sketch_ablation.py --config configs/s8_per_sample_semantic_sketch_validation_ablation.yaml --device cuda:0 --dry-run
+python3 scripts/s8_semantic_sketch_ablation.py --config configs/s8_per_sample_semantic_sketch_downstream_ablation.yaml --device cuda:0 --dry-run
+```
+
+冻结 downstream 160 图上，S8 raw 相对 `c=8` 为 `+0.4691 dB`（95% CI `[+0.4231,+0.5159]`），相对 S7 为 `+0.0919 dB`。正确 received sketch 相对 zero 为 `+0.0849 dB`（CI `[+0.0728,+0.0982]`），但相对 shuffled 只有 `+0.0072 dB`（CI `[-0.0023,+0.0170]`）。因此当前可声称 side signal 有用，不能声称随机投影已提供可靠的样本特异 semantic grounding；S8 不单独送审，只在下节主线 M3 整体协议中审计。详见 `reports/hybrid_semantic_sketch_result_2026-07-11.md`。
+
+## 主线 M3 semantic-sketch controller（2026-07-11）
+
+S8 side signal 已正式合并回 `M3-Ours`：对 `main + alpha*(hybrid_raw-main)` 的五个 alpha 候选，接收端选择与 received source sketch 最一致的输出。它仍是严格等总码率、SNR-aware residual strength + semantic consistency control，不是独立新主线。
+
+```bash
+python3 scripts/s7_imagenette_matched_rate_eval.py --config configs/s9_imagenette_hybrid_semantic_controller_eval.yaml --device cuda:0 --dry-run
+```
+
+预注册 policy-dev 上，M3 failure 为 `1.2178%`，hybrid raw 为 `1.2571%`，reference c8 为 `3.6142%`；M3 将 raw new-error image clusters 从 23 降到 18，同时保留 `+1.4234 dB` PSNR、`-0.0265` LPIPS 和 74.8% raw PSNR gain。由于 raw-minus-M3 failure CI 跨 0，且 new-error 上界 `1.5875% > 0.5%`，它保留为主线 semantic-control 候选/消融，不升级为 supervised-safe M3，official val 继续封存。完整报告见 `reports/mainline_hybrid_semantic_controller_result_2026-07-11.md`。
+
+## Short-chain residual-shift diffusion pilot（2026-07-12）
+
+本项目没有放弃 diffusion。`EXP-S10-001` 将 diffusion 限定为严格等码率系统的接收端 correction backend：冻结 `c=6 main + c=2 decoded structure` 与 `EXP-S7-002` residual CNN 作为 anchor，在 pixel domain 从 anchor 附近运行 6-step residual-shift bridge。它不依赖 Stable Diffusion、VAE、文本 prompt 或额外传输码率。
+
+```bash
+python3 scripts/s10_short_chain_residual_shift_diffusion.py --config configs/s10_short_chain_residual_shift_diffusion_pilot.yaml --device cuda:0 --dry-run
+python3 scripts/s10_short_chain_residual_shift_diffusion.py --config configs/s10_short_chain_residual_shift_diffusion_pilot.yaml --device cuda:0
+python3 tests/test_short_chain_residual_shift_diffusion.py
+```
+
+正式 160/64 split、五 SNR 上，相对 anchor 的 mean ΔPSNR 为 `-0.1548 dB`，mean ΔLPIPS 为 `-0.000195`，且 5/5 SNR 的 LPIPS 都微幅改善；但 raw candidate 新增 12 个 AlexNet pseudo error、只修复 7 个，未通过预注册 semantic-risk gate。因此该精确版本不晋级，但结果支持继续研究“强 anchor 附近的短链 conditional diffusion”，不支持回到 blind img2img 或 pure-Gaussian residual DDPM。详见 `reports/short_chain_residual_shift_diffusion_preregistration_2026-07-12.md` 和 `outputs/EXP-S10-001/REPORT.md`。
+
+## P0 `c8 + same refiner` 公平对照（2026-07-12）
+
+此前 `c6+c2 decoded structure + refiner` 主要与裸 `c8` 比较，无法排除收益只是来自额外后端。`EXP-S11-001` 给 `c8` 配置了与 `EXP-S7-002` 完全匹配的 `64×6`、60 epoch receiver-only refiner，并冻结 seed、split、loss、gates 和模型选择协议。
+
+```bash
+python3 scripts/s5_residual_refiner_pilot.py --config configs/s11_p0_c8_same_refiner_validation.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/s5_residual_refiner_pilot.py --config configs/s11_p0_c8_same_refiner_validation.yaml --device cuda:0
+python3 scripts/s11_compare_p0_b1_b3.py --config configs/s11_p0_b1_b3_paired_comparison.yaml --dry-run
+python3 scripts/s11_compare_p0_b1_b3.py --config configs/s11_p0_b1_b3_paired_comparison.yaml
+```
+
+结果改变了归因判断：B1 `c8 + refiner` 相对 bare B0 为 `+1.0192 dB`，B3 相对 B0 仅 `+0.3974 dB`；B3 − B1 为 `-0.6217 dB`，95% image-cluster CI `[-0.6654,-0.5839]`，5/5 SNR 全负，LPIPS 也更差。双方 refiner 均为 448,387 参数、约 2.5 ms/image。因此当前 decoded-structure side path 不再被视为主要贡献，后续 diffusion 使用 B1 作为更强且公平的 deterministic anchor。详见 `reports/p0_c8_same_refiner_result_2026-07-12.md`。
+
+## B1-anchored semantic-preserving diffusion v2（2026-07-12）
+
+`EXP-S12-001` 把 6-step residual-shift diffusion 改接到更强的 B1 anchor，并从 anchor 自身计算 receiver-visible Sobel/Laplacian。训练保持 reconstruction-dominant，同时加入 edge L1 和本地冻结 ResNet18 target KL；最终 pseudo semantic diagnostic 使用不同架构的 AlexNet。
+
+```bash
+python3 scripts/s10_short_chain_residual_shift_diffusion.py --config configs/s12_b1_anchored_semantic_preserving_diffusion.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/s10_short_chain_residual_shift_diffusion.py --config configs/s12_b1_anchored_semantic_preserving_diffusion.yaml --device cuda:0
+```
+
+正式结果为 mean raw ΔPSNR `-0.0775 dB`、mean raw ΔLPIPS `-0.000652`，5/5 SNR LPIPS 改善；相对 S10，PSNR 回吐减半、LPIPS 改善扩大。但 raw new-error/repair 为 `8/4`，仍未通过 semantic-risk gate。best epoch 2 后出现明显小数据过拟合，因此不再继续调整该 160-image bridge；后续 diffusion 只允许转向 COCO train2017-scale、独立 validation 和直接 risk calibration。详见 `reports/b1_anchored_diffusion_result_2026-07-12.md`。
+
+## COCO train2017 scale-up B1 anchor（2026-07-13）
+
+为解决 160-image 过拟合，新增 train2017 内部 10k train + 1k validation 的确定性 scale-up protocol。样本由 `SHA256(seed:path)` 排序冻结，并逐 SHA 排除 local val2017 重复。
+
+```bash
+python3 scripts/s13_export_coco_train2017_c8_scaleup.py --config configs/s13_coco_train2017_c8_scaleup_export.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/s13_export_coco_train2017_c8_scaleup.py --config configs/s13_coco_train2017_c8_scaleup_export.yaml --device cuda:0
+python3 scripts/s5_residual_refiner_pilot.py --config configs/s13_scaleup_b1_anchor_train.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/s5_residual_refiner_pilot.py --config configs/s13_scaleup_b1_anchor_train.yaml --device cuda:0
+```
+
+`EXPORT-S13-001` 生成 55k c8 reconstruction，cache 约 6.9GB；`EXP-S13-001` 在独立 1k×5 validation 上得到 mean raw ΔPSNR `+1.3632 dB`、ΔLPIPS `-0.03272`，5/5 SNR 同向，pseudo new-error/repair `339/951`。全部 anchor gate 通过，epoch-9 checkpoint SHA-256 `80133f9d...65562` 已冻结为下一阶段 diffusion anchor。详见 `reports/scaleup_b1_anchor_result_2026-07-13.md`。
+
+## Train2017-scale B1-anchored diffusion（2026-07-13）
+
+```bash
+python3 scripts/s10_short_chain_residual_shift_diffusion.py --config configs/s14_scaleup_b1_anchored_diffusion.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/s10_short_chain_residual_shift_diffusion.py --config configs/s14_scaleup_b1_anchored_diffusion.yaml --device cuda:0
+```
+
+S14 在 10k/1k scale-up 后得到 raw new-error/repair `63/76`，通过净风险 gate；但 mean ΔPSNR `-0.0736 dB`、ΔLPIPS `+0.000081`，感知指标无增益，总判定 NEGATIVE。停止继续调该 residual-shift bridge；详见 `reports/scaleup_b1_anchored_diffusion_result_2026-07-13.md`。
+
+## Received-latent posterior consistency 接口（2026-07-13）
+
+`src/cadsd_jscc/deepjscc_adapter.py` 现可显式返回 transmitted/received channel latent，并对 candidate 计算可微 normalized measurement-consistency loss。formal checkpoint smoke 的 split-forward 最大误差为 `1.788e-7`，received latent shape 为 `(B,16,64,64)`，一致性梯度有限且非零。该接口用于下一版 posterior/data-consistency diffusion，不是 S14 调参。详见 `reports/received_latent_posterior_feasibility_2026-07-13.md`。
+
+## Received-latent posterior correction pilot（2026-07-13）
+
+```bash
+python3 scripts/pc_posterior_consistency_pilot.py --config configs/pc001_posterior_consistency_pilot.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/pc_posterior_consistency_pilot.py --config configs/pc001_posterior_consistency_pilot.yaml --device cuda:0
+```
+
+在未被 S13/S14 使用的 64 张 train2017 图像上，从冻结 S14 raw 出发做 3 次 received-latent proximal correction。5/5 SNR 的 consistency loss、PSNR、LPIPS 均改善；mean posterior-minus-raw PSNR `+0.2124 dB`、LPIPS `-0.00991`，latent loss 相对下降约 `20.1%`。B1-anchor-relative pseudo new error 保持 `5→5`，repair `2→17`，全部预注册 gate 通过。
+
+这是一项阶段性正结果：diffusion 主线保留，但后续应改成内生 received-latent posterior/data-consistency sampler，而不再调 S14 的无约束 residual-shift bridge。本 pilot 不是最终 semantic-safety 证据。详见 `reports/posterior_consistency_pilot_result_2026-07-13.md`。
+
+## Posterior correction 独立复现与 failure handling（2026-07-13）
+
+```bash
+python3 scripts/pc_posterior_consistency_replication.py --config configs/pc002_posterior_consistency_independent_replication.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/pc_posterior_consistency_replication.py --config configs/pc002_posterior_consistency_independent_replication.yaml --device cuda:0
+python3 scripts/pc_posterior_consistency_replication.py --config configs/pc003_posterior_consistency_failure_handling.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/pc_posterior_consistency_replication.py --config configs/pc003_posterior_consistency_failure_handling.yaml --device cuda:0
+```
+
+PC-002 在新 256 图×5 SNR 上复现 posterior correction：PSNR `+0.2125 dB`、LPIPS `-0.01078`、latent loss 相对约 `-20.4%`，全部 5/5 SNR 同向；但三分类器 semantic gate 失败。PC-003 的 receiver-only AlexNet agreement fallback 以 `87.66%` coverage 保留 PSNR `+0.2062 dB`、LPIPS `-0.00910`，并把 majority new error `4→1`，但仍未达到 raw 的 `0`，也未迁移到另外两套分类器。
+
+因此阶段结论是：posterior-consistent diffusion restoration 已可复现，单模型 failure handling 仍不是跨模型可靠的最终 M3。报告见 `reports/posterior_consistency_independent_replication_result_2026-07-13.md` 和 `reports/posterior_consistency_failure_handling_result_2026-07-13.md`。
+
+## PC consensus controller holdout audit（2026-07-13）
+
+```bash
+python3 scripts/pc_posterior_consistency_replication.py --config configs/pc_controller_holdout_audit.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/pc_posterior_consistency_replication.py --config configs/pc_controller_holdout_audit.yaml --device cuda:0
+```
+
+AlexNet+ResNet18 consensus controller 的 coverage 为 `78.05%`，final 相对 S14 raw 保留 PSNR `+0.1927 dB`、LPIPS `-0.00791`，controller ensemble 内 majority new error 为 0；但完全未参与控制的 MobileNet holdout new error 从 `12` 增到 `34`，因此总判定 NEGATIVE。停止继续堆 top-1 consensus 规则；详见 `reports/posterior_consensus_controller_holdout_result_2026-07-13.md`。
+
+## PC 独立标注与 Imagenette 监督审计（2026-07-13）
+
+```bash
+python3 scripts/pc_posterior_consistency_replication.py --config configs/pc_coco_object_clip_audit.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/pc_posterior_consistency_replication.py --config configs/pc_coco_object_clip_audit.yaml --device cuda:0
+python3 scripts/pc_imagenette_supervised_audit.py --config configs/pc_imagenette_supervised_audit.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/pc_imagenette_supervised_audit.py --config configs/pc_imagenette_supervised_audit.yaml --device cuda:0
+```
+
+COCO-object clean-correct 审计得到 final failure `36→32`、new error `2→4`，说明存在真实对象级风险。更严格的 Imagenette policy-dev 监督审计中，1697 张 clean 图的 primary raw/posterior/final failure 为 `69/56/62`，new error 总数为 `4/4/4`；final 保留 `+0.2543 dB/-0.00531 LPIPS`。但 7 dB 出现 final/raw new error `1/0`，逐 SNR gate 失败，official validation 继续封存。详见 `reports/posterior_imagenette_supervised_audit_result_2026-07-13.md`。
+
+## PC task-matched scratch-gate follow-up（2026-07-13）
+
+```bash
+python3 scripts/pc_imagenette_supervised_audit.py --config configs/pc_imagenette_scratch_gate_audit.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/pc_imagenette_supervised_audit.py --config configs/pc_imagenette_scratch_gate_audit.yaml --device cuda:0
+```
+
+该 follow-up 只把 PC-SUP 的 ImageNet consensus controller 替换为既有 scratch MobileNetV3-Small `G_gate`，scratch ResNet18 `T_cls` 仍仅用于监督审计。9470 行 raw/posterior 与 PC-SUP 逐值一致；scratch gate 的 clean-row coverage 为 `99.33%`，primary failure `69→57`、new error `4→3`，final 相对 raw 保留 `+0.26394 dB/-0.005966 LPIPS`，均优于旧 controller。
+
+严格判定仍为 NEGATIVE：7 dB 的 new error 是 `1 vs raw 0`，所以逐 SNR gate 未过。不得在已查看的 policy-dev 上继续扫 threshold；official validation 仍封存。当前阶段成果是保留 posterior-consistent diffusion + scratch gate 作为 supervised development candidate，而不是宣称 semantic-safe。详见 `reports/posterior_imagenette_scratch_gate_result_2026-07-13.md`。
+
+## PC scratch-gate multi-channel-seed replication（2026-07-13）
+
+```bash
+python3 scripts/pc_imagenette_supervised_audit.py --config configs/pc_imagenette_scratch_gate_multiseed_replication.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/pc_imagenette_supervised_audit.py --config configs/pc_imagenette_scratch_gate_multiseed_replication.yaml --device cuda:0
+```
+
+冻结方法在三个全新 AWGN seed、28,410 行上得到稳定 restoration 收益：15/15 seed×SNR consistency 下降，final 相对 raw mean PSNR/LPIPS `+0.26334 dB/-0.005937`，primary failure `196→163`，且每个 seed 都改善。
+
+严格 semantic-tail 结果仍失败：new-error rows `13→14`，image clusters `10→11`；final `11/1691` 的单侧 95% Clopper-Pearson upper 为 `1.0744% > 0.5%`。1 dB 和 seed 20260722 分别恶化 `8→10`、`5→7`，旧 failure image 也在新 seed 再现。因此当前应该继续保留 posterior-consistent diffusion，但必须淘汰简单 scratch top-1 agreement 作为最终 controller；official validation 继续封存。完整报告见 `reports/posterior_imagenette_scratch_gate_multiseed_result_2026-07-13.md`。
+
+## PC continuous receiver-risk controller 与新 seed 审计（2026-07-14）
+
+以下命令对应预注册顺序。正式输出目录均 fail-if-exists，已有结果不会被覆盖；重跑时必须改用新的输出目录。
+
+```bash
+# 1. 独立 scratch G_aux；本地数据、weights=None，不下载
+python3 scripts/s6_train_imagenette_scratch_classifiers.py --config configs/pc_imagenette_scratch_aux_classifier.yaml --roles G_aux --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/s6_train_imagenette_scratch_classifiers.py --config configs/pc_imagenette_scratch_aux_classifier.yaml --roles G_aux --device cuda:0
+
+# 2. 已暴露三 seed 的 receiver_risk_v1 development table
+python3 scripts/pc_imagenette_supervised_audit.py --config configs/pc_imagenette_receiver_risk_features_multiseed.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/pc_imagenette_supervised_audit.py --config configs/pc_imagenette_receiver_risk_features_multiseed.yaml --device cuda:0
+
+# 3. 透明六特征 empirical-percentile controller development fit
+python3 scripts/pc_fit_receiver_risk_controller.py --config configs/pc_imagenette_receiver_risk_controller_dev.yaml --dry-run
+python3 scripts/pc_fit_receiver_risk_controller.py --config configs/pc_imagenette_receiver_risk_controller_dev.yaml
+
+# 4. 冻结 controller 后的新 channel-seed feature generation 与一次性 audit
+python3 scripts/pc_imagenette_supervised_audit.py --config configs/pc_imagenette_receiver_risk_seed_20260725_features.yaml --device cuda:0 --dry-run
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/pc_imagenette_supervised_audit.py --config configs/pc_imagenette_receiver_risk_seed_20260725_features.yaml --device cuda:0
+python3 scripts/pc_apply_receiver_risk_controller.py --config configs/pc_imagenette_receiver_risk_seed_20260725_audit.yaml --dry-run
+python3 scripts/pc_apply_receiver_risk_controller.py --config configs/pc_imagenette_receiver_risk_seed_20260725_audit.yaml
+```
+
+`G_aux` cal macro top-1 为 `0.90270`。43 维 feature table 共 28,410 行，与旧三 seed 审计逐行复现；controller 只输入四个 `G_gate/G_aux` JS 变化和两个 posterior confidence percentile，不输入 `T_cls`/原图/标签/类别/样本 ID。开发集上冻结 10% reject-rate threshold 后，new-error `15→3`、cluster upper `0.4579%`、PSNR/LPIPS `+0.23834/-0.004799`，因此只记 development pass。
+
+预注册新 seed `20260725` 给出相反的独立结论：posterior restoration 仍稳定改善 `+0.26535 dB/-0.006064 LPIPS`，primary failure `50→45`；但冻结 risk controller 两个 new-error 均漏过、误拒 11 个 repair，final failure `56>raw 50`、new-error `2>raw 0`，正式 verdict `NEGATIVE`。这说明 receiver-only uncertainty 会遇到高置信共享盲点。diffusion 不退出，但下一步不能再扫 receiver threshold；应开发任务相关、可纠错、严格计码率的 sender semantic checksum，并在新的 labeled development population 上训练。详见 `reports/posterior_receiver_risk_controller_stage_result_2026-07-14.md`。
+
+## PC 固定码率 sender semantic payload（2026-07-14）
+
+入口 `pc_imagenette_sender_inbudget_awgn_audit.py` 把 sender description 嵌入原 `c=8` latent，和图像主载荷共用 AWGN；receiver 擦除 payload 后解码，posterior consistency 用 mask 排除保留位置。输出目录均 fail-if-exists，下面命令用于 dry-run 或在新输出路径复现，不能覆盖已有实验。
+
+```bash
+# 模拟 10 维 probability × R16 开发配置
+python3 scripts/pc_imagenette_sender_inbudget_awgn_audit.py --config configs/pc_imagenette_sender_aux_inbudget_awgn_dev.yaml --dry-run
+
+# UInt4(10 类，共 40 bit) + BPSK × R4 开发配置
+python3 scripts/pc_imagenette_sender_inbudget_awgn_audit.py --config configs/pc_imagenette_sender_aux_uint4_bpsk_inbudget_awgn_dev.yaml --dry-run
+
+# 冻结到新 channel seed 20260726 的审计配置
+python3 scripts/pc_imagenette_sender_inbudget_awgn_audit.py --config configs/pc_imagenette_sender_aux_uint4_bpsk_seed20260726_audit.yaml --dry-run
+
+# 正式运行只使用本地 checkpoint/data，不联网；已有 output_dir 不可覆盖
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python3 scripts/pc_imagenette_sender_inbudget_awgn_audit.py --config <new-config.yaml> --device cuda:0
+```
+
+严格率合同为 65,536 个总实符号，其中 160 个 payload symbols、65,376 个 image symbols，总 CBR 仍为 `1/6`。模拟 payload 因连续分数噪声判为 `NEGATIVE`。UInt4+BPSK×4 在 seed `20260725` 开发上通过，但冻结 seed `20260726` 审计中 final new-error `5>in-budget raw 3`，所以最终仍为 `NEGATIVE`；编码层本身已稳定迁移，瓶颈是单一 `G_aux`/JS semantic decision。完整中文报告见 `reports/posterior_sender_inbudget_semantic_payload_stage_result_2026-07-14.md`。
+
+## Cross-model triplet sender controller（2026-07-14，历史 UInt4 版本）
+
+该历史候选使用固定 40-bit `UInt4+BPSK×4` payload、160 个保留符号和同一 AWGN。它不增加发送开销；只把已恢复的 `G_aux(source)` top-1 与独立 scratch `G_gate` 的 anchor/posterior top-1 组成三方自然一致性 gate：
+
+```text
+source-JS <= 0
+AND recovered G_aux(source).top1 == G_gate(anchor).top1
+AND G_gate(anchor).top1 == G_gate(posterior).top1
+```
+
+原记录按 in-budget raw/anchor-relative endpoint 给出 `2→0` 和 upper95 `0.1771%`，曾误判为 POSITIVE。后续严格统计改用 paired unpunctured M2 的 system endpoint 后，得到 new/repair clusters `7/8`、upper95 `0.7766%>0.5%`，且 1 dB failure `32→34`，因此正式结论已更正为 **NEGATIVE**。mean final-minus-M2 `+0.01158 dB/-0.002566 LPIPS` 仍成立，但不能抵消 semantic new-error tail；official Imagenette validation 未访问。
+
+```bash
+# 输出目录不可复用；下面命令只用于新路径的可复现运行
+python3 scripts/pc_imagenette_sender_inbudget_awgn_audit.py \
+  --config configs/pc_imagenette_sender_crossmodel_triplet_seed20260727_audit.yaml --dry-run
+
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+  python3 scripts/pc_imagenette_sender_inbudget_awgn_audit.py \
+  --config <new-crossmodel-config.yaml> --device cuda:0
+```
+
+完整中文报告：`reports/posterior_sender_crossmodel_triplet_stage_result_2026-07-14.md`。
+## 2026-07-14 UInt2 预留感知阶段状态
+
+当前仍保留 diffusion。UInt2 BPSK×4 sender payload 只占 80/65536 个实符号，预留感知 B1 在相同 reserved inputs 上相对旧 B1 得到 `+0.1028 dB` paired PSNR（95% CI `[+0.0934,+0.1140]`）。接回冻结 S14 diffusion 与 received-latent posterior correction 后，新 channel seed 的 final−M2 PSNR/LPIPS 为 `+0.0658 dB/-0.00254`，五个 SNR 的 PSNR 都为正。
+
+严格 semantic verdict 仍为 NEGATIVE：seed20260728 的 M2/final primary failure `62→62`，system new-error cluster upper95 `0.5408%>0.5%`，1 dB failure 增加。official Imagenette validation 未访问。完整结果和下一步边界见 `reports/uint2_reservation_aware_diffusion_stage_result_2026-07-14.md`。
+
+关键复现命令：
+
+```bash
+python3 scripts/s15_compare_reservation_aware_b1.py \
+  --output-dir outputs/analysis/s15_reservation_aware_b1_paired_comparison_reproduction
+python3 scripts/pc_analyze_mismatch_raw_routing.py \
+  --input-csv outputs/analysis/pc_imagenette_sender_crossmodel_triplet_uint2_r4_resaware_b1_full_dev/per_sample.csv \
+  --output-dir outputs/analysis/pc_imagenette_sender_crossmodel_triplet_uint2_r4_resaware_b1_routing_offline_seed20260727_reproduction
+python3 scripts/pc_imagenette_sender_inbudget_awgn_audit.py \
+  --config configs/pc_imagenette_sender_crossmodel_triplet_uint2_r4_resaware_b1_routing_seed20260728.yaml \
+  --output-dir outputs/analysis/pc_imagenette_sender_crossmodel_triplet_uint2_r4_resaware_b1_routing_seed20260728_reproduction
+```
+
+所有输出目录均拒绝覆盖；重跑前应指定新的输出路径。大任务按 `AGENTS.md` 清空 proxy，以上命令不需要联网下载。
+
+## 外部方法公平对比轨道（2026-07-14）
+
+外部方法已经进入正式排期：`SGD-JSCC author → SING-Zero-style → DiffJSCC author → DiT-JSCC watch-only`。作者原生复现和本项目 common contract 分开报告；只有同图、同 AWGN realization、同 `[1,4,7,13,19]` SNR、同总 CBR `1/6` 且完整计入 text/edge/pilot side information 后，才允许直接比较优劣。
+
+SGD-JSCC 源码已只读固定在 `third_party/SGDJSCC`，commit 为 `2188acc0dd2805355d3d0d2e478cbc27b46b4da5`。作者 4 个 checkpoint、BLIP2 safetensors、OpenAI CLIP ViT-L/14 和 scheduler 已在清空全部代理变量后通过服务器直连下载并逐项校验；隔离运行环境为 `.venv-sgdjscc`，依赖记录在 `requirements-sgdjscc.txt`。
+
+无下载协议检查：
+
+```bash
+python3 scripts/check_external_baseline_contract.py
+python3 -m unittest discover -s tests -p 'test_external_baseline_contract.py' -v
+.venv-sgdjscc/bin/python scripts/external_sgdjscc_native_smoke.py
+```
+
+`SMOKE-EXT-SGDJSCC-001` 已完成一次作者完整链单图运行，输出位于 `outputs/smoke/external_sgdjscc_native_snr1_seed2025_20260714/`。该 run 的 main/edge-active 为 `4096/832` 个实符号，caption 为 488 UTF-8 bits，但作者协议没有 caption channel-symbol mapping；因此结果只能进入 author-native 表，仍禁止与本项目直接排名。默认输出目录拒绝覆盖，重跑必须复制配置并更换 `analysis_id` 与 `output_dir`。完整排期见 `reports/external_method_comparison_schedule_2026-07-14.md`，本次中文阶段结果见 `reports/sgdjscc_author_native_smoke_stage_result_2026-07-14.md`。
+
+## SGD-JSCC 共同协议闭环（2026-07-15）
+
+共同协议适配器已在一张 frozen COCO-256 图上真实跑通。它保留作者四 patch、main JSCC、edge-JSCC、ControlNet 和 50-step diffusion，但把每块 caption 编为固定 UTF-8+CRC16 packet，经 BPSK×21 过同一 AWGN；确定性 edge mask 只发送 active coordinates。总账本为 main `16,384` + edge `3,328` + text `45,024` + padding `800` = `65,536` 个实坐标，即 `32,768` complex uses、CBR `1/6`。
+
+```bash
+# 无下载 dry-run
+.venv-sgdjscc/bin/python scripts/external_sgdjscc_common_smoke.py
+
+# 新 output_dir 的真实运行；全部资产本地离线，仍清空代理
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+    -u http_proxy -u https_proxy -u all_proxy \
+    .venv-sgdjscc/bin/python scripts/external_sgdjscc_common_smoke.py \
+    --config <new-common-smoke-config.yaml> --run
+```
+
+`SMOKE-EXT-SGDJSCC-COMMON-001` 在 1 dB/seed 20260729 得到 CRC `4/4`、caption packet bit error `0/2144`、finite 256×256 output 和 smoke-only PSNR `24.785109 dB`。rate gate 已通过，但单图出现 patch seam 与疑似 text-driven enlarged-player hallucination，因此效果/semantic gate 仍未通过，不能据此排名。完整中文报告：`reports/sgdjscc_common_contract_smoke_stage_result_2026-07-15.md`。
+
+码率术语现统一为：两个实信道坐标组成一个 complex channel use；`65,536/(2×3×256×256)=1/6`。旧 native 报告中 `0.08333` 等数字是 real-coordinate/source-dimension ratio，不是同口径 complex-use CBR。
+
+> 信道口径更正：上述 `24.785109 dB` 单图使用作者每实坐标方差 `P/SNR`，比项目复信道 `P/(2×SNR)` 严苛 3 dB，只保留作接入证据。`configs/external_sgdjscc_common_complex_awgn_smoke.yaml` 的同图复信道结果为 `26.128782 dB`。
+
+## 外部共同协议首轮真实对比（2026-07-15）
+
+`ANALYSIS-EXT-COMMON-PILOT-001` 已在 8 张 frozen Imagenette policy-dev clean 图、五个 SNR `[1,4,7,13,19]` 上跑完当前 M3、SGD-JSCC common adapter 和 SING-Zero-style。每个 sample/SNR 使用相同 65,536-D canonical standard-normal vector，复 AWGN 每实坐标方差为 `P/(2×SNR)`；三方法均严格使用 65,536 real coordinates = 32,768 complex uses = CBR `1/6`。
+
+| 方法 | PSNR | MS-SSIM | LPIPS | final failure / new error |
+|---|---:|---:|---:|---:|
+| DeepJSCC reference | `31.7438` | `0.97298` | `0.07861` | `0 / —` |
+| 当前 M3 | **`33.0594`** | **`0.98203`** | **`0.03532`** | `0 / 0` |
+| SGD-JSCC common adapter | `26.8882` | `0.94862` | `0.07763` | `0 / 0` |
+| SING-Zero-style final-only | `24.6593` | `0.96118` | `0.31725` | `1 / 1` |
+
+聚合器已验证 120 行的 sample/SNR key、noise SHA、DeepJSCC reference、rate 和 AWGN 口径完全一致。当前 M3 相对 SGD 的配对均值为 `+6.1712 dB/-0.04231 LPIPS`；这是小规模 development pilot 的方向性结果，不授权强于 SGD-JSCC/SING 论文的结论。SGD 是项目侧 common adapter；SING-style 只做最终一步 range/null projection，不是论文逐 reverse-step DDNM。
+
+已存在的输出拒绝覆盖。下列命令用于协议检查；要真实复现必须复制配置、更换 `analysis_id`/所有 output paths，并保持 official val 封存：
+
+```bash
+# M3 / SING-style 无下载 dry-run
+python3 scripts/external_common_project_pilot.py --method ours
+python3 scripts/external_common_project_pilot.py --method sing-zero-style
+
+# SGD 无下载 dry-run；pinned 环境必须在 import 前指向本地 HF cache
+HF_HOME="$PWD/third_party/SGDJSCC/runtime_assets/hf_home" \
+PYTHONPATH=src:scripts \
+.venv-sgdjscc/bin/python scripts/external_sgdjscc_common_pilot.py
+
+# 对已有三方法结果做 fail-closed aggregate；已有 aggregate 目录同样拒绝覆盖
+python3 scripts/external_common_aggregate.py
+```
+
+完整结果、限制与下一步见 `reports/external_common_comparison_pilot_stage_result_2026-07-15.md`。本轮全部资产本地离线，无新增下载；全仓 `99/99` 标准库测试通过。
+
+## 外部方法双工作点码率对齐（2026-07-15）
+
+作者工作点使用精确 19,712 个图像分支实符号；项目工作点继续固定 65,536 个实符号。相关命令如下，所有正式输出目录均拒绝覆盖：
+
+```bash
+python3 scripts/external_train_exact_rate_deepjscc.py \
+  --config configs/external_author_rate_deepjscc_fullcoco_continue.yaml \
+  --device cuda:0
+
+python3 scripts/external_common_project_pilot.py \
+  --config configs/external_author_rate_alignment_pilot.yaml \
+  --method exact-rate-deepjscc --run
+
+.venv-sgdjscc/bin/python scripts/external_sgdjscc_common_pilot.py \
+  --config configs/external_author_rate_alignment_pilot.yaml --run
+
+.venv-sgdjscc/bin/python scripts/external_sgdjscc_common_pilot.py \
+  --config configs/external_project_rate_sgd_reallocation_pilot.yaml --run
+
+python3 scripts/external_rate_alignment_aggregate.py
+```
+
+作者工作点的 SGD 数字包含论文假设的免费且无误 caption，只能作为论文协议上界；项目工作点的 R2/R13 只增加抗噪重复，不增加发布模型的表示容量。协议与首轮结果见 `reports/external_two_working_point_alignment_preregistration_2026-07-15.md`，最终训练预算补齐结果另见同阶段中文报告。
+## 精确低码率 M3 闭环（2026-07-15）
+
+当前低码率工作点为 19,712 个总实坐标，其中 80 个坐标用于 UInt2+BPSK×4 语义载荷、19,632 个坐标用于图像分支。B1 已成为新的低码率主 anchor；当前短链 diffusion 只在 19 dB 高 SNR 尾部经 posterior consistency 和语义门控后启用。
+
+主要复现入口如下。所有正式输出目录均拒绝覆盖；重跑时必须复制配置并指定新目录。
+
+```bash
+# 只检查缓存计划，不产生输出
+python3 scripts/s13_export_coco_train2017_c8_scaleup.py \
+  --config configs/lowrate_m3_exact19712_cache_export.yaml --dry-run
+
+# B1 / diffusion 输入与协议检查
+python3 scripts/s5_residual_refiner_pilot.py \
+  --config configs/lowrate_m3_b1_anchor_train.yaml --dry-run
+python3 scripts/s10_short_chain_residual_shift_diffusion.py \
+  --config configs/lowrate_m3_b1_anchored_diffusion.yaml --dry-run
+
+# 第一组 8×5 严格闭环 dry-run
+python3 scripts/lowrate_m3_stage_pilot.py \
+  --config configs/lowrate_m3_stage_pilot.yaml
+
+# 独立高 SNR 尾部 holdout dry-run
+python3 scripts/lowrate_m3_stage_pilot.py \
+  --config configs/lowrate_m3_tail_holdout_pilot.yaml
+```
+
+阶段结果：B1 在 1000 图×5 SNR 上平均 `+1.038 dB/-0.114 LPIPS`；原始 diffusion 为负结果；独立尾部 holdout 中，19 dB 门控 final 相对 B1 在全五档平均为 `-0.0099 dB/-0.000389 LPIPS`，failure/new error 保持 0。完整中文解释见 `reports/lowrate_m3_stage_result_2026-07-15.md`。
+
+## Channel-State-Matched Latent Diffusion（2026-07-15）
+
+SGD-JSCC step matching 的项目内最小迁移已经跑通。新实现不在 B1 图像后随机生成残差，而是在 frozen exact-rate DeepJSCC 的 `6×64×64` codeword space 训练 masked epsilon predictor，并按项目 `P/(2×SNR)` 口径使用：
+
+`alpha_channel = 2*gamma/(2*gamma+1)`。
+
+只有 19,632 个图像活动坐标参与 diffusion；80 个语义载荷坐标与 4,864 个未发送稠密坐标始终排除。正式 FP32 训练：
+
+```bash
+python3 scripts/s17_channel_matched_latent_diffusion.py \
+  --config configs/s17_channel_matched_latent_diffusion.yaml \
+  --mode train \
+  --device cuda:0
+```
+
+一次性 holdout：
+
+```bash
+TORCH_HOME="$PWD/outputs/cache/torch" \
+python3 scripts/s17_channel_matched_latent_diffusion.py \
+  --config configs/s17_channel_matched_latent_diffusion.yaml \
+  --mode holdout \
+  --device cuda:0
+```
+
+256图×5SNR holdout 上，matched DDIM 相对 B0 为 `+0.148715 dB/-0.035305 LPIPS`，相对固定 7 dB 错配为 `+0.233455 dB`；但只在 1/4/7 dB 获得 PSNR 正值，且 naive 接旧 B1 比 B1 低 `-0.231266 dB`。因此当前状态是“step matching 机制成功、最终系统融合未成功”。完整中文报告见 `reports/channel_matched_latent_diffusion_stage_result_2026-07-15.md`。
+
+## Decoder-Aware Latent Diffusion（2026-07-15）
+
+后继实验从 S17-002 best warm-start，使用同三轮预算 control 隔离 frozen-decoder image loss 的贡献。先运行预注册的无更新尺度诊断：
+
+```bash
+python3 scripts/s17_channel_matched_latent_diffusion.py \
+  --config configs/s17_decoder_aware_latent_diffusion.yaml \
+  --mode loss-diagnostic --device cuda:0
+```
+
+诊断已冻结 `decoder_image_mse_weight=20`。正式 control 与 decoder-aware 训练：
+
+```bash
+python3 scripts/s17_channel_matched_latent_diffusion.py \
+  --config configs/s17_decoder_aware_latent_diffusion_control.yaml \
+  --mode train --device cuda:0
+python3 scripts/s17_channel_matched_latent_diffusion.py \
+  --config configs/s17_decoder_aware_latent_diffusion.yaml \
+  --mode train --device cuda:0
+```
+
+两个 checkpoint 哈希冻结后的一次性 fresh holdout 与 bootstrap：
+
+```bash
+TORCH_HOME="$PWD/outputs/cache/torch" \
+python3 scripts/s17_channel_matched_latent_diffusion.py \
+  --config configs/s17_decoder_aware_latent_diffusion.yaml \
+  --mode holdout --device cuda:0
+python3 scripts/s17_decoder_aware_latent_bootstrap.py
+```
+
+232图×5SNR 上 decoder-aware 相对同预算 control 为 `+0.021605 dB/-0.002502 LPIPS`，95% CI 均不跨零；相对 B0 为 `+0.174221 dB/-0.038540 LPIPS`。但 13/19 dB PSNR 仍为负，且 naive 接旧 B1 仍低于 B1，因此 verdict 为 `NEGATIVE_OR_PARTIAL`。完整中文报告见 `reports/decoder_aware_latent_diffusion_stage_result_2026-07-15.md`。
+
+## SNR-Conditioned Identity Envelope（2026-07-15）
+
+S18 冻结全部网络和码率，只在 codeword 层应用：
+
+`z_final = y + g(SNR)*(z_diff-y)`。
+
+先从未使用 COCO train2017 图像生成与旧 11,000 source 去重的 256/256 selection/holdout：
+
+```bash
+python3 scripts/s18_prepare_fresh_coco_population.py
+```
+
+selection 冻结 policy 后再运行一次性 holdout 和 bootstrap：
+
+```bash
+TORCH_HOME="$PWD/outputs/cache/torch" \
+python3 scripts/s18_snr_identity_envelope.py --mode selection --device cuda:0
+
+TORCH_HOME="$PWD/outputs/cache/torch" \
+python3 scripts/s18_snr_identity_envelope.py --mode holdout --device cuda:0
+
+python3 scripts/s18_snr_identity_bootstrap.py
+```
+
+正式 policy 为 `hard_identity_7db`：1/4/7 dB 使用完整 decoder-aware diffusion，13/19 dB 严格回 B0。fresh holdout 上相对 B0 为 `+0.189717 dB/-0.036284 LPIPS`，五档 PSNR `+0.677172/+0.240940/+0.030472/0/0 dB`；相对 full diffusion PSNR `+0.015642 dB`，95% CI `[+0.014230,+0.016915]`。10/10 checks PASS，但 B1 仍高 `+0.830617 dB`。完整中文报告：`reports/snr_identity_envelope_stage_result_2026-07-15.md`。

@@ -11,6 +11,12 @@
 
 ## 当前脚本
 
+- `s34a_train_swinjscc_equal_budget.py`：按臂训练 S34A official Base-SA 或 capacity-matched CM-SA；硬编码校验用户授权状态、官方源码/smoke SHA、exact `16,384 real`、FP32 4+8 epochs 和每臂最多 12 epochs。使用 microbatch 8 + accumulation 4 保持 effective batch 32，逐 epoch 保存固定 val512 五档曲线、best/latest checkpoint 和可恢复状态；epoch 9--12 gate 只输出诊断，脚本拒绝任何 extension。
+- `s34a_launch_cm_after_base.py`：本轮串行排队助手；只在指定的 Base-SA 进程退出且其 `STATE.json` 明确显示恰好完成 12 epochs 后启动 CM-SA-12ep。Base 失败则 fail-closed，不启动 CM；不包含 extension 入口。
+- `s34a_launch_evaluation_after_cm.py`：等待双臂各恰好完成 12 epochs 后启动已预注册的 policy-dev 评估；训练失败则 fail-closed，且明确拒绝 extension checkpoint 和 official validation。
+- `s34a_equal_budget_pipeline.py`：供 detached `screen` 使用的可恢复总入口；从现有 Base epoch-boundary checkpoint 恢复，之后串行执行 CM 12 epochs 和已冻结 policy-dev 评估。每阶段都复核恰好 12 epochs、extension=false；任一步失败即停止，不会越权延训。
+- `s34a_evaluate_swinjscc_equal_budget.py`：仅在双臂 equal-budget best checkpoint 与 SHA 冻结后运行；复用 S33 的 64 图×3 seed×5 SNR key、完整 canonical-noise SHA 与相同 16,384-D prefix，按 floor-uint8 计算 PSNR/LPIPS/MS-SSIM/语义 failure、new/repair、聚合与逐 SNR source-cluster 95% CI，并按 `0.10 dB` margin 给出双臂保守 verdict。
+- `s34a_swinjscc_smoke.py`：读取 S34A 预注册配置，对 official Base-SA 与 capacity-matched SA 各执行一个真实 COCO FP32 microbatch，审计参数、exact symbols、逐图功率、有限梯度、checkpoint round-trip、耗时和 VRAM；只用于系统校时，不产生质量或收敛结论，输出不可覆盖。
 - `s1_deepjscc_smoke.py`：使用随机合成图像验证 checkpoint 加载、SNR 切换、重建输出和 PSNR 计算。
 - `s1_deepjscc_mini_eval.py`：使用 CIFAR-10 test subset 运行 M0-DeepJSCC baseline，可用于 mini-eval 和 `EXP-S1-001` 正式 baseline。
 - `train_deepjscc_highres.py`：训练 COCO-256 等高分辨率 DeepJSCC checkpoint；支持 `--dry-run` 检查训练代码路径；训练中遇到 NaN 会提前停止并保留 `best.pt`。
@@ -38,12 +44,77 @@
 - `s5_coco_object_clip_clean_eval.py`：读取 test-like gate 决策、COCO instance labels 和本地 OpenCLIP，按 dominant object label 构造辅助 clean-correct 子集，输出 policy-level GT-like semantic failure/repair/new-error 诊断。
 - `s5_residual_diffusion_pilot.py`：读取正式 256 张/SNR M0 export，训练一个小型 SNR-conditioned pixel residual DDPM；避开 Stable Diffusion、text prompt 和 SD VAE，用同一 pseudo semantic fallback 口径评估 residual diffusion。
 - `s6_make_minimal_closure_report.py`：只读取已有 metrics/CSV，聚合 M0/M1/M2/M3、residual shrink schedule、adaptive/two-stage/receiver-predictor residual alpha policy、test-like gate 和 COCO-object clean-correct 结果，生成最小闭环报告、CSV 和 tradeoff 图。
-- `s6_residual_shrink_selection.py`：只读取 `EXP-S4-006` 已有 original/M0/refined PNG，生成 residual alpha shrink 候选并用冻结 AlexNet 与图像指标评估 always-accept、top-1 fallback 和 validation-only shrink schedule。
+- `s6_residual_shrink_selection.py`：读取已有 original/M0/refined PNG，生成 residual alpha shrink 候选并用冻结 AlexNet 与图像指标评估 always-accept、top-1 fallback 和 validation-only schedule；可全局强制 `residual_gate×alpha` 随 SNR 非增，并在无可行 alpha 时显式回退 M0。
 - `s6_apply_residual_shrink_schedule.py`：把 validation 阶段冻结的 residual shrink schedule 应用到 held-out/test-like split，不在目标 split 上重新选 alpha，输出 policy summary、逐样本决策、final PNG 和样例拼图。
 - `s6_make_residual_shrink_gallery.py`：聚合 validation/held-out/test-like residual shrink CSV 和已有 PNG，生成 selected shrink M3 的 safe accept/protective reject/rejected good 样例，以及 unsafe always-accept new-error 负对照 gallery。
 - `s6_apply_adaptive_residual_alpha_policy.py`：读取已有 residual alpha candidates，在 validation/held-out/test-like 上评估 per-sample 最大 top-1-consistent alpha 策略，并输出 policy summary、逐样本决策、metadata 和样例拼图。
 - `s6_apply_two_stage_residual_alpha_policy.py`：读取 adaptive residual alpha 的已有 `per_sample.csv`，组合出 full-strength-then-fixed-schedule 的 two-stage 策略，并只计算无需外部权重的 PSNR/SSIM/MS-SSIM 与语义计数。
 - `s6_train_receiver_alpha_predictor.py`：从 adaptive alpha 决策表和候选图提取接收端可见特征，在 validation 上训练小型 tabular alpha predictor，并在预测 alpha 后用 top-1 fallback 保护输出；支持 hard pseudo alpha CE 和 `utility_soft_labels` benefit/risk-aware 目标。
 - `s6_train_alpha_head_residual_refiner.py`：加载 `EXP-S4-006` residual refiner checkpoint，冻结 residual CNN 并训练附着其上的 alpha head，用 adaptive alpha pseudo target 探索训练侧 residual amplitude control；支持可选 `training.class_weighting: inverse_frequency` 的 class-weighted CE follow-up，也支持 `source_policy.target_mode: benefit_utility_alpha` 读取 benefit feature table 中的 safe-PSNR utility alpha 目标；可通过 `model.freeze_refiner: false`、`model.trainable_refiner_parts`、`training.refiner_lr`、`training.soft_refiner_detach: false` 和 target/full reconstruction loss 做 joint 或 partial fine-tune 诊断；`model.alpha_mode: regression` 可把 5 类 alpha 分类改为连续 alpha 回归。
+- `s6_compare_edge_capacity_ablation.py`：严格校验 `EXP-S4-006/008/009/010` 的 2×2 edge × capacity/training-budget 设计，从 PNG 重算逐样本 PSNR，并按 sample cluster 做 paired factorial bootstrap；metadata 保存 checkpoint/config/PNG/script SHA256。
+- `s6_compare_matched_edge_holdouts.py`：比较 large edge/no-edge matched pair 在 validation、held-out、test-like 和 fresh-holdout 上的 raw PSNR paired effect、per-SNR 方向及 AlexNet pseudo semantic 变化。
+- `s6_audit_residual_policy.py`：通用 residual-policy LPIPS / classifier-ensemble audit 入口；支持多个 source CSV、字段适配、固定决策复核和跳过已由 source run 计算的重复质量指标。
+- `s6_audit_continuous_alpha_tail_refiner.py`：continuous-alpha audit 的原入口和通用实现；保留旧命令兼容，同时供 `s6_audit_residual_policy.py` 复用。
+- `s6_imagenette_source_semantic_description_eval.py`：重建冻结 Imagenette policy-dev 的 G_gate 全概率，逐行核对原审计，按预注册 nested split 选择并一次性审计 sender coarse-semantic description router。
+- `s6_compare_source_edge_oracle.py`：校验 `EXP-S4-008/011` matched contract，从 PNG 重算 receiver-edge/source-edge raw 与 fallback PSNR，并按 sample cluster 做 10,000 次 paired bootstrap。
+- `s7_train_matched_rate_jscc.py`：从稳定 `c=8` best checkpoint 按 encoder/decoder 联合 latent importance 初始化并训练 `c=6` RGB main 或 `c=2` packed structure；严格验证 `6+2=8` 码率契约并 fail closed。
+- `s7_export_matched_rate_jscc.py`：在同一 source manifest 上导出冻结 `c=6` main 与 `c=2` decoded structure，使用独立 deterministic AWGN streams。
+- `s7_compare_matched_rate_system.py`：聚合 validation/held-out/test-like/fresh-holdout，比较 matched raw 与 reference `c=8` 的 PSNR 和辅助 pseudo failure，并做 10,000 次按图像聚类 bootstrap。
+- `s7_imagenette_matched_rate_eval.py`：对精确等总码率系统做预注册 policy-dev 监督审计；支持 S9 `hybrid_semantic_controller` 模式，在同一独立 `T_cls` 框架内运行 source-sketch residual-alpha selection；拒绝访问 official val。
+- `s8_export_hybrid_semantic_structure.py`：把 frozen classifier probability 的固定连续投影嵌入已有 `c=2` latent，经过同一 AWGN 后恢复 sketch、擦除 payload 位置并解码剩余结构；显式验证 payload 和总码率。
+- `s8_semantic_sketch_ablation.py`：对冻结 semantic-FiLM checkpoint 生成 received/zero/shuffled 三臂输出，按图像聚类 bootstrap 检验 side signal 和样本特异 sketch 的因果作用。
+- `s10_short_chain_residual_shift_diffusion.py`：以冻结 residual CNN 为 anchor 训练/评估 pixel-domain short-chain residual-shift diffusion；兼容 decoded-structure 与 receiver-anchor Sobel/Laplacian 条件，可选 edge L1 和本地 ResNet18 preservation KL，并按预注册 PSNR/LPIPS/pseudo new-error gate 自动给出 go/no-go。
+- `s11_compare_p0_b1_b3.py`：校验 B1/B3 的 refiner capacity/training contract 和 original PNG 一致性，从输出 PNG 重算 raw/final PSNR，做 10,000 次 image-cluster paired bootstrap，并审计参数、延迟与 pseudo repair/new-error。
+- `s13_export_coco_train2017_c8_scaleup.py`：按 SHA-256(seed:path) 确定性选择 local train2017 10k/1k split，逐 SHA 排除 val2017 重复，并输出五 SNR c8 reconstruction、source manifest/hash、PSNR 和环境元数据。
 - `run_s2_coco256_awgn_train.sh`：长任务脚本；负责断点续传 COCO2017 train/val、解压、检查图片数量，并启动 COCO-256 AWGN DeepJSCC GPU 训练。
 - `prepare_image_symlink_split.py`：从一个图片目录按固定 seed 生成不重叠的 train/val 符号链接切分，用于 COCO-val pilot 等临时高分辨率训练。
+- `pc_posterior_consistency_pilot.py`：PC-001 pilot；在冻结 S14 candidate 上用实际 received latent 执行预注册 proximal correction。
+- `pc_posterior_consistency_replication.py`：PC-002/003 共用入口；冻结复现三步 correction，支持可选 receiver-side top-1 fallback，并输出三分类器审计。
+- `pc_imagenette_supervised_audit.py`：在 sealed split contract 下对 frozen posterior+controller 做 Imagenette policy-dev WNID/scratch-`T_cls` 监督审计；兼容 ImageNet consensus、evaluator-separated scratch `G_gate` fallback 与多个 channel seeds，输出 seed/SNR summary 和 image-cluster Clopper-Pearson tail bound，并 fail-closed 校验 scratch checkpoint 数据分离合约；不访问 official validation。
+- `pc_imagenette_supervised_audit.py` 的 `receiver_risk_v1` 模式：额外加载独立 scratch EfficientNet-B0 `G_aux`，输出 43 个 receiver-visible 连续风险字段、分离的 `teacher_*` development/audit target、anchor/raw/posterior 质量字段和 checkpoint/hash schema；禁止 teacher/source/label 进入 receiver whitelist。
+- `pc_fit_receiver_risk_controller.py`：读取三 seed development feature table，验证输入 SHA/键/schema，以固定六特征 empirical CDF percentile mean 和冻结 rejection-rate 网格选择透明 controller；输出 JSON、NPZ、decisions 和完整 gate 结果。
+- `pc_apply_receiver_risk_controller.py`：验证 controller/CDF/extraction-config SHA，在预注册 audit table 上只用冻结 receiver features 与 threshold 判决 posterior/anchor，并输出 per-SNR failure/new-error/quality/cluster-UCB verdict。
+- `pc_export_receiver_risk_failure_cases.py`：按原 channel seed 和 batch start 精确重放 receiver-risk 漏检/误拒案例，导出 source/anchor/raw/posterior/diff/panel 与 source-grounded probability 诊断。
+- `pc_imagenette_sender_inbudget_awgn_audit.py`：在原 `c=8` 总预算中保留固定 latent 位置传输 sender probability payload；支持 10D 模拟 R16 和 UInt4+BPSK×4、共同 AWGN、receiver erasure、masked posterior consistency、perfect-payload 反事实、BER/vector-exact 与监督 semantic-tail 审计。固定严格率 controller 可为 sender-JS zero-veto、receiver dual-evidence，或不增加 payload bit 的 cross-model triplet（recovered `G_aux(source)` 与独立 `G_gate(anchor/posterior)` top-1 一致）；所有 controller 类型都校验 checkpoint 角色、SHA、总码率和 reference CSV hash。
+- `s15_export_coco_uint2_reserved_c8.py`：在 c=8 latent 中固定预留 80 symbols、共同 AWGN 后擦除，导出 COCO 2000/200×5-SNR reservation-aware B0 cache；不使用标签或 Imagenette classifier。
+- `s15_compare_reservation_aware_b1.py`：在完全相同 reserved validation inputs 上配对比较旧/新 B1，统一 8-bit PNG 量化并按 image cluster bootstrap PSNR/LPIPS CI。
+- `s17_channel_matched_latent_diffusion.py`：在 exact-rate DeepJSCC 活动 codeword 上训练/评估 channel-state-matched masked latent diffusion，包含 fixed-step、scalar shrink、B1 串联和三分类器 pseudo-drift 对照。
+- `s17_channel_matched_latent_bootstrap.py`：对冻结 S17 1,280-row holdout 做 image-cluster paired bootstrap，并用输入 CSV SHA fail-closed。
+- `s17_channel_matched_latent_diffusion.py` 现支持 `loss-diagnostic`、parent warm-start、frozen-decoder image MSE，以及在 fresh holdout 同噪声重放 parent/control/current；旧 S17 配置保持兼容。
+- `s17_decoder_aware_latent_bootstrap.py`：对冻结 decoder-aware 1,160-row fresh holdout 做 10,000 次 image-cluster 配对 bootstrap，报告 decoder−control/parent/B0 与 naive B1 fusion，并按输入 CSV SHA fail-closed。
+- `s18_prepare_fresh_coco_population.py`：排除旧 exact-rate 11,000 source path/SHA 后，按冻结 SHA rank 从本地 train2017 materialize 新 256/256 selection/holdout PNG 与 source manifest；输出不可覆盖。
+- `s18_snr_identity_envelope.py`：冻结 DeepJSCC/decoder-aware DDIM/B1，在 received codeword 与 diffusion codeword 之间应用预注册 smooth/hard SNR envelope；selection 按可靠性优先冻结 policy，holdout 输出全候选质量与三分类器 pseudo drift。
+- `s21_b1_anchored_gated_fusion.py`：训练/审计以 frozen B1 为锚点的输出层 auxiliary adapter；记录 learned-gate collapse 与 fixed-gate saturation 负结果，并保持 holdout fail-closed。
+- `s21_b1_diffusion_convex_envelope.py`：在 selection 上枚举低 SNR 单调 B1/diffusion 像素凸融合，只有满足逐 SNR PSNR 与 aggregate LPIPS 约束的非零 policy 才允许解封 holdout。
+- `s22_b1_feature_injection.py`：只训练 1,728 参数 zero-conv，将 matched-diffusion 的 `D-B0` 注入 frozen B1 head feature；支持 smoke/train/holdout/bootstrap，epoch0 入选时禁止 holdout。
+- `s23_b1_feature_shrink.py`：复现固定 one-epoch S22 feature direction，在预注册全局 alpha 网格上选择零点附近的 Pareto shrink；只把选中后的缩放 projection 写入冻结 checkpoint，非零 policy 才可调用 S22 holdout/bootstrap 入口。
+- `s24_recent_progress_metrics.py`：只读取冻结的 S19/S20/S23 产物并校验 SHA，统一重算同 population 的 PSNR/MS-SSIM/LPIPS、pseudo-semantic new/repair、source-image cluster bootstrap、码率/参数和限定范围 receiver-postprocessor latency，同时输出中文报告所用 CSV/JSON/可视化；不训练、不选模型、不覆盖既有输出。
+- `s25_b1_feature_amplitude_headroom.py`：对冻结 S23 epoch-1 feature direction 做 selection-only 逐图 alpha 上限诊断，输出 fixed、PSNR/LPIPS oracle 与 semantic-safe oracle 的质量、语义事件、alpha 分布和 cluster bootstrap；oracle 使用原图/评估器，只能判断 controller 是否值得继续，不能作为方法结果。
+- `s26_s19_exact_fallback_replication.py`：把冻结 S19 fusion/control 迁移到另一 population，1/4/7 dB 运行 paired branch、13/19 dB 用 `torch.where` 结构性返回 B1；输出同 population 质量/三分类器事件、exact-difference 和 10,000 次 source-image cluster bootstrap，不训练或访问目标 selection。
+- `s27_s19_exact_fallback_fresh_replication.py`：在 S27 完全新 512-image population/cache 冻结后一次性运行与 S26 相同的 S19 low-SNR fusion + high-SNR exact-B1 policy；复用通用汇总/bootstrap，输出 2,560 行质量、三分类器语义与全部 prereg checks。
+- `s28_external_sgd_positioning.py`：在冻结 S20 population、三组 canonical AWGN noise 上重建当前 low-SNR diffusion fusion/exact-B1 route，并与冻结 B1、matched control、SGD-JSCC paper upper 做 960 行逐样本配对、T_cls/质量 cluster bootstrap 和严格 rate audit。
+- `s29_s28_b1_exact_batch_audit.py`：按 S20 原始 64-image batch 精确重放 B1，逐行审计 noise SHA、预测、failure 与三项质量指标，用于区分 S28 batch=16 浮点差和真实合同错位。
+- `s30_diffjscc_preflight.py`：对官方 DiffJSCC 源码提交、模型配置、DiffJSCC/BLIP2 双权重、独立 Transformers/OpenCLIP runtime、冻结 64 图总体、960 条 canonical noise 和物理码率账本做 fail-closed 预检；下载期间可用 `--allow-incomplete-checkpoint --no-write` 只报告进度。
+- `s30_diffjscc_checkpoint_audit.py`：完整权重落盘后审计官方 checkpoint 的 state-dict 前缀、dtype 和参数量；确认作者设计上排除 BLIP2，同时禁止缺失 OpenCLIP、DeepJSCC、ControlNet、UNet、VAE 或 spatial encoder。
+- `s30_assemble_blip_segments.py`：仅用于不稳定网络下的 BLIP2 传输分段组装；要求显式给出有序分段，先验证总字节，再流式计算官方 SHA-256，目标/临时文件均禁止覆盖，失败时保留分段和组装文件供诊断。
+- `s30_diffjscc_external_comparison.py`：在冻结 S20/S28 64 图×3 seed×5 SNR 上运行官方 DiffJSCC OpenImage C16 链；复用每行 canonical AWGN 前缀，记录作者 JSCC、DiffJSCC、current 和 B1 的质量/语义/码率/运行成本，按 `preload → smoke → first-seed → full` 分阶段且支持 `--resume`。
+- `s30_diffjscc_post_analysis.py`：只读分析完成的 S30 逐样本 CSV；分别对作者训练 SNR 范围和 19 dB 外推做 source-image cluster bootstrap，汇总 Pareto 差异与 DiffJSCC 相对自身 JSCC 的新增错误/修复。
+- `s31_train_strong_jscc.py`：训练 S31 原生 exact-rate 强 JSCC；验证 31.12M 参数/`19,712 real`/复 AWGN 功率合同，在每张图上随机采样五档 SNR，按固定 COCO validation 噪声保存逐 SNR PSNR/MS-SSIM、best/latest checkpoint、配置/脚本 snapshot 和可恢复状态。配置可声明带 SHA/epoch 的 model-only frozen initialization；该模式不加载旧 optimizer/scheduler/scaler，并与 `--resume` 互斥。
+- `s32_strong_jscc_external_comparison.py`：仅在 strong-JSCC checkpoint 冻结后运行；复用 S30 的 64 图×3 seed×5 SNR canonical noise 和旧方法逐样本指标，以主 uint8 与 float 敏感性口径比较 strong/author-JSCC/DiffJSCC/current/B1，并做 source-cluster bootstrap。
+- `s18_snr_identity_bootstrap.py`：对冻结 S18 1,280-row holdout 做 image-cluster bootstrap，合并 holdout prechecks 与 selected−full PSNR CI，生成最终 PASS/NEGATIVE 判定。
+- `s19_prepare_fusion_population.py`：从本地 COCO train2017 SHA 排序生成全新 5000/256/256 population，同时排除旧 11k、S18 512、val2017 同名和异名同 SHA 源。
+- `s19_cache_identity_diffusion.py`：按角色独立 canonical-noise seed 生成精确 19,712-real B0 与 S18 hard-identity diffusion cache；支持只校验/补齐缺失项的 `--resume`，PNG 使用原子 rename 防止中断留下半文件。
+- `s19_train_and_evaluate_fusion.py`：在相同 batch/crop/flip 中联合训练等参数 control/fusion，并在 checkpoint hash 冻结后执行一次性 holdout 质量与三分类器 pseudo-semantic 审计。
+- `s19_fusion_bootstrap.py`：以 source image 为 cluster、跨五 SNR 整体重采样，检验 fusion−control、fusion−B1 的配对 PSNR/LPIPS 置信区间。
+- `pc_analyze_mismatch_raw_routing.py`：只读取既有 sender audit CSV，复算 accept→posterior、reject+source/anchor mismatch→raw、其余→anchor 的三路规则，并输出逐 SNR、system-new cluster bound 与 paired image-cluster inference。
+- `pc_imagenette_sender_inbudget_awgn_audit.py` 现同时支持 UInt2/UInt3/UInt4 BPSK×4，并可由 `final_routing.rejected_fallback` 显式选择旧 anchor fallback 或冻结 source-anchor-mismatch 三路 fallback；未配置时保持旧行为。
+- `check_external_baseline_contract.py`：对外部方法对比协议做 fail-closed、无下载 dry-run；校验 AWGN/SNR/complex-use CBR、作者原生与 common-contract 分表、语义 new-error、side-information 计码率、SGD-JSCC 固定 commit、已授权资产状态、common-adapter rate gate 和输出不可覆盖。
+- `external_sgdjscc_native_smoke.py`：项目侧只读 SGD-JSCC 作者链适配器；dry-run 校验源码、资产和封存边界，`--run` 执行单图 BLIP2+main JSCC+edge JSCC+ControlNet diffusion，并 hook main/edge dense/active tensor、记录未知 caption channel cost；现同时区分 real-coordinate ratio 与 complex-use CBR。输出不可覆盖且不授权直接排名。
+- `external_sgdjscc_common_smoke.py`：256×256 SGD-JSCC common-contract adapter；使用作者四 patch 路径，显式传输四段 UTF-8/CRC16+BPSK×21 caption，只发送 deterministic active-edge coordinates，并从冻结的 65,536 维 canonical AWGN 向量分配 main/edge/text/padding；dry-run 与真实输出均 fail-if-exists。
+- `external_common_project_pilot.py`：在冻结 8×5 common pilot 上运行当前 M3 或 SING-Zero-style；两者共享项目 DeepJSCC、canonical complex-AWGN noise、T_cls/LPIPS/MS-SSIM evaluator 和不可覆盖输出。SING 分支只实现 final-only range/null projection，明确禁止标成论文精确复现。
+- `external_sgdjscc_common_pilot.py`：在 pinned `.venv-sgdjscc` 中一次加载作者全链，运行 8 图×5 SNR common adapter；每行消费与项目方法相同的 65,536-D noise，记录 caption CRC、质量、T_cls new-error、runtime/VRAM。`HF_HOME` 与 offline flags 在所有 transitive hub imports 前冻结。
+- `external_common_aggregate.py`：逐行核对三方法的 40 个 sample/SNR keys、canonical-noise SHA、DeepJSCC reference、AWGN convention、总 rate/CBR，再生成配对差值和 aggregate summary；任何不一致或已有输出目录均 fail closed。
+- `external_train_exact_rate_deepjscc.py`：把 c3 DeepJSCC 的 24,576 维稠密 latent 固定选择为 19,712 个活动实坐标，按活动坐标重新归一化和复 AWGN 训练；支持从冻结 c8 权重裁剪热启动及从精确低码率 checkpoint 继续训练。
+- `external_common_project_pilot.py --method exact-rate-deepjscc`：在冻结 8×5 pilot 上评估精确 19,712-real DeepJSCC，输出与外部适配器一致的质量、T_cls failure、runtime 和 VRAM 行表。
+- `external_sgdjscc_common_pilot.py`：除原 common adapter 外，现支持作者工作点的免费/无误文本论文协议上界，以及项目工作点 main-R2/text-R13 的发布权重预算重分配；三种标签与物理含义严格分离。
+- `external_rate_alignment_aggregate.py`：验证作者工作点与项目工作点的 sample/SNR key、canonical-noise SHA 和精确码率，并聚合 SGD-vs-low-rate-DeepJSCC、reallocated-vs-old-SGD、M3-vs-reallocated-SGD 的逐行配对差值。

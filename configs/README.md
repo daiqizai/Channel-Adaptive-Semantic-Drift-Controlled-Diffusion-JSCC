@@ -53,3 +53,89 @@
 - `s6_alpha_head_residual_refiner_tail_benefit_exp_s4_006.yaml`：冻结 residual CNN 的 head/body，只微调 tail 与 alpha head，并用 reconstruction-dominant loss 检查 partial fine-tune 能否避免全量 joint 损伤 restoration anchor。
 - `s6_alpha_head_residual_refiner_tail_regression_benefit_exp_s4_006.yaml`：在 tail-only partial fine-tune 基础上把 alpha head 改为连续 alpha regression，检查显式幅度回归是否优于离散 alpha 分类。
 - `s6_continuous_alpha_tail_refiner_audit_exp_s4_006.yaml`：对 continuous-alpha tail-only residual refiner 的已有输出补充 LPIPS 感知质量和 AlexNet/ResNet18/MobileNetV3-Small 跨分类器离线语义安全审计。
+- `s5_edge_conditioned_residual_refiner_validation_coco256_awgn.yaml`：`EXP-S4-008` 的 SGD-JSCC-inspired edge/structure-conditioned residual refiner validation；结构条件从 receiver-visible M0 计算 Sobel magnitude 和 Laplacian abs，不使用原图 edge。
+- `s6_edge_residual_shrink_selection_exp_s4_008.yaml`：在 `EXP-S4-008` validation 输出上做 residual alpha shrink selection，选择冻结 top-1 shrink schedule。
+- `s5_edge_residual_refiner_heldout_gate_exp_s4_008.yaml`：加载 `EXP-S4-008` edge refiner checkpoint，在 held-out `sample_000000`-`sample_000031` 上复核 top-1/confidence-gain gate。
+- `s5_edge_residual_refiner_testlike_gate_exp_s4_008.yaml`：加载 `EXP-S4-008` edge refiner checkpoint，在 test-like `sample_000256`-`sample_000319` 上复核 top-1/confidence-gain gate，不调参。
+- `s6_edge_heldout_residual_shrink_schedule_check_exp_s4_008.yaml`：把 `EXP-S4-008` validation 选出的 shrink schedule 冻结后应用到 held-out split。
+- `s6_edge_testlike_residual_shrink_schedule_check_exp_s4_008.yaml`：把 `EXP-S4-008` validation 选出的 shrink schedule 冻结后应用到 test-like split。
+- `s5_capacity_matched_no_edge_residual_refiner_validation_coco256_awgn.yaml`：`EXP-S4-009` large no-edge matched control；与 `EXP-S4-008` 使用同一 `64×6` 容量、60 epochs、split、seed、loss 和 residual gates，仅移除 Sobel/Laplacian 输入。
+- `s5_small_edge_conditioned_residual_refiner_validation_coco256_awgn.yaml`：`EXP-S4-010` small edge matched arm；与 `EXP-S4-006` 使用同一 `48×5` 容量和 40 epochs，仅加入 receiver-visible structure channels。
+- `s6_edge_capacity_ablation_exp_s4_006_008_009_010.yaml`：四 arm edge × capacity/training-budget paired factorial bootstrap 配置。
+- `s5_capacity_matched_no_edge_residual_refiner_{heldout,testlike,fresh_holdout}_gate_exp_s4_009.yaml`：large no-edge matched control 的三个 downstream split 复核配置。
+- `s5_edge_residual_refiner_fresh_holdout_gate_exp_s4_008.yaml`：把冻结 edge refiner 应用到此前未做 downstream residual 分析的 `sample_000320`-`sample_000383`。
+- `s6_matched_edge_holdout_audit_exp_s4_008_009.yaml`：large edge/no-edge 在 validation、held-out、test-like、fresh-holdout 上的 paired cluster-bootstrap 配置。
+- `s6_edge_monotonic_residual_shrink_selection_exp_s4_008.yaml`：全局选择满足 `gate(SNR)×alpha(SNR)` 非增约束的 edge validation schedule。
+- `s6_capacity_matched_no_edge_monotonic_residual_shrink_selection_exp_s4_009.yaml`：matched no-edge 的对应单调 schedule selection。
+- `s6_edge_monotonic_{heldout,testlike,fresh_holdout}_residual_shrink_schedule_check_exp_s4_008.yaml`：冻结 edge monotonic schedule 的三段复核配置。
+- `s6_capacity_matched_no_edge_monotonic_{heldout,testlike,fresh_holdout}_residual_shrink_schedule_check_exp_s4_009.yaml`：matched no-edge monotonic schedule 的三段复核配置；`null` alpha 明确表示回退 M0。
+- `s6_edge_monotonic_policy_ensemble_audit_exp_s4_008.yaml`：聚合 edge monotonic policy 四段输出，用 AlexNet/ResNet18/MobileNetV3-Small 做固定决策的跨分类器离线审计。
+- `s6_imagenette_source_semantic_description_eval.yaml`：在严格 Imagenette policy-dev 内做嵌套 select/audit，评估 4/80-bit sender coarse-semantic description 的连续 source/M0/candidate 匹配 gate；official val 保持封存。
+- `s21_b1_anchored_*.yaml` / `s21_b1_diffusion_convex_envelope.yaml`：B1-anchored 输出 gate/residual 与无训练凸融合 development 协议；所有分支均在 selection 失败，holdout 未访问。
+- `s22_b1_feature_injection.yaml`：冻结 B1、只训练 3→64 zero-conv 的 feature-level matched-diffusion 注入协议；最终选择 epoch0，配置状态明确禁止 holdout。
+- `s23_b1_feature_shrink.yaml`：已知 S22 结果后预注册的 one-epoch projection 全局 shrink follow-up；冻结 `alpha=0.15` 后完成独立 holdout/bootstrap，5/5 检查通过。
+- `s24_recent_progress_metrics.yaml`：冻结 S19/S20/S23 输入 SHA 的近期进度派生汇总；只允许同 population 比绝对指标、跨 population 比 paired delta/协议性质，固定 10,000 次 source-image cluster bootstrap 和 scoped receiver-postprocessor latency，不参与模型选择。
+- `s25_b1_feature_amplitude_headroom.yaml`：在已暴露 S23 selection 上冻结 12 个既有 alpha，计算 PSNR oracle、LPIPS oracle 和不新增 majority failure 的 semantic-safe PSNR oracle；只作为逐图幅度可行性上限，禁止当作可部署方法或 holdout 证据。
+- `s26_s19_exact_fallback_replication.yaml`：冻结 S19 control/fusion checkpoint，在 S21/S23 的另一 population 上不做 selection 地复核 1/4/7 dB branch、13/19 dB exact B1 的结构性 route；同时要求 diffusion-vs-capacity-control 因果 CI、相对 B1 有意义效应量和 semantic new/repair 门槛。
+- `s27_s19_exact_fallback_fresh_replication.yaml`：S26 方法的 512-image pristine-population final replication；在 population 产生前冻结 S16/S18/S19/S21 路径+SHA 排除集合、canonical AWGN seed、S19 checkpoint、exact-B1 route、semantic 审计和 S26 原门槛；现已 9/9 PASS，禁止 selection/调参。
+- `s28_external_sgd_positioning.yaml`：冻结主方法在 S20 Imagenette population/canonical noise 上对 B1、matched control 和 SGD-JSCC paper-free-text upper 的一次性外部定位；明确 current 的 exact-rate/zero-side-information 合同与 SGD 至少 2,144-real caption 超额，并冻结 cluster bootstrap 和 Pareto 解释规则。
+- `s29_s28_b1_exact_batch_audit.yaml`：S28 技术阈值失败后的事后数值诊断；冻结原 `0.0001` 阈值并恢复 S20 batch=64，只允许检查 batch-dependent floating-point 假设，不授权新统计结论。
+- `s30_diffjscc_external_comparison.yaml`：官方 DiffJSCC OpenImage C16 外部定位协议；冻结源码/检查点/BLIP2/OpenCLIP/Transformers 精确版本、S20/S28 的 64 图×3 seed×5 SNR 总体与 canonical AWGN 前缀、作者 100-step 推理和双重 CBR 口径。DiffJSCC 实际使用 16,384 real（原始 256 源口径 CBR `1/24`），属于项目 19,712-real 上限内但非 exact-rate 的对照；分 smoke、首 seed 320 行和完整 960 行报告作者 JSCC、DiffJSCC、current 与 B1。
+- `s31_strong_jscc_coco256_awgn.yaml`：S30 暴露弱主干瓶颈后预注册的 clean-room 强 JSCC；31.12M 参数、四级残差/SNR 条件、原生 `77x16x16=19,712 real`，不使用 mask/padding/side information，第一版只用 MSE 和五档 COCO validation PSNR 选择 checkpoint。
+- `s31b_strong_jscc_fp32_continuation.yaml`：原 S31 在未收敛时发生 AMP gradient overflow 后注册的独立 FP32 续训；严格校验并仅加载 S31 epoch3 best 模型权重，不加载 optimizer/scheduler/scaler，保持同架构、码率、数据、SNR、损失和 validation noise。
+- `s31b_strong_jscc_fp32_continuation_002.yaml`：修正上述首版总 seed 会改变 val512 population 的合同错误；恢复原 S31 seed，已逐项核验 512 个 validation 索引一致。首版正式输出在 0 个 validation row 时中止，不可续跑。
+- `s32_strong_jscc_external_comparison.yaml`：冻结 S31b epoch7 checkpoint/SHA 后的同总体外部定位；复用 S30 64 图×3 seed×5 SNR 和 canonical noise，对 strong/author-JSCC/完整 DiffJSCC/current/B1 做主 uint8 与 float 敏感性比较和 source-cluster bootstrap。
+- `s5_source_edge_oracle_residual_refiner_validation_coco256_awgn.yaml`：`EXP-S4-011` sender-original Sobel/Laplacian perfect-edge feasibility oracle；与 `EXP-S4-008` 匹配容量和训练预算，但不计 edge rate/channel error。
+- `s6_source_edge_oracle_comparison_exp_s4_008_011.yaml`：`EXP-S4-008` receiver-edge 与 `EXP-S4-011` source-edge oracle 的 64-image×5-SNR paired sample-cluster bootstrap。
+- `s7_matched_rate_jscc_pilot_coco256_awgn.yaml`：精确 `c=6 main + c=2 structure = c=8 reference` 的 20k COCO warm-start DeepJSCC pilot 训练协议。
+- `s7_matched_rate_jscc_export_coco256_awgn.yaml`：冻结 `c=6/c=2` checkpoint 的 512-image、5-SNR 对齐导出协议，主路与结构路使用独立确定性 AWGN stream。
+- `s7_matched_rate_decoded_structure_refiner_validation.yaml`：`EXP-S7-002` decoded-structure residual refiner；只消费 receiver-visible `c=6` RGB、decoded `c=2` structure 和 SNR。
+- `s7_matched_rate_refiner_{heldout,testlike,fresh_holdout}.yaml`：冻结 `EXP-S7-002` checkpoint 的三段 downstream 推理配置，不在目标 split 调参。
+- `s7_matched_rate_system_cross_split_comparison.yaml`：reference `c=8` 与 matched raw 在四段上的 paired image-cluster bootstrap 配置。
+- `s7_imagenette_matched_rate_supervised_eval.yaml`：严格等总码率系统的预注册 Imagenette policy-dev 独立监督审计；official val 保持封存。
+- `s8_hybrid_structure_semantic_export_coco256_awgn.yaml`：32-D sketch repetition-16 初始 payload；因结构损伤超门槛而保留为失败配置。
+- `s8_hybrid_structure_semantic_export_r4_coco256_awgn.yaml`：repetition-4 follow-up，只占 `c=2` latent 的 0.78125%，通过 sketch/structure stage gates。
+- `s8_hybrid_semantic_refiner_validation.yaml`、`s8_counterfactual_semantic_refiner_validation.yaml`、`s8_per_sample_counterfactual_semantic_refiner_validation.yaml`：ordinary、batch-mean ranking、per-sample ranking 三版 semantic-FiLM refiner，输出均保留。
+- `s8_*semantic_sketch*ablation.yaml`：冻结 checkpoint 的 received/zero/shuffled validation 和 downstream paired causal ablation 配置。
+- `s9_imagenette_hybrid_semantic_controller_eval.yaml`：把 rate-accounted sketch 合并为主线 M3 alpha controller 的严格等码率 policy-dev 监督审计配置。
+- `s10_short_chain_residual_shift_diffusion_pilot.yaml`：冻结 matched-rate `c=6+c=2` 与 decoded-structure residual anchor 的 6-step pixel residual-shift diffusion pilot；显式记录 bridge noise、训练 split、SNR、steps、风险 gate 和随机种子。
+- `s11_p0_c8_same_refiner_validation.yaml`：P0 B1；给 `c=8` reference 配置与 B3 相同 seed/split/capacity/budget/gates 的 receiver-structure residual refiner。
+- `s11_p0_b1_b3_paired_comparison.yaml`：P0 B1/B3 逐图公平性审计，固定 64 图×5 SNR、10,000 次 image-cluster bootstrap 和 structure-increment gate。
+- `s12_b1_anchored_semantic_preserving_diffusion.yaml`：以公平 B1 `c8 + receiver refiner` 为 anchor 的 6-step residual-shift diffusion；receiver-only structure、edge L1、本地 ResNet18 preservation KL 与 AlexNet incremental-risk gate 均显式冻结。
+- `s13_coco_train2017_c8_scaleup_export.yaml`：从 local train2017 SHA-ranked 冻结 10k/1k split，并导出五 SNR、c8、CBR 1/6 deterministic cache。
+- `s13_scaleup_b1_anchor_train.yaml`：在 10k/1k×5-SNR cache 上训练 10 epoch 的 receiver-only `64×6` B1 anchor，并冻结 promotion gates。
+- `s14_scaleup_b1_anchored_diffusion.yaml`：冻结 S13 B1、10k/1k split 和 S12 loss/6-step bridge 的 scale-up diffusion go/no-go 配置。
+- `pc001_posterior_consistency_pilot.yaml`：PC study pilot；冻结 S13 B1/S14 diffusion，在未用 train2017 SHA-rank block 上执行三步 received-latent posterior correction。
+- `pc002_posterior_consistency_independent_replication.yaml`：PC study 独立复现；在新的 256-image block 上冻结复现 PC-001，并加入三分类器离线 semantic-risk 审计。
+- `pc003_posterior_consistency_failure_handling.yaml`：PC study failure-handling 审计；在再次独立的 256-image block 上使用 receiver-only AlexNet posterior-anchor agreement fallback。
+- `pc_controller_holdout_audit.yaml`：PC-CTRL 工作包；AlexNet+ResNet18 做 receiver consensus，MobileNetV3-Small 作为完全不参与决策的 holdout semantic audit。
+- `pc_coco_object_clip_audit.yaml`：PC-GT 工作包；在新 train2017 block 上使用 COCO dominant-object 标注与本地 OpenCLIP clean-correct 审计。
+- `pc_imagenette_supervised_audit.yaml`：PC-SUP 工作包；仅在既有 Imagenette policy-dev 上用 scratch `T_cls` 和真实 WNID 做监督审计，official val 保持封存。
+- `pc_imagenette_scratch_gate_audit.yaml`：PC-RISK follow-up；冻结既有 scratch `G_gate` 的 posterior-anchor top-1 fallback，独立 scratch `T_cls` 只作 WNID 审计，official val 保持封存。
+- `pc_imagenette_scratch_gate_multiseed_replication.yaml`：PC-RISK-REP；固定 scratch-gated posterior 方法，用三个新 AWGN seed 做 seed/SNR 与 image-cluster tail-risk 复现，official val 保持封存。
+- `pc_imagenette_scratch_aux_classifier.yaml`：训练独立 scratch EfficientNet-B0 `G_aux`；只允许 `cls_train/cls_cal`，用于连续 receiver-risk feature，不访问 policy-dev/official val。
+- `pc_imagenette_receiver_risk_features_multiseed.yaml`：在已暴露三 seed policy-dev 上生成 43 维 `receiver_risk_v1` 与分离 `teacher_*` target；只作 controller development data。
+- `pc_imagenette_receiver_risk_controller_dev.yaml`：冻结六特征 empirical-percentile score、reject-rate 网格和开发选择 gates；输出 controller JSON 与无 pickle CDF NPZ。
+- `pc_imagenette_receiver_risk_seed_20260725_features.yaml`：在 controller 冻结后生成全新 AWGN seed 20260725 的 9470 行一次性审计特征；official val 继续封存。
+- `pc_imagenette_receiver_risk_seed_20260725_audit.yaml`：用固定 controller/CDF/config SHA、固定 threshold 审计 seed 20260725；结果为 NEGATIVE，不允许事后换 seed 或 threshold。
+- `pc_imagenette_sender_dual_evidence_seed20260725_dev.yaml`、`pc_imagenette_sender_dual_evidence_seed20260726_dev.yaml`：固定 UInt4+BPSK×4 sender-JS 与独立 receiver `G_gate(anchor/posterior)` 交集的 development configs；20260726 为 NEGATIVE，保留作 shared-blind-spot 负结果。
+- `pc_imagenette_sender_crossmodel_triplet_seed20260725_dev.yaml`、`pc_imagenette_sender_crossmodel_triplet_seed20260726_dev.yaml`：在不增加 payload bit 的前提下，要求 recovered `G_aux(source)`、`G_gate(anchor)`、`G_gate(posterior)` top-1 三方一致的 development configs。
+- `pc_imagenette_sender_crossmodel_seed20260727_reference.yaml`：cross-model triplet 新 channel seed 的 unpunctured M2 reference；只允许其 CSV SHA 进入 audit config。
+- `pc_imagenette_sender_crossmodel_triplet_seed20260727_audit.yaml`：冻结 cross-model triplet 的旧 new-channel-seed audit；原 anchor-relative endpoint 误判 POSITIVE，后续按 paired-M2 system endpoint 更正为 NEGATIVE；output dir 不能覆盖。
+- `pc_imagenette_sender_crossmodel_triplet_uint2_r4_payload_{pilot,full_dev}.yaml`：把固定码率 payload 收缩为 UInt2+BPSK×4/80 symbols；full policy-dev 质量 gate 全过但 system new-error strict gate 失败。
+- `s15_coco_uint2_reserved_c8_export_pilot.yaml`、`s15_uint2_reservation_aware_b1_finetune_pilot.yaml`：历史 S15 标签的 S5-validation 资产；生成 2000/200×5-SNR reserved cache，并从 S13 B1 小学习率微调 reservation-aware anchor。
+- `pc_imagenette_sender_crossmodel_triplet_uint2_r4_resaware_b1_full_dev.yaml`：把 reservation-aware B1 接回冻结 S14 diffusion 的 seed20260727 full development replay。
+- `pc_imagenette_sender_crossmodel_triplet_uint2_r4_resaware_b1_routing_seed20260728.yaml`：在读取新结果前冻结三路 fallback 和 AWGN seed20260728 的 independent-channel replication；结果为 strict NEGATIVE，不允许事后改 seed/规则。
+- `external_baseline_comparison_contract.yaml`：外部 diffusion-JSCC 对比总契约；分离作者原生复现与 common-contract 排名，固定 COCO-256/AWGN/`[1,4,7,13,19]`/CBR `1/6`、语义 new-error/tail 指标、总码率账本和 SGD-JSCC→SING-style→DiffJSCC→DiT-JSCC 顺序；现记录用户已授权且已完成的 SGD-JSCC 资产下载，以及 common-adapter 单图 rate gate，仍不授权 outcome claim。
+- `external_sgdjscc_native_smoke.yaml`：SGD-JSCC 作者原生单图 smoke 的冻结配置；记录输入、SNR/seed、50-step diffusion 条件、源码 commit、四 checkpoint 与 BLIP2/CLIP 精确 hash、隔离环境、码率 hooks 和禁止 outcome/direct-ranking 声明。
+- `external_sgdjscc_common_smoke.yaml`：SGD-JSCC 共同协议 256×256 单图预注册；冻结四 patch、canonical AWGN layout、UTF-8/CRC16+BPSK×21 文本传输、deterministic active-edge 调度以及 `65,536 real = 32,768 complex uses = CBR 1/6` 账本。
+- `external_sgdjscc_common_complex_awgn_smoke.yaml`：在单图 adapter 完全相同的前提下，把每实坐标 AWGN 方差显式更正为项目复信道 `P/(2×SNR)`；旧 `P/SNR` 输出保留、不参与公平排名。
+- `s17_channel_matched_latent_diffusion.yaml`：exact-rate `19,632 image + 80 payload` 活动坐标上的 channel-state-matched latent diffusion；冻结 selection/holdout、fixed 7 dB 错配、B1 组合和 pseudo-semantic 判据。
+- `s17_decoder_aware_latent_diffusion_control.yaml`：从 S17-002 best warm-start 的同三轮优化预算 control；使用新的 validation 512--767 selection 和 768--999 fresh holdout，decoder image loss 权重严格为 0。
+- `s17_decoder_aware_latent_diffusion.yaml`：唯一增加 `lambda_img=20` frozen-decoder image MSE 的干预分支；记录 parent/control/current checkpoint 哈希、纯 loss 尺度冻结规则和 decoder−control 成功判据。
+- `s18_snr_identity_envelope.yaml`：冻结 decoder-aware diffusion 的 channel-adaptive identity control；记录旧 11k 去重的新 256/256 population、四个 smooth-power 与一个 hard identity 候选、selection 字典序、policy/manifest/checkpoint 哈希和 10 项正式成功判据。
+- `s19_diffusion_fusion_ablation.yaml`：等容量 B0-only control 与 B0+identity-diffusion fusion 的因果消融；冻结全新 5000/256/256 population、精确 cache、相同 B1 展开/训练批次、独立 checkpoint selection、一次性 holdout、cluster-bootstrap 和 7 项成功判据。
+- `external_common_comparison_pilot.yaml`：首轮外部 common-contract 真实对比预注册；冻结 8 张 policy-dev clean 图、五 SNR、每 sample/SNR canonical noise SHA 规则、65,536-real/CBR-1/6 总账本，以及当前 M3、SGD common adapter、SING-Zero-style final-only 三方法的准确标签和 outcome-claim 禁令。
+- `external_author_rate_alignment_pilot.yaml`：冻结 SGD-JSCC 作者工作点的 19,712-real 图像分支预算、精确 masked-DeepJSCC baseline 和论文“文本免费且无误”上界标签；后者禁止解释为严格端到端物理码率公平。
+- `external_author_rate_deepjscc_{train,train_stable,fullcoco_continue}.yaml`：依次记录精确低码率 DeepJSCC 的原始 AMP 尝试、数值稳定化复跑和全 COCO 继续训练；失败目录不覆盖，码率、掩码与 AWGN 口径始终不变。
+- `external_project_rate_sgd_reallocation_pilot.yaml`：在 CBR=1/6 下冻结发布权重 SGD-JSCC 的 main-R2/edge-R1/text-R13/padding 分配，总计精确 65,536 个实符号；只允许解释为预算分配敏感性，不允许称为宽潜变量重训练。

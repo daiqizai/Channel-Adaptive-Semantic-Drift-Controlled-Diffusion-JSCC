@@ -1,5 +1,171 @@
 # 当前进度
 
+## 当前方法说明书（2026-07-22）：S33 主链与旧命名关系已厘清
+
+新增 `METHOD_CURRENT.md`，只描述截至 S33 真正活着的论文主方法，不复述历史实验流水账。核心边界已经明确：当前 inference 是 `256x256 RGB → 四级 SNR-conditioned residual encoder → 原生 64x16x16=16,384 real → 逐图单位功率 + paired-real AWGN → 四级 SNR-conditioned decoder → 256x256 RGB`；decoder 输出就是最终输出，没有 B1、M2、diffusion、envelope 或分类器 gate。S31 是同架构 `77x16x16=19,712 real` 的较宽工作点，S33 是严格与 author-JSCC 等码率的主版本；两者均无 mask/prefix/padding/side information。
+
+名词状态也已冻结：B0 是“纯 JSCC 输出”的角色，因此 S33 可称 new strong-B0；旧 B1 是围绕旧弱 B0 训练的 deterministic residual refiner，不等于 M2；M2 是 SNR-aware diffusion 方法组，D 是其 diffusion 候选输出，envelope 是控制 diffusion correction 的 SNR 强度/恒等规则。旧 B1/M2/D/envelope 的具体 checkpoint 均不在当前主链，不能直接迁移到 strong 分布；diffusion 研究方向只是暂挂，只有将来从 strong-B0 分布合法重训并通过 gate 后才可能作为第二方向恢复。文档同时解释了完整模块维度、`16,384/19,712 real` 的原生 exact-rate 计算、canonical-noise prefix 与 latent 裁剪的区别，以及当前论文可写/不可写的 claim。
+
+## S34A SwinJSCC equal-budget 已获分阶段授权（2026-07-22）：只跑双臂 12 epochs，extension 禁跑
+
+用户已接受 official Base-SA `28,182,512` 参数与 capacity-matched CM-SA `31,348,752` 参数双臂、S33 FP32 4+8 epoch/equal-step 合同，以及总 verdict 取对 S33 更不利一臂。本轮授权边界已进一步收紧为：只执行两臂各 12 epochs，并检查 epoch 9--12 的固定 COCO val512 曲线；若最佳点在 epoch 11/12、OLS slope `>=0.01 dB/epoch` 且 epoch12−epoch9 `>=0.03 dB`，只报告 extension trigger，**不得自动延训**。此前讨论的 60-epoch 上限不构成当前权限；extension 是否执行及其 epoch 数必须等用户查看 equal-budget 结果后另行决定。
+
+正式训练运行中。运行配置 SHA=`a209af08...676d`；Base-SA 已完整完成 epochs 1--5，aggregate val PSNR=`26.9447→27.2621→27.9832→28.1977→28.2061 dB`，epoch5 MS-SSIM=`0.960111`，五档 PSNR=`26.1814/27.5046/28.4294/29.3187/29.5963 dB`。原前台会话在 epoch6 的 6,000/14,786 microbatches 处退出；该 partial epoch 没有写入 history/checkpoint，现从完整 epoch5 checkpoint 恢复，所以不会把半轮结果混入曲线。
+
+首次恢复预检发现 `torch.load(map_location=cuda)` 会把 checkpoint 的 CPU RNG byte state 一并搬到 CUDA，导致 `torch.set_rng_state` 拒绝；这发生在任何新 optimizer step 前，checkpoint 未损坏。恢复脚本已做窄修复：只把 CPU/default、SNR 和 shuffle generator state 显式搬回 CPU，不改变模型、optimizer 或训练数学，并写入 `resume_event_before_epoch_06.json` 记录新旧脚本 SHA。精确恢复测试 PASS。任务现运行在 detached GNU screen `s34a_equal_budget`（screen PID parent=`1`），不再依赖对话会话；2026-07-22 09:27 CST GPU 利用率=`99%`、显存约 `10.95/24.56 GiB`，Base 正在重跑 epoch6。CM-SA 仍只会在 Base 恰好完成 12 epochs 后启动，extension 无入口。
+
+双臂完成后的评估也已按独立配置 `configs/s34a_swinjscc_equal_budget_evaluation.yaml` 排队，但在 checkpoint 冻结前不会访问 policy-dev。评估入口只接受两个训练 `summary.json` 选出的 continuation-best 及其落盘 SHA，拒绝任何 epoch>12/extension checkpoint；随后复用 S33 的 960 keys、完整 19,712-D canonical noise SHA 和相同前 16,384-D prefix，输出两臂 aggregate/per-SNR PSNR、LPIPS、MS-SSIM、failure/new-error/repair、source-image cluster 95% CI 与 `0.10 dB` margin 保守 verdict。official validation 始终封存。
+
+官方源码已从 `semcomm/SwinJSCC@a6d0e6da53548976acbe9317839a077ef31f190f` 的 GitHub codeload tarball 经服务器直连取得；tarball `17,887 bytes`、SHA-256=`3f837eef...21688`，本地逐文件 hash 与此前缓存静态审计完全一致，没有下载或使用官方 checkpoint。项目侧新增 adapter，仅把官方 SA-only Swin/Channel ModNet 拓扑接到逐图 SNR、逐图单位功率和 canonical paired-real AWGN；第三方算法源码没有改动。
+
+`SMOKE-S34A-SWINJSCC-CALIBRATION-001` 在真实 COCO microbatch=8 上对两臂各运行一次 FP32 forward/backward/AdamW step，均通过：latent=`[8,256,64]` 即每图 `16,384 real`，输出=`[8,3,256,256]`，最大单位功率误差均为 `1.1921e-7`，参数量与静态审计精确一致，有限梯度和 checkpoint strict round-trip 通过。另用同一模型、同一 scalar SNR 对项目 adapter 与官方原始 encoder/decoder forward 做数值对照，最大绝对差均为 `0`，确认 vectorization 没有改变 scalar-SA 算法。Base/CM peak reserved VRAM=`9.748/10.396 GiB`，因此正式训练冻结 microbatch=8、gradient accumulation=4，保持 effective batch=32。单 microbatch 计时 Base=`0.537s`、CM=`0.179s`，但 Base 是进程首臂，包含 CUDA cold-start，禁止据此声称 Base 比 CM 慢三倍；按 warm CM 估算单个 12-epoch 臂纯训练约 `9h`，保守计入冷启动、逐 epoch 五档 validation、I/O 后约 `10--14h`，双臂约 `20--28h`。smoke result SHA=`010d9befe9...cacb3`。1-batch 不能判断收敛，当前收敛状态仍为 unknown；必须等 12-epoch val 曲线。official validation 未访问，正式训练输出未创建。
+
+完整更新合同：`reports/swinjscc_equal_rate_comparison_preregistration_2026-07-22.md`；配置当前为 `equal_budget_dual_arm_authorized_extension_forbidden`。允许创建且仅允许创建 Base/CM 两个 equal-budget 目录；每臂训练脚本必须硬拒绝超过 12 epochs，official validation 继续封存。
+
+## S34A SwinJSCC 初始预注册（2026-07-22）：已由上方确认与 smoke 结果更新
+
+S33 已在严格 `16,384 real` 下显著超过 author-JSCC；用户要求下一项补充公认更强的 Transformer JSCC 骨干 SwinJSCC。官方 `semcomm/SwinJSCC` 代码可公开获取，本轮静态审计固定 `main@a6d0e6da53548976acbe9317839a077ef31f190f`；README 提供公开 Google Drive 权重入口，但这些权重使用作者的 DIV2K/CLIC、码率/SNR 合同，不得参与本轮初始化或排名。当前服务器清空代理后直连 Drive 超时，因此权重状态只写“公开入口存在”，不写“本机已下载验证”。官方源码仓库未发现 `LICENSE`，后续须保留许可边界。
+
+公平对比选择 fixed-rate `SwinJSCC_w/_SA` 而非带 Rate ModNet/mask 的 `w/_SAandRA`；`C=64` 原生输出 `64x16x16=16,384 real`、`8,192 complex uses`、CBR=`1/24`，无 mask/padding/side information。建议以双臂堵住两类审稿疑问：原版 Base `[2,2,6,2]` 静态实测 `28,182,512` 参数（比 S33 少 `9.17%`），以及只把第三 stage 深度增到 8 的 capacity-matched official-code control `31,348,752` 参数（比 S33 多 `1.03%`）。总 verdict 取两臂中对 S33 更不利的结论，禁止只挑较弱一臂。
+
+两臂拟完全复用 S33 的 COCO train/val manifest、增强、离散逐图 `[1,4,7,13,19] dB`、逐图单位功率、paired-real half-variance AWGN、随机初始化、FP32 4+8 epochs、equal optimizer-step、MSE-only selection；评估复用同 64 图×3 seed×5 SNR 与 canonical noise prefix，报告 aggregate/per-SNR PSNR、LPIPS、MS-SSIM、semantic failure/new-error/repair 和 source-cluster 95% CI。`0.10 dB` PSNR margin 规则保持不变；secondary metric 冲突即降为 Pareto。official Imagenette validation 继续封存。
+
+该段保留初始审计背景；确认状态、收敛补充和实测校时以上方最新 S34A 记录为准。
+
+## S33 阶段成果（2026-07-21）：严格 `16,384 real` 等码率下显著超过 author-JSCC
+
+用户确认的“随机初始化 + FP32 12 epochs + 离散五档 SNR 训练”已完整执行；连续 `Uniform[1,19]` 未使用，只保留 future work。新 strong 原生输出 `64x16x16=16,384 real`、`8,192 complex uses`，参数 `31,028,163`，与约 `31.289M` 的 author-JSCC 参数差不到 1%；无 mask/padding/裁剪/side information。主阶段 4 epochs 从 `26.0623` 升至 `28.5879 dB`；续训首点回落至 `28.5105` 后持续升至 epoch7 的 `29.415098 dB/0.966782 MS-SSIM`。最终 checkpoint SHA=`2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb`，五档 COCO PSNR=`27.3119/28.5714/29.5445/30.6344/31.0134 dB`，最大功率误差 `2.38e-7`。
+
+冻结后在 S32 相同 64 图×3 seeds×5 SNR policy-dev 上，strong/author 的 PSNR=`30.466064/29.986135`、MS-SSIM=`0.969708/0.963092`、LPIPS=`0.119985/0.128342`、failure=`9/22`。strong−author PSNR=`+0.479929 dB`，source-image cluster 95% CI=`[+0.370006,+0.598197]`，按冻结规则为 **显著超过**；MS-SSIM delta=`+0.006616`、LPIPS delta=`-0.008357`、failure-rate delta=`-0.013542`，三个 CI 也均显著有利。artifact audit 验证 `960/960` 唯一键、author 行逐字段一致，以及完整 19,712-D noise SHA 后取前 16,384-D prefix 的 `960/960` 同噪声合同。
+
+分 SNR PSNR delta=`+0.9663/+0.7717/+0.5261/+0.1312/+0.0043 dB`。1/4/7 dB 显著领先；13 dB PSNR CI 下界 `+0.0044`，但 LPIPS 显著更差 `+0.002205`；19 dB PSNR CI `[-0.1615,+0.2027]`，按 `0.10 dB` margin 规则未过非劣且 LPIPS 显著更差 `+0.006905`。因此对外只写聚合严格等码率显著优势与 low-to-mid-SNR 主导，不写每档全面支配。S33 仍是 known policy-dev，不是 independent final test。
+
+最高优先级 backbone 论文经验 gate 已通过。按用户本轮指令在此停止：S34 消融、S35 matched diffusion、S36 official validation 均未启动。完整中文报告：`reports/strong_jscc_16384_equal_rate_stage_result_2026-07-21.md`；S33 `per_sample.csv` SHA=`5e585ca5...7dbe1`，独立 `post_analysis.json` SHA=`d7a89ef2...bdfc`。
+
+## 主线调整与下一轮预注册（2026-07-21；S33 已完成，S34--S36 未执行）：strong backbone 优先，diffusion 改为条件性第二方向
+
+用户基于 S32 的冻结结果正式授权调整项目主线：在项目 `19,712 real` 上，S31b strong 相对 DiffJSCC author-JSCC 的五档聚合 PSNR 为 `+0.433774 dB`，source-image cluster 95% CI `[+0.328020,+0.554007]`，同时 MS-SSIM/LPIPS 聚合也有利。后续第一优先级改为 **强 channel-adaptive JSCC backbone 本身作为独立贡献**，目标是形成一篇面向 IEEE WCL / Communications Letters 或对口会议的小论文，并作为毕业论文基石；原“强 JSCC + 受控 diffusion 可靠性”降为取决于 matched 重训结果的加分项/第二方向。既有 diffusion 最小闭环和负结果继续保留，不回写、不删除，也不再支配下一轮资源顺序。
+
+当前 S31b strong B0 永久冻结为 `outputs/train/EXP-S31B-STRONG-JSCC-FP32-002/checkpoints/best.pt`，SHA-256=`2f8972a943599bae016f6f64550ca81ea5f861654d9ace6931aebe6cf9057ca8`；后续不得覆盖、续训或据新结果回选该 checkpoint。S32 仍只定位为已知 policy-development population，不是 independent final test。13/19 dB 相对 author-JSCC 的已知边界必须逐档报告：PSNR 分别为 `-0.028961/-0.225914 dB`，LPIPS 分别为 `+0.008213/+0.013666`（更差）；允许把结论写成 low-SNR-regime 优势，禁止用聚合值掩盖高 SNR 边界。
+
+下一轮严格按以下优先级顺序执行。用户已于 2026-07-21 确认 S33 使用“随机初始化 + FP32 12 epochs + 离散五档 SNR 训练”及 `0.10 dB` PSNR 非劣 margin；本轮只启动 S33，S34--S36 仍停留在计划态，official Imagenette validation 继续封存：
+
+1. **S33：16,384-real 等码率 strong（最高优先级，论文 gate；已完成）。** strong−author 聚合 PSNR=`+0.479929 dB`，95% CI=`[+0.370006,+0.598197]`，判定为显著超过；聚合 LPIPS/MS-SSIM/failure 也显著有利。分档 high-SNR 边界和 policy-dev 限定见本文件首节；本轮在此停止，不自动启动后续步骤。
+2. **S34A：SwinJSCC 严格等设定外部骨干对比（审稿 gate；已预注册、未运行）。** 用官方 fixed-rate `w/_SA`、`C=64` 在 S33 的 COCO/码率/SNR/训练预算下从零重训；推荐同时跑 official Base 与 `31.349M` capacity-matched control，总判定取更保守一臂。用户确认双臂和 equal-step 训练预算前不得启动，official validation 继续封存。
+3. **S34B：strong 增益来源消融（必需）。** 以冻结的 S33 full model/训练合同为参照，做 one-factor-at-a-time 且 exact-rate、训练步数匹配的三类 control：`(a)` 将 encoder/decoder 的样本级 SNR condition 替换为常量 condition，保留相同条件分支和参数预算；`(b)` 用原生 `16x32x32=16,384 real` 的三级下采样 control 替换四级结构，并通过宽度/blocks 把参数量控制在 full 的 `±2%`；`(c)` 将 per-image 五档离散随机 SNR 训练替换为固定 `7 dB`，其他训练样本、增强、优化步和 checkpoint selection 不变。注意：当前成功的 S31/S31b 使用的是 `[1,4,7,13,19]` **离散均匀逐图采样**，不是连续随机 SNR；连续 `Uniform[1,19] dB` 如要测试，只能登记为额外训练合同扩展，不能倒写成现有 strong 的增益来源。三项消融均在 S32 policy-dev 上按相同指标/CI 报告，不用 official validation 调结构。
+4. **S35：新 strong 分布上的 matched B1/M2/envelope（中优先级，diffusion 去留 gate）。** 只有 S33/S34 主要结论冻结后才开始。冻结新的 strong B0，从其重建分布重新训练 new-B1、M2/identity envelope 和 matched residual diffusion/fusion；旧弱 backbone 上的 B1/S18/S19/M2/envelope checkpoint 只能作历史或 distribution-shift 诊断，不得直接迁移并称新结果。1/4/7 dB 检验低 SNR 增益，13/19 dB 默认保留 exact-B0 fallback 作为可靠性边界；必须加入参数量/训练预算匹配、但不读取 diffusion observation 的 control。只有 diffusion 分支相对该 control 在低 SNR 的主要质量指标有预注册 CI 支持、且 semantic failure/new-error 不恶化，才能称“不可由同容量 control 替代”并保留为第二方向或论文加分节；否则如实关闭为 negative/limitation，主论文纯走 strong backbone。
+5. **S36：official Imagenette validation 一次性最终验证（最后解锁）。** 只有 S33--S35 的方法、checkpoint、route、阈值、统计脚本和 claim 全部冻结后才解封；一次性运行后不得再据结果调参或回选方法。最终表必须把 `19,712-real strong`、`16,384-real strong`、author-JSCC、SwinJSCC，以及仅在 S35 通过 gate 时保留的 diffusion 方法分层呈现。
+
+S33 配置已经用户确认并冻结：原生 latent `[64,16,16]`；随机初始化；FP32 共 12 epochs（前 4 epoch 主训练 + 后 8 epoch只加载主阶段 best model、fresh optimizer 的低学习率 continuation）；训练 SNR 为五档离散逐图均匀采样。连续 `Uniform[1,19] dB` 只记 future work，不得倒写为当前反超原因。主阶段配置为 `configs/s33_strong_jscc_16384_fp32_main.yaml`，完整预注册为 `reports/s33_strong_jscc_16384_preregistration_2026-07-21.md`。按 RTX 4090 D 历史实测 FP32 `15.7 min/epoch`，12 epoch 约 `3.1 h`；加合同 smoke、五档 COCO validation、960-key 对比、bootstrap 与报告，单次无故障预计 `4--6 h`，不需要新增下载。
+
+## S31/S31b/S32 阶段成果（2026-07-21）：强基座已在项目预算内超过 author-JSCC
+
+S31 已实现 clean-room 31,118,032 参数、四级下采样、encoder/decoder 全程 SNR 条件的原生 exact-rate JSCC；`256x256` 输入直接生成 `77x16x16=19,712 real`，无 mask、padding 或 side information。单测、GPU smoke、half-variance AWGN 和归一化功率合同通过。原 AMP 实验在 epoch3 达到 `28.0448 dB/0.958405` 后，于 epoch4 batch418 检出非有限梯度并 fail-closed；独立 FP32 审计表明相同 checkpoint 在 batch8--32 的完整 step 均有限。
+
+修正 seed 合同后的 `EXP-S31B-STRONG-JSCC-FP32-002` 只加载上述 epoch3 模型权重，不加载 optimizer/scheduler/scaler；8 个 FP32 epoch 全部 finite，COCO 固定 512 图五档平均从 `28.5686` 单调升到 `29.360583 dB/0.967330`。最终分 SNR PSNR 为 `27.4221/28.6232/29.5118/30.4640/30.7819 dB`，最大功率误差 `2.38e-7`；best epoch7 SHA `2f8972a9...57ca8`。此前 `-001` 因总 seed 会改变 val512，在任何 validation 结果前主动中止并保留为 0-row 合同失败。
+
+S32 在 checkpoint/SHA 冻结后，首次把 strong 放到 S30 同 64 图×3 seed×5 SNR。strong 为 PSNR/MS-SSIM/LPIPS/failure `30.419910/0.970266/0.122824/14`；author-JSCC 为 `29.986135/0.963092/0.128342/22`。strong−author 的 PSNR `+0.433774 dB`，cluster 95% CI `[+0.328020,+0.554007]`；LPIPS `-0.005518`，CI `[-0.007775,-0.003147]`，三项质量指标聚合显著有利。边界是 strong 使用完整 `19,712 real`，author 只用 `16,384 real`，且 S32 是已知旧结果后的 policy-dev 定位，不是 independent final test。分 SNR 上 strong 在 1/4/7 dB 明显领先，author 在 13/19 dB 保留 `0.029/0.226 dB` PSNR 优势。
+
+strong 相对完整 DiffJSCC 为 `+2.821512 dB/+0.029467 MS-SSIM/+0.022600 LPIPS`（LPIPS 更差），仍是保真/感知 Pareto；相对旧 current 则 PSNR `+2.196232 dB`、LPIPS `-0.029260`、failure `14 vs 29`，旧 current 已被纯 strong 基座全面压过，不能继续作为最终方法。下一阶段冻结 strong，重新训练与其分布匹配的 matched residual diffusion 与 semantic-risk controller；旧 B1/S19/diffusion checkpoint 只保留历史证据。完整中文报告：`reports/strong_jscc_backbone_stage_result_2026-07-21.md`；S32 `per_sample.csv` SHA `74997b3c...8714a`。official Imagenette validation 仍封存。
+
+## S30 后续诊断（2026-07-21）：JSCC 差距主要是主干与训练合同差距
+
+对冻结 S30 `per_sample.csv` 的只读分 SNR复核表明，author-JSCC 相对 B1 的 PSNR 优势随 SNR 从 `+0.969695/+1.303401/+1.729425/+2.486298/+2.818847 dB` 单调扩大；这更符合本项目低容量/非原生低码率主干提前进入表示瓶颈，而不是 AWGN 注噪口径错误。当前 exact-rate JSCC 只有 `140,239` 个可训练参数，采用两级下采样、固定 `7 dB` 训练且无 encoder/decoder 内部 CSI modulation；它由原 `c8` checkpoint 选取 6 个实 latent 通道 warm-start 到 `c3`，再以固定 evenly-spaced mask 仅传 `19,712/24,576` 个实坐标。DiffJSCC 的 author-JSCC 则是约 `15.6M+15.6M` 参数的四级 ResNet，encoder/decoder 每个残差阶段都做 SNR modulation，并在 `[0,14] dB` 连续随机 SNR、目标 C16 表示上端到端训练。因此 B1/融合器只能修复弱保真端点，不能补回发送端未有效编码的信息。
+
+该诊断不把全部 `1.762457 dB` 归因于单一因素：S30 还包含作者 `256→512` 处理、最终 Lanczos 回到 `256` 的输入网格差异，以及 OpenImage/COCO 训练域差异。下一步若实施强主干替换，应先做固定缩放往返 control，再以同源图、同噪声、同总码率比较“当前 tiny backbone / clean-room strong ResNet / official author-JSCC”；在这之前不能宣称通过增加训练轮数即可追平。
+
+## 最新完整外部复现（2026-07-21）：S30 官方 DiffJSCC 960 行对比完成
+
+S30 已完成官方 `mingyuyng/DiffJSCC@13aeb624...` OpenImage C16 全链：checkpoint、精确 base BLIP2 两分片、OpenCLIP 2.24 和 Transformers 4.51.1 runtime 全部固定尺寸/SHA；preflight、checkpoint audit、preload、1-row smoke、第一 seed 320 行和完整 960 行均 PASS。总体严格复用 S20/S28 的 64 张 Imagenette policy-dev、3 channel seeds、5 SNR 和 canonical AWGN；DiffJSCC 使用同一 19,712-D 噪声向量前 16,384 个实坐标。完整输出有 960 个唯一键、960 张拼图，功率归一化范围 `0.9999998–1.0000002`，无 NaN/OOM。
+
+current 相对 DiffJSCC 最终输出是 fidelity/perception Pareto：PSNR `+0.625280 dB`，source-image cluster 95% CI `[+0.423123,+0.824753]`；MS-SSIM `+0.008258`；LPIPS `+0.051861`（更差），CI `[+0.041360,+0.063002]`；failure `29 vs 23`，差值 CI `[-0.017708,+0.034375]`。预注册 verdict 为 `PARETO_OR_INCONCLUSIVE`，不能宣布 current 全面胜出。
+
+更重要的新发现是 backbone 差距：author-JSCC 前端只用 `16,384 real`、即项目预算的 `83.1169%`，却达到 PSNR/MS-SSIM/LPIPS `29.986135/0.963092/0.128342`、failure `22`；current 为 `28.223678/0.949057/0.152084`、failure `29`。current−author-JSCC PSNR `-1.762457 dB`，CI `[-1.938592,-1.601835]`；LPIPS `+0.023742`，CI `[+0.019926,+0.027543]`。质量三轴均显著落后，failure 点估计也较差但 CI 跨零。下一阶段不应继续在旧弱主干上微调小融合模块，应先把强 JSCC backbone 纳入同一风险控制合同；报告仅提出该建议，未擅自改写 `PROJECT.md/MILESTONES.md`。
+
+DiffJSCC 相对自身 author-JSCC 平均以 `-2.387737 dB/-0.022293 MS-SSIM` 换取 `-0.028119 LPIPS`，failure `22→23`、`10 new / 9 repair`。分 SNR 的 new/repair 为 `1/3、2/4、3/2、3/0、1/0`：1/4 dB 为净修复，7 dB 转为净风险，13 dB 在 3/3 seed 均出现 `1 new/0 repair`；19 dB 属于作者训练范围外。该结果支持“保留 diffusion，但观测越可靠，离开强 JSCC 保真端点所需证据越强”，而不是机械按 SNR 全开/全关。
+
+完整中文报告：`reports/diffjscc_external_comparison_stage_result_2026-07-21.md`。核心产物为 `outputs/external_baselines/ANALYSIS-S30-DIFFJSCC-COMPARISON-001/`；`per_sample.csv` SHA `549720b8...b6e2`，最终派生 `post_analysis_v3.json` SHA `87c2ffcb...aa1f`。完整 DiffJSCC 平均 `5.238 s/图`、peak allocated VRAM `14,927.42 MiB`；S28 current 的毫秒数不含完整 DeepJSCC/diffusion，禁止直接计算速度倍数。
+
+## 最新外部定位（2026-07-21）：当前方法跨域优于 B1，与 SGD-JSCC 构成明确 Pareto
+
+S28 把冻结的 S19 low-SNR fusion + 13/19 dB exact-B1 fallback 放到 S20 完全相同的 64 张 Imagenette policy-dev 图像、3 个 canonical AWGN seed、5 个 SNR 上，共 960 行/方法。相对冻结 B1，当前方法 PSNR `+0.099085 dB`，source-image cluster 95% CI `[+0.088053,+0.111284]`；MS-SSIM `+0.002360`；LPIPS `-0.007314`；T_cls failure `35→29`，`6 new / 12 repair`。相对等容量 matched control 仍有 PSNR `+0.059681 dB`、LPIPS `-0.002990`，两项 CI 显著，第三次证明增益来自 diffusion observation 而非额外 CNN 容量。
+
+相对 SGD-JSCC 免费完美文本论文协议上界，当前方法 PSNR 高 `+0.483309 dB`（CI `[+0.258829,+0.711956]`），但 MS-SSIM 低 `0.003916`、LPIPS 高 `0.079983`，failure 为 `29 vs 25`，因此是清晰的 fidelity/perception Pareto，不能宣称全面胜出。当前方法严格使用 19,712 real、diffusion side information=0；SGD released main+edge 已占 19,712 real，四个 caption packet 至少再需 2,144 real，若计费则最低超预算 `10.88%`。
+
+S28 因 batch=16 相对 S20 batch=64 的单样本 PSNR 最大浮点差 `0.0004768 dB` 超过预注册 `0.0001 dB` 技术阈值，原 verdict 保留 `NEGATIVE`。S29 不改阈值，按原 batch=64 重放 960 行 B1，PSNR/MS-SSIM/LPIPS、预测、failure 和 noise SHA 全部零误差，6/6 PASS，确认只是 batch-dependent 浮点运算而非合同错位。当前内部方法继续冻结；下一步只做严格总码率生成基线和最终隔离总体。完整中文报告：`reports/current_method_external_positioning_stage_result_2026-07-21.md`。
+
+## 最新正式复现（2026-07-21）：S26 主方法通过 512-image pristine population
+
+S27 在 population 产生前冻结全部方法、checkpoint、route、seed 和 S26 原成功门槛；从本地 COCO train2017 排除 S16/S18/S19/S21 共 22,536 个唯一 source path/SHA，最终 512 张新图与所有旧总体 path/SHA overlap=`0/0`，无 selection。canonical AWGN cache 为 512×5=2,560 行，其中 1/4/7 dB 共 1,536 个 6-step matched-diffusion 输出；全程本地、无下载。
+
+routed fusion 相对 B1：PSNR `+0.092662 dB`，source-image cluster 95% CI `[+0.089147,+0.096313]`；MS-SSIM `+0.002310`，CI `[+0.002149,+0.002482]`；LPIPS `-0.007922`，CI `[-0.008465,-0.007398]`。majority failure `1561→1517`，difference CI `[-0.02813,-0.00664]`，相对 B1 为 `60 new / 104 repair`。相对等容量 routed control 仍有 PSNR `+0.065799 dB`、LPIPS `-0.003494`，两项 CI 显著。
+
+分 SNR fusion−B1 PSNR=`+0.135781/+0.153492/+0.174039/0/0 dB`；13/19 dB 最大逐像素差 0。9/9 checks PASS。S26/S27 aggregate 增益仅差约 `0.00060 dB`，主结果已高稳定复现。当前内部方法冻结，不再训练 controller 或调 route；下一步仅做同 population/码率边界下的 SGD-JSCC 外部定位与论文汇总。中文报告：`reports/s19_exact_fallback_fresh_replication_stage_result_2026-07-21.md`。
+
+## 最新阶段性成果（2026-07-20）：S19 强表示与 S23 exact-fallback 思想已合并
+
+S26 在任何目标 S19 输出产生前冻结：1/4/7 dB 使用 frozen S19 fusion/control，13/19 dB 两者均结构性返回 frozen B1；不访问目标 selection、不训练、不增加参数或 side-information symbols。目标是 S21/S23 的另一批 COCO holdout 256 图×5 SNR。该图片总体的 B1/S23 outcome 已知，但 S19 checkpoint 从未在其上运行，因此结论定位为 frozen cross-population method replication，而不是完全 pristine final test。
+
+routed fusion 相对 B1：PSNR `+0.093267 dB`，source-image cluster 95% CI `[+0.087945,+0.098806]`；MS-SSIM `+0.002188`，CI `[+0.001972,+0.002412]`；LPIPS `-0.007661`，CI `[-0.008438,-0.006915]`。majority failure `744→720`，difference CI `[-0.03203,-0.00547]`，相对 B1 为 `27 new / 51 repair`。相对等容量 routed control 仍有 PSNR `+0.065486 dB`、LPIPS `-0.003100`，两项 CI 均显著，第二次证明 diffusion 信息不是额外 CNN 容量的视觉包装。
+
+分 SNR fusion−B1 PSNR 为 `+0.141105/+0.154616/+0.170612/0/0 dB`；13/19 dB 最大逐像素差为 0。9/9 预注册检查全部通过。当前最好的方法更新为 **S26 = S19 low-SNR fusion + exact-B1 high-SNR fallback**：它保留了接近 S19 的效应量，同时取得 S23 想要但未能放大的结构安全边界。中文报告：`reports/s19_exact_fallback_replication_stage_result_2026-07-20.md`。
+
+## 最新路线判定（2026-07-20）：S23 逐图幅度 controller 上限不足，正式关闭
+
+S25 在已暴露的 S23 selection 256 图×5 SNR 上冻结原有 12 个 alpha，计算不可部署的 PSNR oracle、LPIPS oracle 和“不新增三分类器 majority failure”的 semantic-safe PSNR oracle。即使 oracle 可以读取原图与评估器，semantic-safe oracle 相对固定 `alpha=0.15` 也只有 PSNR `+0.001365 dB`，source-image cluster 95% CI `[+0.001186,+0.001562]`；LPIPS `-0.001817`，majority `0 new / 10 repair`。预注册的最小有意义 PSNR headroom 为 `+0.02 dB`，4 项继续 gate 仅通过 3 项，正式 `continue=false`。
+
+因此不再在 S23 one-epoch feature direction 上训练 receiver-only amplitude head、扫 threshold 或细化 alpha。这是表示上限不足，不是 controller 优化问题。S23 保留为 exact-fallback 机制基线；下一轮转向 S19 的更强 joint-fusion representation，并冻结 1/4/7 dB fusion、13/19 dB exact B1 的结构性策略，在另一 population 上同时复核 frozen S19 control。中文报告：`reports/b1_feature_amplitude_headroom_stage_result_2026-07-20.md`。本轮未访问 holdout、未联网、未下载。
+
+## 最新综合复核（2026-07-20）：S17--S23 指标、外部对照与数据流已统一整理
+
+S24 只读取冻结的 S19、S20、S23 产物，未重新选模型、未用 holdout 调参、未访问 official Imagenette validation。它在 S23 的同一独立 COCO 256 图×5 SNR holdout 上统一重算 PSNR、MS-SSIM、LPIPS、三分类器多数票/AlexNet 辅助语义失败，并以 source image 为 cluster 做 10,000 次 bootstrap。S23 相对 B1 为 PSNR `+0.000567`（95% CI `[+0.000376,+0.000762]`）、MS-SSIM `+0.0000224`（`[+0.0000116,+0.0000338]`）、LPIPS `-0.001731`（`[-0.001844,-0.001619]`）；多数票为 `3 new / 7 repair`，但 failure-rate CI 跨 0，不能声称语义改善显著。
+
+横向结论保持诚实分层：S19 是当前质量增益最大的内部融合版本（相对 B1 `+0.10173 dB/-0.00640 LPIPS`），但有高 SNR 负迁移；S23 是当前结构最安全的机制闭环，13/19 dB 精确回退 B1，但新增 PSNR 太小；SGD-JSCC 免费完美文本上界感知指标强，但 caption 至少使严格预算超出 `10.88%`，且当前外部结果与 S23 不在同一 population，不能直接排绝对名次。RTX 4090 D、batch 16、已缓存 B0/diffusion 的接收端后处理 microbenchmark 中，B1/S23 为 `2.491/2.602 ms/图`；这明确不包含 6-step diffusion，不能当端到端延迟。
+
+面向非专业读者的完整中文报告、流程图和可视化见 `reports/recent_progress_metrics_and_data_flow_2026-07-20.md`；派生输出见 `outputs/analysis/ANALYSIS-S24-RECENT-PROGRESS-SUMMARY-001/`。本轮无联网、无下载。
+
+## 最新阶段性成果（2026-07-20）：B1 + diffusion 首个非零安全合并闭环
+
+S21/S22 在同一份全新 COCO development population 上完成，256×5 holdout 始终封存、未访问。S21 依次排除了三类简单输出合并：带 penalty 的 learned gate 第 1 轮塌零；去掉 penalty 后第 4 轮仍塌零；fixed-gate bounded residual 第 3 轮达到 `0.06` envelope 上限并使 PSNR 崩至 `22.73 dB`。无训练单调凸融合穷举 120 个组合，也只有全零 B1 同时满足低 SNR PSNR 与 aggregate LPIPS 约束。
+
+S22 随后冻结 B1 全部参数，只用 `1,728` 参数的零初始化 `Conv3x3(3→64)` 将 `D-B0` 注入 B1 head feature；control 和 13/19 dB 由结构保证严格等于 B1。真实 cache smoke 中初始差为 0、projection gradient L1=`0.03054`。10 个训练 epoch 均显著改善 selection LPIPS：epoch1 为 `-0.01096`，epoch10 达 `-0.01580`；没有 gate collapse 或饱和。但所有非零 epoch 的 PSNR 都比 B1 低，最接近的是 epoch6 的 `-0.01789 dB`。按预注册 Pareto 规则最终选择 epoch0，checkpoint SHA `b7eac7ec...a0d79`，不解封 holdout。
+
+S23 随后在已知 S22 结果的前提下明确注册 development follow-up：固定重训最早的 epoch1 非零方向，在运行前冻结 12 个全局 shrink alpha，不扫描 epoch 或 per-SNR schedule。selection 选中 `alpha=0.15`（PSNR `+0.000536 dB`、LPIPS `-0.001681`，1/4/7 dB 全正），冻结 checkpoint SHA `53692278...1abbf` 与 policy SHA `54c2639f...8c68f` 后才首次访问独立 256×5 holdout。
+
+S23 holdout 相对 B1 为 PSNR `+0.000568 dB`，source-image cluster 95% CI `[+0.000378,+0.000771]`；LPIPS `-0.001731`，CI `[-0.001849,-0.001622]`。分 SNR PSNR `+0.000701/+0.001158/+0.000979/0/0 dB`，13/19 dB 最大逐像素差为 0；majority pseudo new/repair=`3/7`。五项预注册检查全部通过。
+
+因此已经取得首个“frozen B1 + matched diffusion 非零注入 + exact fallback”的独立 holdout 闭环；但 PSNR 效应量只有 `5.7e-4 dB`，远小于 S19 joint fusion 的 `+0.10168 dB`，只能称机制突破，不能包装为强主方法。下一步主攻可学习/解析的 SNR/sample-adaptive amplitude，并保持 exact-B1 fallback；不再细扫全局 alpha 或 gate 小模块。完整中文报告：`reports/b1_merge_stage_result_2026-07-20.md`。
+
+本轮全部使用既有本地数据、模型与 cache，无联网、无下载；新增/相关脚本 `py_compile` 通过，标准库单测 `122/122` 通过。
+
+## 方向确认（2026-07-20）：B1 与 matched diffusion 合并，而非互相替代
+
+结合 S19 的互补信息因果证据与 S20 的 B1/SGD Pareto 对比，用户确认后续主线采用合并方案。这里的“合并”明确限定为：严格 19,712-real 链路先产生 B1 保真锚点；同一接收观测经解析 `alpha(SNR)` 进入 channel-state-matched diffusion 辅助分支；receiver-visible controller 只把经过 measurement/semantic-risk 检查的 diffusion 增量注入 B1，高风险时严格回退 B1。目标形式为 `x_final = x_B1 + A(y,SNR,x_B1,x_D) ⊙ R(x_B1,x_D)`，其中 `A=0` 必须精确恢复 B1。
+
+这不是把作者 SGD 接在 B1 后面，也不是固定加权平均：公开 SGD 的 VAE/channel latent 与当前 DeepJSCC latent 不同，且免费 caption 不满足严格总码率。S19 已经完成第一版 `[B0,D_identity,SNR,Sobel,Laplacian]` 联合 CNN，并证明 diffusion 信息不可被等容量 B0-only control 替代；下一版应做 B1-anchored auxiliary-only/参数解耦门控，显式输入 `|x_D-x_B1|`、信道/measurement uncertainty 和语义风险证据，解决 S19 在 13/19 dB 的共享权重负迁移。当前只冻结方向，尚未新增配置、训练或 outcome；正式实验前仍需另行预注册 fresh selection/holdout。
+
+## 最新阶段性成果（2026-07-17）
+
+S20 完成了“SGD-JSCC 既然优于普通 JSCC，是否应全程替代 B1”的扩展判定。任何结果产生前冻结了 64 张独立 Imagenette policy-dev clean-correct 图、5 个 SNR、3 个新 channel seed；每个方法 960 个配对观测，全部 `(seed, sample_id, SNR)` canonical noise SHA 一致，official validation 未访问。
+
+SGD 论文协议的免费/完美文本上界相对普通 B0-full 是明确强基线：PSNR `+0.63461 dB`、LPIPS `-0.18332`，95% CI 均不跨零，failure `111→25`。但它没有全面支配 B1：SGD−B1 PSNR `-0.38422 dB`，source-cluster 95% CI `[-0.61529,-0.16026]`；MS-SSIM `+0.006276`，LPIPS `-0.087297`，对应 CI 都显著有利。failure `35→25` 的差值 CI 跨零，且 SGD 同时产生 `11` 个相对 B1 new error、修复 `21` 个。
+
+严格码率审计进一步否决“直接全用公开 SGD”：其 main `16,384` + active edge `3,328` 已占满 `19,712 real`；四个固定 caption 即使只做未保护 BPSK 也至少再需 `2,144 real`，最低超预算 `10.8766%`。SGD 推理约 `2064.7 ms/图`，是 B1 `2.642 ms/图` 的 `781.4×`。因此当前证据支持保留严格同码率保真路径，并把 channel-state-matched diffusion 用作受 measurement/semantic-risk 约束的感知先验；不支持无条件全程 SGD，也不支持放弃 diffusion。
+
+完整中文报告：`reports/sgd_b1_decision_stage_result_2026-07-17.md`；聚合结果 SHA `3023ac91...64d5`。本轮本地离线、无下载；115/115 项单测、`py_compile` 和 `git diff --check` 通过。
+
+术语澄清：本项目当前所称 **B1** 特指 `EXP-S16-B1-001` 的 exact-rate receiver-side residual restoration anchor，不是 diffusion，也不是外部论文名称。它以严格链路得到的 B0 RGB、归一化 SNR、B0 自身的 Sobel magnitude 和 Laplacian absolute map 共 6 通道为输入，预测受 SNR gate 缩放的 RGB residual；S20 中 80-real sender payload 只用于保持预留坐标的严格物理输入合同，B1 网络本身不读取该 payload。
+
+## 上一阶段性成果（2026-07-16）
+
+S19 完成了“diffusion 是否提供 B1 之外信息”的等容量因果消融。新建 5,000 train / 256 selection / 256 holdout 的 COCO train2017 population，与旧 11,000 和 S18 512 的 path/SHA 重叠均为 0；固定 27,560 行精确 19,712-real AWGN cache。control 与 fusion 都是 450,115 参数、从同一个 B1 权重零辅助展开、使用同 batch/crop/flip；唯一信息差异是第二 RGB 输入为 B0 复制还是 S18 identity-controlled diffusion。
+
+一次性 256×5 holdout 上，fusion/control/B1 PSNR 为 `27.40649/27.34803/27.30482 dB`。fusion−control 为 `+0.05846 dB`，image-cluster bootstrap 95% CI `[+0.05198,+0.06423]`；LPIPS `-0.001493`，CI `[-0.002162,-0.000824]`。fusion−B1 为 `+0.10168 dB`，CI `[+0.09431,+0.10915]`，LPIPS `-0.006394`。majority pseudo new/repair 为 fusion `54/280`、control `60/276`。主互补信息判据通过，证明 diffusion 不是可被同容量 B0-only CNN 完全替代的视觉包装。
+
+预注册 7 项通过 6 项。唯一未过的是 fusion−control 只有 1/4/7 dB 为正，13/19 dB 为 `-0.02492/-0.01903 dB`，非负 SNR 数为 3/5，低于预注册 4/5；不过 fusion 在五个 SNR 上均高于原 B1。后续主攻 auxiliary-only SNR-gated adapter/参数解耦，不能事后修改本轮 policy。中文报告：`reports/diffusion_fusion_ablation_stage_result_2026-07-16.md`。
+
+本轮 cache 曾因对话中断留下 1 张未写完 PNG，第一次训练在读取前失败；损坏 cache 与失败训练目录完整保留。cache runner 已改为原子 PNG 写入，修复后全量 49,608 张 PNG 校验坏文件为 0，正式结果使用新 cache manifest SHA `8d88daf7...75e3`。
+
 ## 当前阶段
 
 - 阶段0：文献与代码准备
@@ -44,6 +210,12 @@
 最新 benefit-aware continuous-alpha tail-only follow-up 把离散 alpha 分类改成单值连续 alpha regression，仍只训练 residual tail 与 alpha head。它在 validation/held-out/test-like 上取得 PSNR delta `+0.5010/+0.5049/+0.5012` dB，accepted new error 为 `0/0/0`，明显超过 tail-only classification 的 `+0.4749/+0.4552/+0.4061`，并在 held-out/test-like 上达到或超过 two-stage/receiver predictor 的 learned 部署水平。连续 alpha 的最近离散 target accuracy 较低（`0.4188/0.3625/0.3469`），但输出分布覆盖中间幅度（test-like mean alpha `0.7123`，nearest counts `1/11/78/176/54`），说明它不是在做离散标签复刻，而是学到更平滑的质量/风险折中。该结果是当前训练侧最明确的正向突破；仍低于后验 exhaustive adaptive alpha，其 LPIPS/ensemble 风险边界见下一段补充审计，因此暂不直接升级最终 M3。
 
 最新 continuous-alpha tail refiner 审计已补齐 LPIPS 与跨分类器安全复核。连续 alpha top-1 fallback 在 validation/held-out/test-like 上的 LPIPS delta 为 `-0.0149/-0.0149/-0.0162`，优于同 checkpoint full-strength top-1 fallback 的 `-0.0097/-0.0106/-0.0098`；PSNR delta 仍为 `+0.5010/+0.5049/+0.5012` dB，AlexNet accepted new error 仍为 `0/0/0`。但 ensemble 审计显示它不是跨模型完全安全：any-classifier new error 为 `17/9/14`，majority-vote new error 为 `1/0/0`；唯一 majority case 是 validation 4 dB `sample_000248.png`，由 ResNet18 和 MobileNetV3-Small 同时标出。结论：continuous-alpha 是当前最强 learned training-side amplitude-control 候选，但还不能直接升级最终 M3；下一步需要 semantic-risk-aware loss/listwise utility 或二级安全约束。
+
+最新 edge × capacity/training-budget 受控消融已完成，修正了此前对 `EXP-S4-008` 的过早归因。原 `EXP-S4-008` 相比 `EXP-S4-006` 同时扩大了网络并增加训练轮数；新增 matched large no-edge `EXP-S4-009` 和 matched small edge `EXP-S4-010` 后形成完整 2×2。sample-cluster paired bootstrap 显示，edge 在 small/large 配置上的 raw PSNR 独立增益分别为 `+0.0501` dB（95% CI `[+0.0249,+0.0696]`）和 `+0.1389` dB（`[+0.1031,+0.1805]`）；M3 增益分别为 `+0.0455/+0.0617` dB，CI 也均排除 0。large edge 的 raw semantic failure 相比 matched no-edge 增加 `+0.0438`，new error `26→34`、repair `44→38`，因此结论是“结构条件带来真实质量收益，但不是无条件语义改进”。
+
+同一 large matched pair 的跨 split paired audit 进一步确认 edge raw PSNR 净增益在 validation/held-out/test-like/fresh-holdout 上为 `+0.1389/+0.1565/+0.1585/+0.1411` dB，四个 95% CI 下界均大于 `+0.10` dB，且每个 split 的 5 个 SNR 全部同向。fresh-holdout 使用此前未做 downstream residual 分析的 `sample_000320`-`sample_000383`，冻结后未据此调参。
+
+原 edge shrink schedule 的有效强度在 4→7 dB 非单调，已按 `MILESTONES.md` 约束改成 validation-only 全局单调选择 `{1:0.75,4:0.75,7:0.75,13:1.0,19:0.75}`，对应 `gate×alpha={0.09,0.075,0.06,0.05,0.03}`。冻结策略在 validation/held-out/test-like/fresh-holdout 上的 PSNR delta 为 `+0.5734/+0.6128/+0.5700/+0.5668` dB，LPIPS delta 为 `-0.0145/-0.0148/-0.0163/-0.0162`，所有目标 split/SNR 的 LPIPS 均改善。AlexNet gate 下 new error 为 0 是规则内生保证，不再当作独立安全证据；三分类器离线审计显示 any-model new error 为 `20/7/17/17`，majority new error 为 `1/1/0/3`（validation/held-out/test-like/fresh-holdout），所以 edge monotonic policy 仍是强质量候选而非跨模型完全安全的最终 M3。
 
 ## 当前任务
 
@@ -157,14 +329,388 @@
 | 2026-07-09 | 完成 benefit-aware continuous-alpha tail-only residual refiner follow-up | `configs/s6_alpha_head_residual_refiner_tail_regression_benefit_exp_s4_006.yaml`, `scripts/s6_train_alpha_head_residual_refiner.py`, `outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/` | `py_compile`、默认/tail classification/continuous regression 三个配置 `--dry-run`、清空代理变量后运行 `python3 scripts/s6_train_alpha_head_residual_refiner.py --config configs/s6_alpha_head_residual_refiner_tail_regression_benefit_exp_s4_006.yaml --device cuda:0`；只训练 tail 与连续 alpha head，不运行 diffusion、不下载、不加载 LPIPS | Continuous-alpha tail-only 在 validation/held-out/test-like 上 PSNR delta `+0.5010/+0.5049/+0.5012` dB，new error `0/0/0`；超过离散 tail-only classification，并在 held-out/test-like 达到或超过 learned 部署 baseline，但仍低于后验 adaptive alpha |
 | 2026-07-09 | 完成 continuous-alpha tail refiner LPIPS 与 classifier-ensemble 审计 | `configs/s6_continuous_alpha_tail_refiner_audit_exp_s4_006.yaml`, `scripts/s6_audit_continuous_alpha_tail_refiner.py`, `outputs/analysis/exp_s4_006_continuous_alpha_tail_refiner_audit/` | `py_compile`、`--dry-run`、修正 LPIPS 缓存路径后清空代理变量运行 `python3 scripts/s6_audit_continuous_alpha_tail_refiner.py --device cuda:0`；只读取已有 continuous-alpha PNG/CSV、本地 LPIPS/AlexNet/ResNet18/MobileNetV3-Small 权重，不训练、不运行 diffusion | Continuous-alpha 的 LPIPS delta 为 `-0.0149/-0.0149/-0.0162`，优于 full-strength fallback；AlexNet new error 仍 `0/0/0`，但 ensemble any new error 为 `17/9/14`，majority new error 为 `1/0/0`，说明它是强候选但还非最终 M3 |
 | 2026-07-09 | 复核上次总结后新增进展 | `PROGRESS.md`, `EXPERIMENTS.md`, `README.md`, `outputs/analysis/exp_s4_006_continuous_alpha_tail_refiner_audit/REPORT.md` | 按 `AGENTS.md` 读取中枢文档、实验索引和最新审计报告；未运行新实验、不改运行方式、不新增文献 | 上次阶段总结后实质新增为 `ANALYSIS-S6-020`：continuous-alpha 补齐 LPIPS 与 classifier-ensemble 审计；结论维持“强候选但非最终 M3” |
+| 2026-07-09 | 整理组会可展示结果 | `reports/showcase_results_2026-07-09.md`, `outputs/analysis/minimal_closure_report/`, `outputs/analysis/exp_s4_006_residual_shrink_artifact_gallery/`, `outputs/analysis/exp_s4_006_continuous_alpha_tail_refiner_audit/` | 按中枢文档和现有报告筛选展示材料；查看关键 tradeoff 图和 artifact sheet；未运行新实验、不新增指标、不改运行方式 | 形成一份组会展示清单：包含 blind diffusion 负结果、M2 residual CNN 正向 anchor、M3 shrink/adaptive-alpha 保守结果、continuous-alpha learned 候选和 ensemble 风险边界；明确哪些能当正结果、哪些只能当负对照或候选 |
+| 2026-07-09 | 整理当前技术路线和 semantic drift 计算口径 | `reports/technical_method_notes_2026-07-09.md`, `PROJECT.md`, `MILESTONES.md`, `scripts/s4_classifier_consistency_eval.py`, `scripts/s5_residual_refiner_pilot.py`, `scripts/s6_residual_shrink_selection.py`, `scripts/s6_apply_adaptive_residual_alpha_policy.py` | 按中枢文档和实际脚本核对指标定义；未运行实验、不新增结果、不改运行方式 | 明确当前 pipeline 为 DeepJSCC + SNR-conditioned residual restoration + semantic fallback/alpha control；semantic drift 当前按冻结分类器 top-1 pseudo-label 一致性统计，`accepted_new_error` 是核心风险指标 |
+| 2026-07-10 | 完成阶段性方向审计与继续价值判断 | `reports/phase_summary_2026-07-10.md`, `PROJECT.md`, `MILESTONES.md`, `PROGRESS.md`, `EXPERIMENTS.md`, `LITERATURE.md`, `README.md`, `outputs/analysis/minimal_closure_report/REPORT.md` | 按项目规则复读中枢文档和 closure report；未运行新实验、不新增指标、不改运行方式 | 判断：若主线仍是 blind diffusion 后处理则不值得继续；若收缩为 semantic-risk-controlled residual restoration / alpha control，则值得继续。下一阶段优先补 supervised clean-correct 评估，并围绕 continuous alpha 做 semantic-risk-aware 训练或 model selection |
+| 2026-07-10 | 复核 SGD-JSCC 可借鉴点与边界 | `LITERATURE.md`, `PROJECT.md`, `MILESTONES.md`, `PROGRESS.md`, `EXPERIMENTS.md`, `README.md` | 按项目规则复读中枢文档，核对 SGD-JSCC 论文摘要和官方代码仓库说明；未运行实验、不改运行方式 | 结论：应该参考 SGD-JSCC 的语义条件和信道自适应设计，但不能照搬成新主线；当前应把 text/edge/structure guidance 思想转化为受控 residual/diffusion correction，并继续保留 semantic drift / accepted new error 作为本项目核心指标 |
+| 2026-07-10 | 完成 SGD-inspired edge-conditioned residual refiner 与 frozen shrink 复核 | `scripts/s5_residual_refiner_pilot.py`, `scripts/s5_residual_refiner_heldout_gate_eval.py`, `scripts/s6_residual_shrink_selection.py`, `scripts/s6_apply_residual_shrink_schedule.py`, `configs/s5_edge_conditioned_residual_refiner_validation_coco256_awgn.yaml`, `configs/s6_edge_residual_shrink_selection_exp_s4_008.yaml`, `outputs/EXP-S4-008/`, `outputs/analysis/exp_s4_008_edge_*` | `py_compile`、dry-run、清空代理变量后运行 `EXP-S4-008` validation、held-out/test-like gate check、validation shrink selection、frozen held-out/test-like shrink schedule check；不下载、不运行 diffusion，LPIPS 省略 | 结构条件来自 M0 的 Sobel/Laplacian，refined PSNR delta `+0.9398` dB；frozen top-1 shrink schedule 在 validation/held-out/test-like 上 PSNR delta `+0.5782/+0.6041/+0.5707` dB，accepted new error `0/0/0`，成为当前最强 AlexNet-pseudo 安全保守候选；confidence-gain gate 和 always-accept 仍会漏 new error，不能作为安全方法 |
+| 2026-07-10 | 完成 edge × capacity/training-budget 2×2 受控消融 | `EXP-S4-009`, `EXP-S4-010`, `scripts/s6_compare_edge_capacity_ablation.py`, `outputs/analysis/exp_s4_006_008_009_010_edge_capacity_ablation/` | 两个新增训练均 dry-run 后清空代理运行；逐 PNG 重算；sample-cluster 10,000 次 paired bootstrap；匹配字段、checkpoint/config、参数量和 SHA256 全部校验 | small/large edge raw 净增益 `+0.0501/+0.1389` dB，95% CI 均排除 0；edge 质量收益成立，但 large raw pseudo failure 增加 `+0.0438`，不能称为语义改进 |
+| 2026-07-10 | 完成 matched large edge 跨 split/fresh-holdout 审计 | `scripts/s6_compare_matched_edge_holdouts.py`, `outputs/analysis/exp_s4_008_009_matched_edge_holdout_audit/` | validation/held-out/test-like/fresh-holdout 分别按 sample cluster 做 10,000 次 paired bootstrap；fresh-holdout 固定为此前未分析的 `sample_000320`-`sample_000383` | edge raw PSNR 净增益 `+0.1389/+0.1565/+0.1585/+0.1411` dB，所有 CI 下界 > 0、所有 5-SNR 方向一致；pseudo semantic 变化跨 split 不稳定 |
+| 2026-07-10 | 修正单调 schedule 并完成 LPIPS / classifier-ensemble 审计 | `scripts/s6_residual_shrink_selection.py`, `scripts/s6_audit_residual_policy.py`, `outputs/analysis/exp_s4_008_edge_monotonic_*` | 全局枚举满足 `gate×alpha` 随 SNR 非增的 validation schedule；冻结到 held-out/test-like/fresh-holdout；本地 LPIPS 与三冻结分类器离线审计；无下载 | 四段 PSNR `+0.5734/+0.6128/+0.5700/+0.5668` dB、LPIPS 全改善；ensemble majority new error `1/1/0/3`，故暂不升级为跨模型安全最终 M3 |
+| 2026-07-10 | 整理 edge conditioning 显著成果报告 | `reports/edge_conditioning_significant_result_2026-07-10.md` | 逐项回查 2×2、cross-split bootstrap、单调 frozen schedule、LPIPS 和 ensemble 输出；不新增指标 | 形成可直接用于组会/论文讨论的正结果、风险边界、允许/禁止表述和下一步优先级 |
+| 2026-07-10 | 完成 SGD-inspired coarse source-description 嵌套审计 | `configs/s6_imagenette_source_semantic_description_eval.yaml`, `scripts/s6_imagenette_source_semantic_description_eval.py`, `outputs/analysis/imagenette_source_semantic_description_policy_dev/` | 在 policy-dev 内按 WNID+SHA256 固定拆成 945 张 semantic-select / 949 张 semantic-audit；只在 select 选择 80-bit uint8 source-probability 距离规则，audit 一次性检验；逐行复现原 G_gate 输出，official val 保持封存 | 连续描述规则没有满足“选择集零 new-error + 至少保留 50% M2 PSNR”的候选；最保守规则在 audit 仅保留 3.26% M2 PSNR，failure 比 M2 高 `+1.6078 pp`，95% CI `[+0.8627,+2.3922] pp`。结论：source description 只用于末端 gate 不足以解决语义风险 |
+| 2026-07-10 | 完成 sender source-edge oracle 与 matched paired bootstrap | `EXP-S4-011`, `scripts/s6_compare_source_edge_oracle.py`, `outputs/analysis/exp_s4_011_source_edge_oracle_vs_receiver_edge/` | 与 EXP-S4-008 匹配容量/epochs/split/seed/loss/gates，只把 Sobel/Laplacian 来源从 M0 换为 sender original；64 图×5 SNR；10,000 次 sample-cluster paired bootstrap | source-edge raw PSNR 相对 receiver-edge 再提升 `+3.5149 dB`，95% CI `[+3.2602,+3.7652]`，五个 SNR 全为正；raw pseudo failure `0.3625→0.2062`。这是 perfect-edge、总 CBR 未定义的 feasibility upper bound，不是可部署通信结果 |
 
 ## 下一步
 
 1. 第一版正向主线继续以 `EXP-S4-006` 的 pixel residual CNN 为 anchor；不要把 `EXP-S4-007` 的 naive random-residual DDPM 纳入 M2/M3 正结果。
 2. 若继续做 diffusion，必须换设计：从 M0 或 residual CNN 输出附近初始化，做短链 conditional restoration diffusion / residual correction，而不是从高斯噪声生成完整残差；同时考虑直接 `x0`/residual prediction、低噪声 schedule、identity-preserving loss 和 semantic gate 联训。
 3. `selected_risk_rule` 的 final PNG、classifier ensemble 审计、ensemble-risk 二级 veto sweep、receiver-side risk score sweep、raw confidence-gain test-like 复核、frozen risk-rule test-like 复核、test-like classifier-ensemble 审计和 COCO object CLIP clean-correct 辅助诊断已完成；浅层接收端标量规则已经显示出“少 veto 会漏 any-model/GT-like 风险，多安全会过保守”的瓶颈。下一步优先补真正带监督标签的 clean-correct 评估，或把 semantic-risk-aware 约束放进 residual CNN 训练/选择流程；不能把 raw confidence-gain、过保守 CLIP veto、SNR-calibrated scalar CLIP veto、当前 AlexNet-tuned selected rule、保守 ensemble-risk veto 或少 veto risk score 写成最终 M3。
-4. 已用 minimal closure report、residual shrink artifact gallery、adaptive residual alpha policy、two-stage alpha policy 和 receiver alpha predictor 固定当前 M0/M1/M2/M3 命名与样例证据：M2 是 SNR-conditioned pixel residual CNN，M3 第一版采用 top-1 semantic fallback，`adaptive_max_top1_consistent_alpha` 是当前最强保守候选，`M3-ReceiverAlphaPredictorTop1Fallback` 是 learned 部署 pilot，`M3-TwoStageResidualAlphaTop1Fallback` 是少候选检查的部署消融，`M3-ResidualRestorationTop1ShrinkFallback` 是固定 schedule 消融/备选，`selected_risk_rule` 只作为候选/消融。Residual shrink 在 validation、held-out、test-like 三段都支持“残差强度”应做 semantic-risk-aware 选择；下一步应把 alpha/残差幅度约束放进 residual CNN 训练、validation model selection 或短链 conditional residual diffusion，而不是继续只调浅层阈值。
+4. 已用 minimal closure report、residual shrink artifact gallery、adaptive residual alpha policy、two-stage alpha policy 和 receiver alpha predictor 固定当前 M0/M1/M2/M3 命名与样例证据。`EXP-S4-008` 的 receiver-edge 质量增益已严格成立；`EXP-S4-011` 进一步给出 source-edge feasibility upper bound，但 perfect edge 未计 rate/channel error，不能升级为 M2/M3。下一步的最高优先级是训练 CBR≈`1/8` 的主图 DeepJSCC 与 CBR≈`1/24` 的独立 edge-JSCC，使总 CBR≈`1/6`，再与当前 CBR 0.17 路线公平比较；在完成前禁止把 oracle `+3.5149 dB` 写成通信增益。
 5. 执行节奏上区分“探索实验”和“收敛闭环”：探索阶段允许先用小样本、validation、smoke run 或负结果快速推进；只有方法要进入 M2/M3 命名、跨 split 复核、论文表格或 minimal closure report 时，才必须执行完整最小闭环检查。不能因为 closure 口径保守而停止训练侧或 diffusion 设计侧的大胆尝试。Alpha-head residual refiner 的普通 CE、weighted CE 和 benefit target 三版都低于后验 adaptive alpha、receiver predictor 和 two-stage；benefit-aware tabular predictor 虽在 validation 贴近 adaptive，但 held-out/test-like 仍不够。全量 joint fine-tune 虽显著改善 validation alpha 分类，却损伤 residual restoration；tail-only partial fine-tune 已确认 partial/reconstruction-dominant 方向能恢复质量收益；continuous alpha regression 进一步把 learned training-side policy 推到 `+0.5010/+0.5049/+0.5012` dB，LPIPS 也优于 full-strength fallback，但 ensemble 审计仍有 validation majority new error。下一步若继续训练侧，应围绕连续 amplitude head 做 semantic-risk-aware/listwise utility loss、轻量扩容或 ensemble-aware model selection，而不是回到离散 CE 或全量 unfreeze。
-6. 继续收敛正式主语义指标：当前 COCO 上仍是 pseudo-label/CLIP/caption/object-label 辅助诊断；若需要严格 clean-correct 分类统计，应引入带标签 Imagenette/ImageNet subset 作为补充，而不是把 COCO pseudo-label 或 COCO-object CLIP zero-shot 当作最终主指标。Imagenette2-320 官方包约 326MB，本轮直连下载速度过慢已停止，只保留 partial，后续再决定是否继续。
+6. 继续收敛正式主语义指标：Imagenette 严格监督 policy-dev 已证明 top-1 fallback 和 80-bit coarse source-description gate 都未通过 accepted-new-error/gate-efficacy 门槛，因此不得解锁 official val，也不再优先扫描 receiver-side 标量阈值。下一轮应先完成 matched-rate lossy source-edge restoration，再用独立 `T_cls` 做新的 policy-dev；只有新方法通过才允许另行冻结并讨论 official val。
 7. 后续正式流程一律使用 `outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt` 和大导出 `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256/` / `outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384/` 做 residual validation 与 test-like 复核；旧 32 张 export 仅保留用于复现实验 `EXP-S2-002` 到 `EXP-S4-005`。
 8. 后续下载大模型或数据仍必须清空代理变量，默认走服务器直连；官方 Hugging Face 直连当前超时，`hf-mirror.com` 服务器直连可用。
+
+### 2026-07-10：完成 Imagenette 严格监督 clean-correct policy-dev 审计
+
+- 数据：官方 `Imagenette2-320`，归档大小/MD5/成员内容均通过；train/val 分别 `9469/3925`，跨 split 精确 SHA-256 与 64-bit 感知哈希近重复均为 0。
+- 无泄漏分类器：`G_gate`（随机初始化 MobileNetV3-Small）cal macro top-1 `0.8961`；`T_cls`（随机初始化 ResNet18）`0.9046`；二者只看 `cls_train`，按 `cls_cal` 选优并温度标定，official val 未访问。
+- policy-dev 输出：`outputs/analysis/imagenette_supervised_policy_dev/`，真实 WNID 标签、1894 图像、9470 行（5 SNR）。
+- M2 edge scheduled 相对 M0 的 clean-correct failure `3.30%→1.28%`，M3 fallback 为 `2.06%`；M3-M2 `+0.7857 pp`，95% CI `[+0.4125,+1.1589] pp`，gate efficacy 失败。
+- M3-M0 failure `-1.2375 pp`，95% CI `[-1.6893,-0.7858] pp`；PSNR `+0.7434 dB`，95% CI `[+0.7296,+0.7571]`；LPIPS `-0.0307`；保留 M2 PSNR 增益 `92.87%`。
+- accepted-new-error 为 `16/4923` 行、`11/1683` 图像；保守上界 `1.0795%`，高于预注册 `0.5%`。因此 `M3_scratch_gate_fallback` 不升级为 supervised-safe，official val 保持锁定。
+- 结论：这是当前最重要的监督闭环边界——COCO 训练出的 edge residual quality gain 在外部真实标签上成立，但 source-model top-1 fallback 的安全泛化不成立；后续应改 gate/训练目标或接受 M2-only 结论，不得把 M3 的净 failure 改善包装成无风险语义控制。
+
+### 2026-07-11：完成精确等总码率 main + decoded-structure 闭环
+
+- 码率契约：reference `c=8`，proposed `c=6 RGB + c=2 structure`，两者 total CBR 均为 `8/48=1/6`；`c=2` Sobel/Laplacian 经独立 AWGN DeepJSCC 传输，不再使用未计码率的 perfect source edge。
+- 训练：20k COCO warm-start pilot 的 `c=6`/`c=2` best validation PSNR 为 `30.7497/30.4991 dB`；decoded-structure residual refiner 输出为 `outputs/EXP-S7-002/`。
+- COCO 四段：validation/held-out/test-like/fresh-holdout 相对 `c=8` raw PSNR 分别 `+0.3974/+0.3261/+0.4198/+0.3600 dB`，每段 paired bootstrap CI 下界均大于 0，20 个 split×SNR point estimate 全为正；三个冻结 downstream split 合并为 `+0.3772 dB`，95% CI `[+0.3274,+0.4253]`。
+- 预注册 Imagenette policy-dev：1,894 图、9,470 行；PSNR `+1.8341 dB`，95% CI `[+1.7742,+1.8949]`；LPIPS `-0.0305`；主 SNR supervised failure `3.3785%→1.2375%`，failure delta CI `[-2.8678,-1.3946] pp`。
+- 安全边界：matched raw 仍产生 31/1684 个 new-error image clusters，保守上界 `2.4764% > 0.5%`，所以预注册总判定为 FAIL、official val 继续封存。50 个 new-error rows 中有 9 行（7 图）main/raw 都错，证明继续扫描二选一 fallback 阈值不足以解决问题。
+- 显著成果报告：`reports/matched_rate_significant_result_2026-07-11.md`；监督审计：`outputs/analysis/imagenette_matched_rate_policy_dev/REPORT.md`；COCO 比较：`outputs/analysis/s7_matched_rate_system_cross_split_comparison/REPORT.md`。
+- 下一方向：把 `c=2` 从纯边缘通道升级为 evaluator-independent、rate-accounted 的语义描述/校验通道，并在 restoration 内部融合；不能把当前净 failure 改善写成“语义无损”。
+
+### 2026-07-11：完成 rate-accounted hybrid semantic sketch 探索
+
+- 实现 `src/cadsd_jscc/semantic_sketch.py`：固定 Rademacher 投影、连续 repetition payload、均匀 latent 位置预留、AWGN 后恢复与结构 decoder 前擦除；总码率始终 `c=6+c=2=c=8`。
+- `EXPORT-S8-001` repetition-16 按预注册失败：sketch cosine 全通过，但结构 MSE 增加 `16.41%-29.40%`。输出保留、不覆盖。
+- `EXPORT-S8-002` repetition-4 通过：payload 只占 `128/16384=0.78125%` 的 `c=2` latent；1/4/7/13/19 dB cosine 为 `0.9552/0.9772/0.9880/0.9970/0.9992`，结构 MSE 增加 `3.24%-5.84%`。
+- 新增 zero-initialized semantic FiLM、冻结 AlexNet KL/投影一致性和反事实 ranking；`EXP-S8-001/002/003` 均保留。最终逐样本 ranking checkpoint 为 epoch 5，SHA-256 `64754d2da87984c07d699b7b961b16e40fe1742436504dbb59a27df7d706f50f`。
+- 160-image frozen downstream：S8 raw 相对 reference `c=8` `+0.4691 dB`，95% CI `[+0.4231,+0.5159]`；相对 S7 raw `+0.0919 dB`，CI `[+0.0746,+0.1147]`。
+- 因果边界：received 相对 zero `+0.0849 dB`，CI `[+0.0728,+0.0982]`，15/15 split×SNR 全正；received 相对 shuffled 仅 `+0.0072 dB`，CI `[-0.0023,+0.0170]`，严格门槛失败。
+- 决定：已证明不到 1% 结构 latent 可稳定承载有用连续 side signal，但 32-D 随机投影尚未形成足够样本特异的 semantic grounding；不把 S8 作为独立方法运行 Imagenette 审计，后续只允许在预注册的主线 M3 controller 中整体审计；official val 继续封存。完整报告：`reports/hybrid_semantic_sketch_result_2026-07-11.md`。
+
+### 2026-07-11：将 semantic sketch 合并回主线 M3
+
+- 主线定义：严格等码率 `c=6 main + c=2 hybrid` + SNR-aware residual refiner + transmitted source checksum + threshold-free alpha controller；不再把 S8 写成独立质量支路。
+- 控制器：`alpha={0,.25,.5,.75,1}`，选择 candidate projected-AlexNet sketch 与 received source sketch cosine 最大者，平局取较小 alpha；receiver 不看原图。
+- 预注册 Imagenette policy-dev：M3 failure `1.2178%`，hybrid raw `1.2571%`，reference c8 `3.6142%`；M3-reference failure CI `[-3.0642,-1.7482] pp`。
+- 风险/收益：new-error rows/clusters 从 raw `41/23` 降到 M3 `29/18`，repairs 从 `161/109` 降到 `151/105`；约减少 22% new-error clusters，但 raw-minus-M3 failure CI `[-0.1768,+0.2554] pp` 跨 0。
+- 质量：M3-reference PSNR `+1.4234 dB`，CI `[+1.3693,+1.4799]`；LPIPS `-0.0265`；保留 hybrid raw PSNR gain `74.8%`。
+- 严格结论：failure noninferiority、PSNR、LPIPS、gain-retention 通过；controller efficacy 和 new-error `1.5875% <=0.5%` 门槛失败。主线 M3 集成成立但不升级为 supervised-safe，official val 继续封存，不再在 policy-dev 调 alpha/threshold。
+- 报告：`reports/mainline_hybrid_semantic_controller_result_2026-07-11.md`；输出：`outputs/analysis/imagenette_hybrid_semantic_controller_policy_dev/`。
+
+### 2026-07-12：复核未落盘的 OpenCode 文献调研材料
+
+- 确认 `reports/literature_and_direction_assessment_2026-07-12.md` 从未写入；OpenCode 会话只保留最终摘要、两个调研子任务完整输出和原始 arXiv 查询结果，无法逐字恢复原定正文。
+- 核验后确认核心理论线索可用：Perception-Distortion、Classification-Distortion-Perception、Cohen uncertainty-perception、HalluGen/SHAFE 等均与 semantic reliability 叙事相关。
+- 发现原摘要的 novelty 判断过强：`RDPC/JSCM` 已研究 rate-distortion-perception-classification 四元权衡；`RDP-JSCC/DPCT` 已研究可控生成式 JSCC；`TOAST` 已按实时信道条件平衡 reconstruction fidelity 与 classification accuracy，并包含 latent diffusion denoiser。
+- 方向据此收紧：不能把“四轴曲线”或“channel-adaptive + classification + diffusion”组件组合作为首次贡献；更可守的核心是 matched-total-rate 下的 refinement-induced accepted new error、tail risk、receiver-visible channel-conditioned risk control 和 explicit failure handling。
+- 修正 SGD-JSCC 码率表述：text 成本被忽略且假设完美传输；edge 经独立 DeepJSCC 路径传输并有 BCR，不能笼统说全部 side information 未计 rate。
+- 本轮未运行实验、未修改运行方式，也尚未重建缺失报告；详细文献核验已写入 `LITERATURE.md`。
+
+### 2026-07-12：文献结论对当前项目的方向启发
+
+- 当前最有价值的问题不再是“diffusion 是否提升 JSCC 质量”，而是“生成式/恢复式后处理在带来平均质量和净语义收益时，如何约束其相对基线新引入的单样本语义错误”。现有 matched-rate 结果正好展示了该矛盾：平均 failure 与 PSNR 均改善，但 new-error 上界未过预注册安全门槛。
+- 论文差异化应从一般 RDPC 多轴权衡和 channel-adaptive classification/quality balancing 中退出，收紧为 `refinement-induced new error + tail risk + matched-rate semantic side information + explicit failure handling`。
+- 当前 32-D 随机投影 sketch 的 received-vs-shuffled CI 跨 0，说明它主要提供非零条件能量而非可靠的样本身份；下一方法应改用可解释、可纠错、严格计码率的 class/caption/spatial semantic token 或 checksum，并要求 received > shuffled 的因果门槛。
+- 末端 alpha/router 不是充分解：当前 proposed system 的 c6 main 与 refined candidate 存在共同错误，二选一无法满足严格 new-error 门槛。语义 token/checksum 必须进入 restoration/decoder 内部，产生新的受约束候选，而不是只用于事后 veto。
+- 下一项优先实验应是预注册的 risk-constrained selective controller：只使用 receiver-visible SNR、decoded main/structure、received semantic payload 及候选内部统计，在独立 development split 上最大化质量收益，同时约束 per-SNR new-error 上置信界和 tail risk；冻结后再做新的监督 audit。
+- 若最终方法仍是 residual CNN 而没有可用 diffusion，论文题目和贡献应诚实改为 semantic-risk-controlled generative/restoration JSCC；只有短链、近 M0 初始化、强条件化的 diffusion correction 真正跑通后，才保留 `Diffusion-JSCC` 作为主标题。
+- 本轮为方向分析，未运行新实验、未改运行方式、未解锁 official Imagenette validation。
+
+### 2026-07-12：复核 OpenCode 第一版 A/B 方向判断
+
+- 第一版“A 质量增强路线撞车严重、B 必须依靠系统化度量与风险控制”的总体判断，比后续“核心命题基本空白”的绝对说法更稳健。
+- `SING` 直接覆盖 DeepJSCC reconstruction 后的 diffusion inverse restoration；Rate-Adaptive Generative SemCom 覆盖 conditional diffusion + rate adaptation；因此单独的质量增强 A 不适合作为主贡献。
+- `RD-JSCC` 的短链 residual diffusion 与 channel-conditioned switch 确实是重要组件近邻，但其任务是 MIMO CSI reconstruction，不是自然图像 semantic drift，属于方法组件威胁而非同题抢先。
+- 第一版 B 的三个窄点仍有价值：refinement-induced accepted new error、matched-total-rate 公平协议、receiver-side failure handling；但“硬语义度量无人做”“侧信息成本无人计”“channel-adaptive semantic risk 基本空白”均不能在未完成系统全文检索前写成绝对 novelty。
+- `TOAST` 已根据实时信道条件动态平衡 reconstruction fidelity 与 classification accuracy 并包含 latent diffusion；因此本项目必须把风险变量限定为 baseline-correct 样本被 refinement 新破坏的事件概率/尾部上界，而不是一般 classification accuracy。
+- 若走 benchmark/measurement 路线，只有覆盖多种 generative/refinement 方法、多个信道/数据集、统一风险协议并公开可复现资产，才可能形成独立主贡献；仅对当前单一系统做分析不足以支持高档 benchmark 叙事。
+- 本轮未运行实验、未修改运行方式、未重建缺失报告。
+
+### 2026-07-12：完成项目深审计、补充文献调研与未来路线规划
+
+- 已形成正式报告 `reports/literature_and_direction_assessment_2026-07-12.md`，覆盖现有证据、技术归因缺口、近期文献、候选方向、分阶段实验和 go/no-go 条件。
+- 当前最强资产确认是完整的 matched-rate + supervised clean-correct + refinement-induced new-error/UCB + preregistered failure 证据链，不是某个单独 residual/diffusion 模块。
+- 新发现的最高优先级缺口：`c6+c2 structure+refiner` 虽与 `c8` 严格等信道使用量，但尚缺 `c8+同等 refiner`、双分支无结构语义、参数/训练预算/推理开销匹配对照；现有结果证明完整系统有效，尚不能把全部收益归因于 structure/semantic representation。
+- 统计缺口：当前 image-cluster bootstrap 主要覆盖跨图像/SNR 相关性，正式版本还需多个 channel seeds，并区分单次传输风险、image susceptibility 和 tail risk。
+- Semantic sketch 缺口：当前 received-vs-shuffled PSNR CI 跨 0，payload 为 post-hoc latent overwrite，且因果 gate 未直接要求 hard semantic 改善；下一版应联合学习符号/功率分配，并对质量和 new-error 同时做 received/shuffled/zero 审计。
+- 文献边界进一步核验：JSCGC 正确 arXiv ID 为 `2601.12808`；MTGC、ADDPS、SBGSC、Hallucination Index、Selective Classification 和 Conformal Risk Control 已补入 `LITERATURE.md`。
+- 推荐路线：P0 先补公平因果基线；P1 最多筛三种 rate-accounted semantic anchor；P2 做 selective risk controller；P3 full-scale/multi-seed/final audit；P4 再决定短链 conditional diffusion；P5 方法冻结后补 Rayleigh。
+- 本轮未运行实验、未改运行方式、未访问 official Imagenette validation。
+
+### 2026-07-12：完成 matched-rate short-chain diffusion 正式 pilot
+
+- 新增预注册、配置、实现和单元测试：`reports/short_chain_residual_shift_diffusion_preregistration_2026-07-12.md`、`configs/s10_short_chain_residual_shift_diffusion_pilot.yaml`、`scripts/s10_short_chain_residual_shift_diffusion.py`、`tests/test_short_chain_residual_shift_diffusion.py`。
+- `EXP-S10-001` 使用冻结 `c=6 main + c=2 decoded structure` 和 `EXP-S7-002` residual anchor；采用 pixel-domain residual-shift bridge，从 anchor 起步并用 6 个 deterministic steps 回到 clean endpoint，不使用 SD/VAE/prompt。
+- 正式 160/64 split、五 SNR 结果：相对 anchor mean ΔPSNR `-0.1548 dB`，mean ΔLPIPS `-0.000195`；LPIPS 在 5/5 SNR 均微幅改善。相比旧 `EXP-S4-007` 的数 dB 崩塌，近 anchor 短链设计显著更稳定。
+- 预注册语义 gate 失败：raw candidate 新增 12 个 AlexNet pseudo error，只修复 7 个；因此本版本结论为 NEGATIVE，不晋级为主线 M2/M3。
+- 方向判断：不放弃 diffusion；保留“matched-rate anchor + short-chain conditional diffusion”作为有上限潜力的后端，但下一版必须先补更大训练集、感知/语义风险目标和与同 anchor deterministic refiner 的公平对照，不能只扫描 steps/seed。
+- 输出：`outputs/EXP-S10-001/`；正式报告：`outputs/EXP-S10-001/REPORT.md`。未下载任何模型/数据，未访问 official Imagenette validation。
+
+### 2026-07-12：完成 P0 `c8 + same refiner` 公平对照
+
+- 预注册并完成 B1 `EXP-S11-001`：给裸 `c=8` reference 配置与 B3 `EXP-S7-002` 完全匹配的 `64×6`、60 epoch receiver-only residual refiner；双方 seed、160/64 split、loss、crop、batch 和 gates 相同，参数量均为 448,387，延迟均约 2.5 ms/image。
+- B1 raw 相对 bare B0 平均 `+1.0192 dB`，明显高于 B3 相对 B0 的 `+0.3974 dB`。
+- `ANALYSIS-S11-001` 从 PNG 重算并按 64 个 image clusters 做 10,000 次 bootstrap：B3 raw − B1 raw 为 `-0.6217 dB`，95% CI `[-0.6654,-0.5839]`，5/5 SNR 均为负；B3 LPIPS 也比 B1 差 `+0.00664`。
+- 伪语义诊断同样未通过 gate：B1 raw new-error/repair 为 `31/45`，B3 为 `37/57`。三个预注册条件全部失败。
+- 方向调整：当前 `c6+c2 decoded structure` 不再作为已被因果证明的主要增益；不继续用 post-hoc structure/sketch 调参救该叙事。后续 diffusion 改用更强的 B1 作为 deterministic anchor，核心贡献继续围绕 refinement-induced new error 和 semantic-risk control。
+- 报告：`reports/p0_c8_same_refiner_result_2026-07-12.md`；未下载数据/权重，未访问 Imagenette policy-dev 或 official validation。
+
+### 2026-07-12：完成 B1-anchored semantic-preserving diffusion v2
+
+- 将 `scripts/s10_short_chain_residual_shift_diffusion.py` 泛化为兼容 decoded-structure 和 receiver-anchor structural maps 两种条件模式；旧 S10 dry-run 回归通过。
+- 冻结并运行 `EXP-S12-001`：formal `c8` + B1 anchor、receiver-only Sobel/Laplacian、6-step residual-shift diffusion，并加入 edge L1 与独立于 AlexNet 诊断器的本地 ResNet18 target KL。
+- 正式五 SNR 结果：mean raw ΔPSNR `-0.0775 dB`、mean raw ΔLPIPS `-0.000652`，5/5 SNR LPIPS 改善；相比 S10 的 `-0.1548/-0.000195`，质量/感知 tradeoff 明显改善。
+- semantic-risk gate 仍失败：raw new-error/repair `8/4`；top-1 fallback mean ΔPSNR/ΔLPIPS `-0.0747 dB/-0.000613`，但只继承 AlexNet anchor prediction，不能当独立安全证据。
+- best checkpoint 为 epoch 2，后续 train loss 继续下降而 eval PSNR 最差回吐超过 1 dB，确认 160-image diffusion 训练强过拟合。按预注册不再调该小数据 bridge 的 weights/steps/seed。
+- 第一次 smoke 的训练/推理成功但 `--skip-lpips` 报告遇到 `None` 格式化错误，失败目录保留；修复可选 LPIPS 报告后在新目录重跑通过。正式 run 未受影响。
+- 下一步若保留 diffusion，转为 COCO train2017-scale anchor/diffusion dataset + 独立 validation + direct new-error risk calibration；报告：`reports/b1_anchored_diffusion_result_2026-07-12.md`。未下载、未访问 Imagenette policy-dev/official val。
+
+### 2026-07-13：完成 COCO train2017 scale-up cache 与 B1 anchor
+
+- 新增确定性 scale-up exporter：按 `SHA256(seed:path)` 从 118,287 张 local train2017 固定 10k train + 1k validation，并逐 SHA 排除 local val2017 重复。
+- `EXPORT-S13-001` 完整输出 11k original + 55k five-SNR c8 reconstructions，manifest/per-sample 唯一性、目录计数和 manifest hash 全通过；cache 约 6.9GB，无下载。
+- `EXP-S13-001` 用 50k pairs/epoch 训练 receiver-only B1 10 epochs；best epoch 9 validation PSNR `32.5588 dB`，没有 S12 的早期强过拟合。
+- 正式 1k×5 validation：mean raw ΔPSNR `+1.3632 dB`、mean raw ΔLPIPS `-0.03272`，5/5 SNR 均改善；new-error/repair `339/951`，全部预注册 anchor gate 通过。
+- top-1 fallback mean ΔPSNR/ΔLPIPS `+0.8384 dB/-0.01529`；raw 虽净修复 612 rows，仍保留 339 个 individual new errors，不能写成无风险。
+- 冻结 checkpoint SHA-256 `80133f9d9649c1a5d9514cf2b4f0d04802b6ebe03cc970bfcec86eddfd165562`，作为 scale-up diffusion anchor。未访问 Imagenette policy-dev/official val。
+- 用户看到的中断只发生在终端输出回传；后台训练和完整评估已正常结束，不需要续跑或覆盖目录。
+
+### 2026-07-13：完成 train2017-scale B1-anchored diffusion
+
+- `EXP-S14-001` 物化 55k frozen B1 anchor cache，并用 10k/1k×5-SNR 训练/验证原样 S12 6-step residual-shift diffusion。
+- best epoch 2；mean raw ΔPSNR `-0.0736 dB`、ΔLPIPS `+0.000081`，LPIPS 仅 2/5 SNR 改善，质量/感知 gate 失败。
+- raw pseudo new-error/repair `63/76`，规模扩大后首次通过 net incremental-risk gate；但不能用净风险改善掩盖感知无收益。
+- 正式结论 NEGATIVE，停止该 bridge 家族的 validation 超参扫描。若以后继续 diffusion，必须换 posterior/data-consistency 设计和新 development protocol。
+
+### 2026-07-13：打通 received-latent posterior consistency 接口
+
+- 审计第三方 DeepJSCC 后确认可拆分 `encoder→channel→received latent→decoder`；新增五个 adapter 接口和 3 项单元测试。
+- 实际 formal checkpoint、7 dB、256×256 smoke：拆分路径与原 forward 最大误差 `1.788e-7`，received latent shape `(B,16,64,64)`，tx/rx power `1.0000/1.0973`。
+- B0 candidate 的 normalized received-latent loss `0.06218`，对图像梯度有限且非零，证明可在 posterior sampler 内做真实 measurement-consistency correction。
+- 该结果只证明工程可行性，不是新实验正结果；下一步需保存与 cache 对齐的 received latent，并冻结新的 proximal sampler protocol，不能继续调 S14。
+- 报告：`reports/received_latent_posterior_feasibility_2026-07-13.md`。
+
+### 2026-07-13：received-latent posterior correction 取得阶段性正结果
+
+- 预注册 `ANALYSIS-PC-001`，使用 S13/S14 从未访问的 train2017 SHA-rank `11000--11063`（64 图×5 SNR），冻结 S13 B1、S14 diffusion、三步 correction 和 `0.001` normalized step，不在该 split 调参。
+- 5/5 SNR 的 received-latent consistency loss 均下降；总体从 `0.10363` 降到 `0.08275`，相对约 `-20.1%`。
+- 相对未约束 S14 raw，mean PSNR `+0.2124 dB`、LPIPS `-0.00991`，且 PSNR/LPIPS 均为 5/5 SNR 同向改善；这排除了本轮只是用失真换一致性的解释。
+- B1-anchor-relative AlexNet pseudo new error 保持 `5→5`，repair 从 `2→17`；全部 feasibility/promotion gates 通过。
+- 阶段性结论：保留 diffusion，但主线从无约束 residual-shift bridge 改为 **received-latent posterior/data-consistency diffusion**。下一步在新 frozen split 上训练/验证内生 consistency sampler，并补 classifier ensemble 与监督语义审计；本 pilot 不能写成最终安全证据。
+- 验证：`python3 -m unittest discover -s tests -p 'test_*.py' -v` 共 45 项全部通过；`py_compile`、PC-001 dry-run 和 `git diff --check` 通过。
+- 报告：`reports/posterior_consistency_pilot_result_2026-07-13.md`。
+
+### 2026-07-13：独立复现 posterior restoration，并定位 cross-model semantic 瓶颈
+
+- `ANALYSIS-PC-002` 在全新 256 图×5 SNR 上冻结复现 PC-001：latent loss 相对下降约 `20.4%`，相对 S14 raw PSNR `+0.2125 dB`、LPIPS `-0.01078`，均为 5/5 SNR 同向；与 PC-001 的 `+0.2124/-0.00991` 高度一致。
+- PC-002 完整 gate 仍失败：ensemble-majority new error `0→2`，三分类器 individual new error 均增加。结论是 measurement/posterior consistency 稳定改善 restoration，但本身不保证 semantic consistency。
+- `ANALYSIS-PC-003` 在再次全新的 256 图×5 SNR 上加入冻结 receiver-only AlexNet agreement fallback；coverage `87.66%`，final 仍保留 PSNR `+0.2062 dB`、LPIPS `-0.00910`。
+- PC-003 将 uncontrolled posterior majority new error `4→1`，但 raw 为 `0`，ResNet18/MobileNetV3-Small new error 仍增加，故不晋级安全 M3。单语义模型 fallback 的跨模型瓶颈被独立确认。
+- 阶段成果：diffusion 不退出；其可复现价值已收紧为 received-latent posterior restoration。下一步必须用分离的 controller-development 与 holdout semantic audit，或监督 COCO object/Imagenette 口径，不能继续在 PC-002/003 调 correction 参数。
+- 验证：46 项标准库 `unittest` 全通过；PC-002/003 dry-run、`py_compile`、`git diff --check` 通过。无下载、未访问 Imagenette official validation。
+
+### 2026-07-13：posterior-consistency 记录编号收敛
+
+- 将此前误写成新阶段的 `S15/S16/S17` 统一更名为同一阶段5 validation study 下的 `PC-001/002/003`。
+- canonical config/entry 改为 `configs/pc*.yaml` 与 `scripts/pc_*.py`；旧 `outputs/analysis/s15*--s17*` 仅作为不可覆盖的 legacy artifact path 保留。
+- 后续 posterior-consistency 工作继续使用 `ANALYSIS-PC-*`，不再增加阶段号；只有 `MILESTONES.md` 定义的真实阶段迁移才使用新的 S 编号。
+
+### 2026-07-13：PC-CTRL holdout audit 否定 classifier-consensus 堆叠
+
+- 在新 256 图×5 SNR 上冻结 AlexNet+ResNet18 consensus controller，MobileNetV3-Small 完全不参与决策或调参。
+- posterior restoration 再次稳定复现：PSNR `+0.2119 dB`、LPIPS `-0.01061`、latent loss `0.10458→0.08347`。
+- controlled final coverage `78.05%`，相对 S14 raw 仍保留 PSNR `+0.1927 dB`、LPIPS `-0.00791`；三模型 majority new error 为 0。
+- 但 held-out MobileNet new error `12→34`，故完整判定 NEGATIVE。controller 内两模型的 new error 为 0 是规则构造结果，不能作为跨模型安全证据。
+- 停止继续增加 classifier-consensus 规则。下一步转向独立 supervision/calibration 的 risk model，或使用 COCO object / Imagenette 监督语义口径；posterior correction 强度继续冻结。
+- 报告：`reports/posterior_consensus_controller_holdout_result_2026-07-13.md`。
+
+### 2026-07-13：PC 独立标注与真实类别监督审计
+
+- PC-GT 在新 512 图×5 SNR 上引入 COCO dominant-object 标注和独立本地 OpenCLIP。195 张 clean-correct 图中，final failure `36→32`，但 object new error `2→4`，严格 gate 失败；确认 semantic risk 不是 ImageNet pseudo-label 模型间分歧。
+- PC-SUP 使用既有 Imagenette policy-dev、真实 WNID 和 scratch calibrated `T_cls`；1894 图中 1697 张进入 clean-correct，official validation 保持封存。
+- supervised primary `[1,4,7] dB`：raw/posterior/final failure `69/56/62`，new error `4/4/4`；final 相对 raw mean PSNR `+0.2543 dB`、LPIPS `-0.00531`。
+- aggregate new error 不增且 failure 净改善，但 7 dB 出现 final/raw new error `1/0`，逐 SNR gate 失败。因此结果是明确的 supervised partial success，不晋级 final-safe M3、不解封 official val。
+- 方法决策收敛：保留 frozen posterior restoration，终止 classifier-consensus 规则扩张；下一步只能在独立 development supervision 上训练/校准 risk controller，并保留未使用的审计集。
+- 报告：`reports/posterior_coco_object_clip_audit_result_2026-07-13.md`、`reports/posterior_imagenette_supervised_audit_result_2026-07-13.md`。
+
+### 2026-07-13：task-matched scratch gate 明显改善，但严格 tail gate 未过
+
+- 完成 `ANALYSIS-PC-RISK-001`：仅把 PC-SUP 的 ImageNet consensus controller 换成 2026-07-10 已冻结的 scratch MobileNetV3-Small `G_gate`；scratch ResNet18 `T_cls` 继续只作独立 outcome audit，official validation 未访问。
+- checkpoint loader 现在 fail-closed 校验 scratch/random-init、角色、架构、质量门槛、`cls_train/cls_cal`、policy-dev separation、official-val lock 和类别顺序；旧 ImageNet consensus 路径保持兼容。
+- 与 PC-SUP 的 9470 行 raw/posterior 配对字段逐值比较为 0 mismatch。scratch gate 在 clean rows 上接受 `8428/8485`（`99.33%`），final mean PSNR/LPIPS 相对 S14 raw 为 `+0.26394 dB/-0.005966`。
+- primary `[1,4,7] dB` failure 为 raw/posterior/final `69/56/57`，优于旧 consensus final 的 `62`；new error 为 `4/4/3`，优于旧 final 的 `4`。
+- 严格总判定仍为 NEGATIVE：7 dB final/raw new error `1/0`，唯一 per-SNR gate 失败。该行 `G_gate` 对 anchor/posterior 预测相同，证明简单 task-matched top-1 agreement 仍覆盖不到 evaluator-disagreement tail。
+- 阶段成果：frozen posterior-consistent diffusion + scratch gate 已成为当前最强 supervised development candidate；停止在已查看的 policy-dev 上扫 top-1/threshold。下一步必须先冻结真正独立的 controller-development/final-audit protocol，再讨论 official validation；当前结果不称为 semantic-safe。
+- 验证：46 项 `unittest`、`py_compile`、dry-run、checkpoint contract load 和逐行配对检查通过；未下载、未联网。
+- 报告：`reports/posterior_imagenette_scratch_gate_result_2026-07-13.md`。
+
+### 2026-07-13：multi-seed 复现确认 restoration 稳定、tail risk 真实存在
+
+- 完成 `ANALYSIS-PC-RISK-REP-001`：冻结 PC-RISK-001 的所有模型、三步 posterior correction、`0.001` step 和 scratch `G_gate`，只换三个全新 AWGN seeds `[20260722,20260723,20260724]`；共 `28,410` 唯一行，official validation 未访问。
+- 15/15 seed×SNR received-latent consistency 下降；mean final-minus-raw PSNR/LPIPS `+0.26334 dB/-0.005937`，每个 seed 质量/感知均同向。
+- primary failure raw/posterior/final `196/164/163`；三个 seed 分别 `63→56`、`67→53`、`66→54`。posterior diffusion 的净监督收益不是单 seed 偶然。
+- primary new-error rows `13/15/14`，raw/final image clusters `10/11`。final `11/1691=0.6505%` 的单侧 95% Clopper-Pearson upper `1.0744% > 0.5%`。
+- 1 dB new error `8→10`，seed 20260722 `5→7`；旧 event `n03425413/n03425413_3069.JPEG` 在新 seed 再现。四个 new-error/tail gates 失败，完整 verdict NEGATIVE。
+- 阶段判断进一步收敛：保留 received-latent posterior diffusion 作为稳定 restoration mechanism；淘汰 scratch top-1 agreement 作为足够的最终风险控制。不得换 seed、按净 repair 抵消 new error、或继续在 policy-dev 扫 threshold。
+- official validation 继续封存。下一控制器必须把这些多 seed 结果显式标为 development data，并在未使用的图像 population 上一次性审计。
+- 验证：46 项 `unittest`、新旧 config dry-run、`py_compile`、`git diff --check`、28,410 row/key/clean-membership/artifact hash 检查通过；未联网、未下载。
+- 报告：`reports/posterior_imagenette_scratch_gate_multiseed_result_2026-07-13.md`。
+
+### 2026-07-14：连续 receiver-risk controller 完成开发闭环，但新 seed 审计失败
+
+- 完成 `TRAIN-PC-AUX-001`：scratch EfficientNet-B0 `G_aux` 只用 `cls_train/cls_cal` 训练、选点与校准；best epoch 64，cal macro top-1 `0.90270`，checkpoint SHA-256 `8e074be6ec854edbc144d95d9fe5cd7d098c61bca853915108952acfa094b455`；policy-dev 未参与训练选择，official val 未访问。
+- 完成 `ANALYSIS-PC-RISK-FEAT-001`：在已暴露三 seed policy-dev 上生成 `28,410` 行、43 维 `receiver_risk_v1`；仅含 SNR、latent consistency、图像扰动、`G_gate/G_aux` confidence/entropy/margin/JS/retention/agreement。`teacher_*` 标签物理分列且禁止进入 controller；与 PC-RISK-REP 的普通审计字段在 `1e-9` 内逐行复现。
+- 完成 `ANALYSIS-PC-RISK-CTRL-DEV-001`：冻结四个 JS percentile + 两个 sign-reversed posterior-confidence percentile 的算术均值，阈值 `0.85372653`。开发结果 new-error `15→3`、cluster upper `0.4579%`，final failure `180<raw 196`，PSNR/LPIPS `+0.23834/-0.004799`，保留 posterior PSNR gain `89.83%`；只记为 development pass。
+- 在任何 seed-20260725 行生成前冻结 extraction config SHA、controller/CDF SHA、阈值和成功判据；新 seed 共 `9,470` 行，键唯一、score finite、official val 未访问。
+- `ANALYSIS-PC-RISK-SEED-AUDIT-001` 正式结果 NEGATIVE：posterior 仍稳定改善质量 `+0.26535 dB/-0.006064 LPIPS` 且 primary failure `50→45`；冻结 risk final 保留 `+0.23827/-0.004800`，但两个 1 dB posterior new-error 均未拦截，并误拒 11 个 posterior repair，final failure `56>raw 50`、new-error `2>raw 0`。
+- 失败不是轻微阈值偏差：其中一例 `G_gate/G_aux` posterior confidence 为 `0.973/0.963`、JS 接近 0；事后若要靠同一分数拦住两例，需要拒绝约 `38.3%` 参考行。确认纯 receiver ensemble uncertainty 存在高置信共享盲点。
+- 决策：保留 posterior-consistent diffusion restoration，淘汰本连续 receiver-risk controller 的晋级资格；不换 seed、不补阈值、不继续堆接收端分类器。下一方法应使用任务相关、可纠错、严格计码率的 sender semantic checksum/token，并在新的 labeled development population 上训练/校准；现有 random sketch 只能复用通信框架，不能直接当充分语义证据。
+- 报告：`reports/posterior_receiver_risk_controller_stage_result_2026-07-14.md`。验证：51 项 unittest、py_compile、dry-run、row/key/finite/hash 与 `git diff --check`；无联网/下载，official validation 继续封存。
+
+### 2026-07-14：固定码率 sender semantic channel 做通，单模型 semantic veto 新 seed 仍失败
+
+- `ANALYSIS-PC-RISK-FAIL-001` 精确重放 seed `20260725` 的 2 个 receiver-risk 漏检和 11 个误拒 repair：`G_gate/G_aux` top-1 checksum 均抓不到两个漏检，但 `G_aux` full-probability JS/CE 增量在该 2-vs-11 事后集合上的 pairwise AUC 为 1.0，促成 source-grounded sender score 开发。
+- `ANALYSIS-PC-SENDER-DEV-001` 先验证额外 80-bit 无噪声 source probability 的自然零阈值 veto：primary failure `50→45`、new-error `0→0`（相对旧 unpunctured raw），mean final-minus-raw `+0.19569 dB/-0.004130 LPIPS`。它只证明可达性，不具 matched-rate 资格。
+- 新增固定率链：在原 `c=8` 的 65,536 个实符号中保留 160 个，sender payload 与图像 latent 共同经过一次 AWGN；receiver 恢复后擦除载荷位置，posterior consistency 只使用剩余 65,376 个位置。总 CBR 仍为 `1/6`，payload 占 `0.24414%`。
+- 模拟 10D probability×R16 的 `ANALYSIS-PC-SENDER-RATE-DEV-001` 正式 verdict `NEGATIVE`：top-1 恢复 `99.84%`、质量 `+0.03890 dB/-0.003242 LPIPS`、primary failure `50→49`，但 1 dB final/raw new-error `2>1`。完美载荷反事实显示实际/完美决策有 `40.50%` 翻转，说明连续概率 top-1 正确不等于零阈值差分稳定。
+- 固定 `UInt4+BPSK×4`（40 bits/160 symbols）后，开发 seed 的 BER `0.01452%`、整向量无误率 `99.43%`、决策翻转 `0.0739%`；primary reference-raw / final failure `50/45`，in-budget raw/final new-error `4/2`，mean quality `+0.02665 dB/-0.003165 LPIPS`，全部开发门槛通过。
+- 方法原样冻结到新 channel seed `20260726` 后，编码与质量继续迁移：BER `0.01716%`、整向量无误率 `99.32%`、quality `+0.02643 dB/-0.003182 LPIPS`、reference-raw/final failure `58/55`。但 in-budget raw/final new-error `3→5`，总量与逐 SNR gate 失败，正式 verdict `NEGATIVE`；5 行 payload 全部正确，完美载荷反事实仍为 5，确认瓶颈已从通信层收敛到单一 `G_aux`/JS 语义盲区。
+- 决策：保留 posterior-consistent diffusion 和 `UInt4+BPSK×4` matched-rate communication layer；淘汰单一 `G_aux` zero-veto 的最终 M3 资格。不得在 seed `20260726` 调 threshold/bit-width/repetitions。下一候选若继续，应只改 semantic decision layer，例如 source-JS 与独立 `G_gate` top-1 的自然交集，并把 seed 20260726 降格为 development，再用全新 seed 审计。
+- 完整中文报告：`reports/posterior_sender_inbudget_semantic_payload_stage_result_2026-07-14.md`。无联网/下载，official validation 继续封存。
+- 验证：58 项标准库 `unittest`、关键脚本 `py_compile`、三份 strict-rate config dry-run、reference SHA/键完整性和 `git diff --check` 全部通过。
+- M2 对比口径复核：当前 UInt4+BPSK×4 M3 相对完整 `c=8` S14 raw（正式 M2）在 seed `20260725/20260726` 的五 SNR 平均 PSNR 分别 `+0.02665/+0.02643 dB`、LPIPS `-0.003165/-0.003182`，primary final failure `50→45/58→55`；但 new-error 为 `0→2/5→5`，且新 seed 的 4 dB failure/new-error `18→19/2→3`。因此只能表述为 aggregate tradeoff 优于或接近 M2，尚不能声明跨 seed、逐 SNR、语义尾部全面强于 M2。
+
+### 2026-07-14：与外部 diffusion / generative JSCC 方法的定位复核（历史状态；已被 S20/S30 更新）
+
+- 当时复核 SGD-JSCC、DiffJSCC、SING、DiT-JSCC、TOAST 与 JSCGC 后，项目尚未在本仓库复现任一外部方法，因此不能声明领先；该句只记录 7 月 14 日的决策背景。后续 S20 已完成 SGD-JSCC、S30 已完成 DiffJSCC 官方权重对比，当前结论以文档顶部 S30 为准。
+- 当前可成立的差异化不在“更强生成器”，而在更严格的 reliability protocol：语义载荷计入固定总 CBR 并真实过同一 AWGN；显式统计 refinement-induced hard new error、逐 SNR failure、图像簇尾部置信上界与冻结 seed 负结果；这比只报告 PSNR/LPIPS/FID/CLIP 或分类均值更直接回答 semantic drift 风险，但不能替代同条件性能比较。
+- 逐篇判断：SGD-JSCC/DiT-JSCC/TOAST 的语义引导、生成骨干或信道自适应更完整；DiffJSCC/SING 的感知生成或逆问题恢复能力更强；JSCGC 的理论刻画更完整。项目的潜在贡献应收紧为“matched-total-rate sender semantic checksum + received-latent posterior diffusion + refinement-induced semantic tail-risk audit”，而非泛称 channel-adaptive diffusion JSCC 或性能 SOTA。
+- 外部对比的最小下一步：先在相同 COCO256/Imagenette、AWGN、总 CBR、SNR、随机种子和统一 evaluator 下复现最接近的 SGD-JSCC 或 SING；联合报告 PSNR、LPIPS、FID/感知指标、监督任务正确率、failure/new-error、语义载荷开销与推理成本。在完成此前，不把跨论文不可比数值写成领先结论。
+
+### 2026-07-14：外部复现与主方法开发的次序决策
+
+- 不采用“等结果足够好后才开始对比”，也不立即铺开多篇完整复现；采用主线约 `80%`、外部基线约 `20%` 的非对称并行策略。理由是当前 `UInt4+BPSK×4` 固定总码率通信层已稳定，但 semantic decision layer 在冻结 seed 上尚未通过，过早围绕未冻结 M3 大规模适配外部代码会重复返工。
+- 现在只做低成本外部对比准备：冻结统一的 AWGN/总 CBR/SNR/evaluator/seed/指标合同，并在小 split 上接入一个最邻近方法。若没有作者代码，只能明确标成 `SING-style/DDNM-style` 或 `SGD-JSCC-style` mechanism baseline，不能写成论文的精确复现。
+- 完整外部复现的启动条件不是“结果看起来好”，而是 M3 接口冻结且至少在独立新 seed 上满足：aggregate 与逐 SNR new-error 不劣于 M2、final failure 低于 M2、仍保留非零且稳定的 LPIPS/质量收益。达到后优先做最接近贡献边界的 SGD-JSCC，再做逆问题路线 SING；DiT-JSCC 保持为 AWGN 最小闭环后的重型扩展，不提前改成新主线。
+- 在上述条件前，主开发只允许收敛 semantic decision layer，不再改变固定码率载荷和 posterior correction 主体；外部小基线用于校准效果量和暴露协议问题，不参与当前 M3 阈值选择。
+
+### 2026-07-14：cross-model triplet sender checksum 旧口径阶段结果（后续更正为 NEGATIVE）
+
+- 先验证 `G_aux source-JS ∩ G_gate(anchor/posterior) top-1`：在 seed `20260726` 额外 veto `0.623%` 行却没有减少 `5` 个 primary new-error，正式 development verdict 为 NEGATIVE；该负结果确认单纯 receiver guard 仍会与 sender model 共享盲点。
+- 从该失败的 source/anchor prediction mismatch 导出零额外码率的自然 triplet：`source-JS<=0`、`argmax(q_recovered)=argmax(G_gate(anchor))`、`argmax(G_gate(anchor))=argmax(G_gate(posterior))`。它只复用已有 40-bit `G_aux(source)` payload 与独立 receiver `G_gate`，不使用 `T_cls`、标签、阈值或 SNR 例外。
+- 两个已暴露 development seed 均通过：20260725 primary M2 failure/final `50→48`、raw/final new `4→1`；20260726 为 `58→55`、`3→0`。均保留约 `+0.011 dB/-0.00255 LPIPS`，coverage 约 45–46%。两者只能用于冻结规则。
+- 新 channel seed `20260727` 先生成 unpunctured reference，再仅写入 CSV SHA 后一次性 strict-rate audit。9470 行、1697 clean 图、五 SNR 的所有 gate 通过：M2 failure/final `61→60`，in-budget raw/final new `2→0`，new-error cluster `0/1690`、upper95 `0.1771%`，mean final-minus-M2 `+0.01158 dB/-0.002566 LPIPS`，payload BER `0.01610%`、40-bit vector exact `99.377%`、coverage `46.01%`。
+- **后续统计更正：**上一条的 `0/1690` 是 anchor/in-budget-raw-relative endpoint，不能替代相对 paired unpunctured M2 的系统 new error。正确系统端点为 new/repair clusters `7/8`、upper95 `0.7766%>0.5%`；1 dB M2/final failure `32→34`。因此原“全部 gate 通过/当前最强 M3”结论作废，严格 verdict 改为 NEGATIVE；official-val 协议在产生任何 outcome 前取消。
+- 阶段结论：该 UInt4 版本只证明固定码率 payload 与 diffusion quality tradeoff 可运行，不能证明 semantic-tail safe。后续以 UInt2、预留感知 B1 和严格 system endpoint 继续开发。
+- 完整中文报告：`reports/posterior_sender_crossmodel_triplet_stage_result_2026-07-14.md`；official Imagenette validation 仍未访问，无下载、无联网。
+### 2026-07-14：UInt2 预留感知链路取得稳定质量增益，但独立信道语义尾部仍未过门槛
+
+- sender payload 已从 UInt4 收缩为 UInt2：10 类×2 bit、BPSK×4，共 80 个实符号；总 65536 实符号和 CBR `1/6` 不变。旧 S13 B1 的 seed20260727 full policy-dev 结果相对 paired M2 为 PSNR `+0.071845 dB`（95% CI `[+0.066098,+0.077531]`）、LPIPS `-0.002577`，五 SNR PSNR 全正；但 system new/repair `7/8`、cluster upper95 `0.7766%`，严格 verdict NEGATIVE。
+- 新增 reservation-aware COCO cache（2000 train/200 val×5 SNR）与 B1 微调。新旧 B1 在完全相同 reserved inputs 的配对比较为 PSNR `+0.102782 dB`，image-cluster 95% CI `[+0.093375,+0.114000]`；5/5 SNR 均显著为正，LPIPS `-0.001682`，checkpoint SHA-256 `57aa5283...495`。
+- 新 B1 接回冻结 S14 diffusion/posterior 后，seed20260727 final−M2 PSNR/LPIPS `+0.073967/-0.002633`；但 M2 自身改善为 59 failures，旧二路 final 为 60，system new/repair `7/6`。7 个新增中 6 个是拒绝后退到错误 anchor，且 raw/posterior 都正确。
+- 冻结三路路由：accept→posterior；reject 且 recovered-source/anchor mismatch→raw；其余 reject→anchor。seed20260727 离线为 M2/final `59→56`、new/repair `2/5`、五 SNR PSNR 全正，但 failure CI 上界仍跨 0，只能作 development selection。
+- 在读取结果前预注册新 AWGN seed20260728；冻结规则的 paired M2/final failure `62→62`，system new/repair rows `4/4`，new-error cluster upper95 `0.5408%>0.5%`，且 1 dB `34→36`，故 verdict NEGATIVE。质量收益完整复现：PSNR `+0.065798 dB`（95% CI `[+0.060055,+0.071703]`），LPIPS `-0.002540`（95% CI `[-0.002805,-0.002286]`），五 SNR PSNR 均正。
+- 阶段判断：**保留 diffusion，冻结 UInt2/预留感知 B1/S14/三步 posterior 物理链；停止在 seed20260728 补布尔规则。** 下一开发对象必须是用 `cls_train/cls_cal` 分离监督训练的 anchor/raw/posterior 三路 semantic decision layer，并换 image population 一次性审计；official val 继续封存。
+- 完整中文报告：`reports/uint2_reservation_aware_diffusion_stage_result_2026-07-14.md`。本轮无联网/下载，大任务清空 proxy；`py_compile` 通过，标准库全套 76 项 `unittest` 全部通过。
+
+### 2026-07-14：外部方法对比正式排期，完成 SGD-JSCC 源码与公平性审计
+
+- 冻结外部对比顺序：SGD-JSCC 作者代码 → SING-Zero-style 同底座机制对照 → DiffJSCC 作者代码 → DiT-JSCC watch-only；不再等本方法“看起来足够好”才开始，也不同时铺开多套大型生成系统。
+- 清空全部代理变量后浅克隆作者 `MauroZMJ/SGDJSCC`，固定 commit `2188acc0dd2805355d3d0d2e478cbc27b46b4da5`；源码约 4.1 MiB 落盘，仓库未发现 LICENSE/COPYING，保持只读并只从本项目侧接 adapter。
+- 作者 checkpoint bundle 约 2.931 GB，推理还依赖 BLIP2/CLIP；本轮未下载任何权重。README 的 batch preprocessing 与 training guideline 仍未发布，配置含作者绝对路径。
+- 源码核验确认公平性阻塞：main latent、独立 edge-JSCC 支路和假设完美/免费传输的 text caption 必须统一计入总符号账本；在 exact active symbols 和 text payload 未闭合前，作者原生结果不得直接与本项目 CBR `1/6` 排名。
+- 新增 `configs/external_baseline_comparison_contract.yaml`：分离 author-native/common-contract 两张表，固定 COCO-256、AWGN、SNR `[1,4,7,13,19]`、65,536 总实符号、同图同噪声以及 PSNR/LPIPS + supervised failure/new-error/tail-risk + runtime/VRAM 指标。
+- 新增 fail-closed checker 和 4 项单测；no-download dry-run `PASS`，确认 SGD commit 匹配、checkpoint 目录为空、official Imagenette validation 未访问、结果声明仍禁止。
+- 详细中文报告：`reports/external_method_comparison_schedule_2026-07-14.md`。本轮是协议/源码审计，不是实验，因此未写 `EXPERIMENTS.md`；下一里程碑为 EXT1 no-download adapter 与 symbol counter。
+
+### 2026-07-14：SGD-JSCC 作者完整链单图 smoke 跑通，并闭合实测 rate hooks
+
+- 清空全部代理变量后完成外部资产直连下载和校验：作者 4 checkpoints `2,930,865,634` bytes；BLIP2 仅取两个 safetensors 分片 `15,496,030,352` bytes；OpenAI CLIP ViT-L/14 `932,768,134` bytes；scheduler 固定 SD-v1-4 commit。所有 checkpoint/BLIP2/CLIP 精确尺寸与 SHA-256 匹配。
+- 新增隔离 `.venv-sgdjscc` 运行协议与 `requirements-sgdjscc.txt`；PyTorch 2.1/cu121、xFormers 0.0.22.post7 在 RTX 4090 D 上实际 kernel 通过，`pip check` 无冲突。MuGE 用 `encoder_weights=None` 构造后 strict-load 完整发布权重，避免作者代码先下载后被全覆盖的 EfficientNet-B7 初始化。
+- 新增项目侧只读 adapter/config/tests：冻结源码 commit、输入、AWGN 1 dB/seed 2025、作者 50-step continuous diffusion 参数、资产 hash、不可覆盖输出和 author-native 禁止 outcome/direct-ranking 边界；BLIP2 caption 后立即释放以控制显存。
+- `SMOKE-EXT-SGDJSCC-001` 第一次真实 run 即 PASS：输出 `[1,3,128,128]`、finite，smoke-only PSNR `25.055894 dB`，模型加载加单图前向 `12.6837 s`，peak allocated VRAM `7234.28 MiB`，无 `failure.json`。
+- 实测 main latent `4096` real symbols；edge channel 输入 dense `16384`、nonzero-active `832`；active interpretation 的 main+edge CBR 为 `0.1002604`，literal dense-tensor interpretation 为 `0.4166667`。caption 为 488 UTF-8 bits，但作者协议无 text channel-symbol mapping，所以 common-contract 直接排名继续 fail-closed。
+- 当前阶段只证明外部作者方法在本仓库可运行、可计量，不证明它或本方法更强；下一步用同图/同 AWGN realization/同 `[1,4,7,13,19]` 和总 65,536 real symbols 构建 SGD-JSCC common-contract 小 split，并显式闭合 caption/edge 物理码率，再推进 SING-Zero-style。
+- 验证：标准库全套 84 项测试通过；adapter pytest 4 项、`py_compile`、`pip check`、tracked-source clean 与离线 scheduler 均通过。详细中文报告：`reports/sgdjscc_author_native_smoke_stage_result_2026-07-14.md`。
+
+### 2026-07-15：SGD-JSCC 共同协议单图闭环，rate gate 通过并暴露 patch 语义风险
+
+- 新增 `configs/external_sgdjscc_common_smoke.yaml`、`scripts/external_sgdjscc_common_smoke.py` 和 8 项 fail-closed 单测；作者第三方文件未改，author-native 与 common-adapter 标签严格分离。
+- 256×256 输入按作者 `split_image_v2` 无重叠切为四块。实测四块 main/active-edge 为 `16,384/3,328` 实坐标；每块 caption 固定为 536-bit UTF-8+CRC16 packet，经 BPSK×21 占 `11,256` 实坐标，四块文本共 `45,024`；另计 `800` 无信息 padding，总数精确 `65,536` 实坐标=`32,768` 复使用，CBR `1/6`。
+- 冻结 channel seed `20260729` 的 65,536 维 canonical AWGN 向量按 main→edge→text→padding 切片，SHA-256 `f8edbfe0...f416`。四个 caption 在 1 dB 下共有 `5,981/45,024=13.2840%` raw hard-symbol errors，但 R21 后 `0/2,144` packet bit errors、CRC `4/4` 通过。
+- `SMOKE-EXT-SGDJSCC-COMMON-001` 第一次真实 run PASS：输出 finite `[1,3,256,256]`，smoke-only PSNR `24.785109 dB`，耗时 `13.1588 s`，peak allocated VRAM `7364.35 MiB`。所有模型/asset hash 复核通过，全程 offline、清空代理、official validation 未访问。
+- 肉眼检查发现明确需要后续统计的风险：横纵 patch seam 可见，右边缘出现疑似由 patch caption 驱动的放大白衣人物，而原图相应区域无同尺度目标。单图只记作 hallucination/semantic-drift suspect，不包装成定量 new error。
+- 术语更正：旧 native JSON 的 `main_real_cbr=0.08333` 是 real-coordinate/source-dimension ratio；按项目复信道口径 main complex-use CBR 为 `1/24`，main+active-edge 为 `0.0501302`。旧输出不覆盖，脚本和报告现同时列两种口径。
+- 阶段判断：SGD-JSCC common-adapter 的 rate gate 已通过，但效果/semantic gate 仍未开始，禁止直接优劣结论。按冻结排期下一项为 SING-Zero-style 同底座机制协议，之后统一做 64 图×3 seed 外部 stage。
+- 验证：全仓 94 项 `unittest` 通过，external contract checker、common dry-run、`py_compile`、asset hash、tracked-source clean 均通过。
+- 详细中文报告：`reports/sgdjscc_common_contract_smoke_stage_result_2026-07-15.md`。
+
+### 2026-07-15：外部共同协议 8×5 pilot 完成，当前 M3 获得方向性优势
+
+- 先纠正 SGD 单图 common smoke 的 AWGN 口径：旧 `24.785109 dB` 使用作者每实坐标 `P/SNR`，比项目复信道 `P/(2×SNR)` 严苛 3 dB，只保留作接入证据；新复信道 smoke 为 `26.128782 dB`。
+- 新增 `ANALYSIS-EXT-COMMON-PILOT-001`：从 frozen Imagenette policy-dev clean membership 按预注册 SHA 规则选 8 图，固定 SNR `[1,4,7,13,19]`、base seed `20260729`、每图/SNR 65,536 维 canonical CPU noise 和 CBR `1/6`；official val 未访问。
+- 当前 M3、SGD-JSCC common adapter、SING-Zero-style 各完成 `40/40` rows。聚合器验证全部 120 行的 sample/SNR key、noise SHA、DeepJSCC reference、复 AWGN 方差口径与 rate 完全一致。
+- DeepJSCC/当前 M3/SGD/SING-style 的 aggregate PSNR 为 `31.7438/33.0594/26.8882/24.6593 dB`，LPIPS 为 `0.07861/0.03532/0.07763/0.31725`。当前 M3 相对 SGD 配对为 `+6.1712 dB/-0.04231 LPIPS`，PSNR `40/40`、LPIPS `39/40` 行更优。
+- 当前 M3 与 SGD 均为 `0` final failure/new error；SING-style 在 1 dB 有 `1` 个相对 DeepJSCC new error。该 SING 对照只做 final-only 2×2 mean-pool range/null projection，不是论文逐步 DDNM 复现，负结果不得外推到 SING 论文。
+- SGD 的 `160/160` caption packets CRC 全通过，但 sender BLIP2 已在 patch level 把 dog 写成 cat、chainsaw 图写成 snowy-road driver 等；确认 packet reliability 与 semantic reliability 必须分列。视觉上作者四 patch 路径仍有 seam。
+- SGD 批跑有两次 pre-inference scheduler-cache 失败，失败目录和 `failure.json` 均保留；把 `HF_HOME`/offline flags 移到所有 transitive hub import 前后，第三次完整 PASS。全程本地离线，无新增下载。
+- 阶段判断：当前 M3 在共同协议小 pilot 获得可信方向性正信号，diffusion 不退出；但 8 张已暴露 development 图不能授权论文级领先或 semantic-tail safe。下一外部阶段应预注册 64 图×3 channel seeds，并把 SING 升级为逐步 DDNM-style 后再谈方法级比较。
+- 中文报告：`reports/external_common_comparison_pilot_stage_result_2026-07-15.md`。验证：全仓 `99/99` unittest、三个 runner dry-run/real-run、120-row aggregate gate 与 `py_compile` 通过。
+
+### 2026-07-15：补齐 SGD-JSCC 作者/项目双工作点，确认 diffusion 继续保留
+
+- 全文复核确认 SGD-JSCC 所有实验标称 CBR `1/20`，发布路径 main+active-edge 实测 `19,712 real = CBR 0.0501302`；论文明确忽略文本成本并假设无误传输。因此作者工作点结果严格标为“免费/无误文本论文协议上界”，不再与物理 common-contract 混写。
+- 新增精确低码率 DeepJSCC：c3 的 24,576 维 latent 固定发送 19,712 个活动坐标，按活动功率归一化和 `P/(2×SNR)` 训练。首轮 AMP 在 epoch1/batch213 非有限失败并保留；FP32 稳定化后继续完整 COCO 12 epoch，COCO-512 达到 `26.6981 dB/0.77855 SSIM`。
+- `ANALYSIS-EXT-AUTHOR-RATE-PILOT-002` 验证同 key、同 19,712-D noise SHA。低码率 DeepJSCC/SGD 上界为 PSNR `25.9260/26.8389`、LPIPS `0.28716/0.07856`、failure `3/0`；SGD 配对 `+0.91283 dB`，PSNR 31/40、LPIPS 40/40 行更优，并修复全部 3 个低码率 failure。
+- `ANALYSIS-EXT-SGD-REALLOC-PILOT-001` 在项目 CBR `1/6` 冻结 main-R2/edge-R1/text-R13/pad 分配。SGD 从 `26.8882→27.3933 dB`、LPIPS `0.07763→0.07246`，PSNR 40/40 改善，160/160 caption CRC 通过；证明旧差距部分来自预算分配。
+- 当前 M3 相对重分配 SGD 仍为 `+5.6661 dB/-0.03714 LPIPS`，40/40 PSNR、38/40 LPIPS 更优，双方 0 hard failure；只记为 8 图方向性 pilot，禁止论文级领先。
+- 决策：**不放弃 diffusion。** 下一方法阶段应以 19,712-real DeepJSCC 重新生成 cache 并训练低码率 B1/diffusion/posterior，只在活动坐标做 measurement consistency；随后用 64 图×3 seeds 做严格 semantic-tail 外部审计。现有 c8 M3 权重不得直接冒充低码率 M3。
+- 新增双工作点配置、exact-rate/repetition adapter、训练/评估/聚合脚本和 3 项单测；99/99 unittest、3/3 pytest、`py_compile`、`git diff --check` 通过。无新增下载，official val 未访问。中文报告：`reports/external_two_working_point_alignment_stage_result_2026-07-15.md`。
+### 2026-07-15：精确低码率 M3 最小闭环取得阶段成果
+
+- 新建 exact-rate COCO cache：`19712` 总实坐标中严格保留 `80` 个 UInt2+BPSK×4 语义载荷坐标、`19632` 个图像坐标；10000/1000×5 SNR 共 55000 行，manifest SHA 仍为 `93ae3f3b...2de9`。B0 的 11000 图均值为 `24.1888/25.5855/26.4744/27.2784/27.5063 dB`。
+- `EXP-S16-B1-001` 在低码率缓存上从头训练 B1：1000 图×5 SNR 的 PSNR 全正，平均 `+1.03815 dB`；LPIPS 全负，平均 `-0.11412`。best SHA `7a295976...615a`。旧 B0-top1 一致性路由会误拒大量真实修复，低码率下不再把 B0 当最终裁判。
+- `EXP-S16-DIFF-001` 重新训练短链 diffusion 后为明确负结果：五档 PSNR/LPIPS 全部恶化，raw new/repair `318/139`，预注册检查只通过 sampling-step；best SHA `44915d7e...8a`。负结果完整保留，禁止包装为 diffusion 成功。
+- `ANALYSIS-S16-LOWRATE-M3-STAGE-001` 完成严格 8×5 链：payload BER 0；B1 把 strict B0 的 `25.8765/0.28872 LPIPS/3 failures` 改为 `26.8461/0.17140/0`。posterior consistency `0.13253→0.11138` 且 40/40 行下降，但原全 SNR 路由 final 比 B1 `-0.2027 dB/+0.00250 LPIPS`，完整判定失败。
+- 在任何新输出前冻结 `SNR<19→B1、SNR=19→语义门控 posterior`，用哈希排名第 9–16 的独立 8 图和新 seed20260731 做 `ANALYSIS-S16-LOWRATE-M3-TAIL-HOLDOUT-001`。7 项预注册检查全过：B1 相对 B0 `+1.0273 dB/-0.10969 LPIPS`、failure `3→0`；final 相对 B1 全五档 `-0.00990 dB/-0.000389 LPIPS`、failure/new `0/0`；19 dB 单档 `-0.0495 dB/-0.001945 LPIPS`。
+- 阶段结论：不放弃 diffusion，但将当前可复现价值收紧为 **高 SNR posterior-constrained perceptual tail**；低中 SNR 主力冻结为 B1。第一组相同 8×5 上 B1 PSNR `26.8461` 与 SGD 免费 caption 上界 `26.8389` 基本持平，但 LPIPS `0.1714` 明显不如 SGD `0.07856`，不能声明超过论文。
+- 完整中文报告：`reports/lowrate_m3_stage_result_2026-07-15.md`。全程本地离线、未下载、未访问 official val。
+- 验证：102/102 项标准库 `unittest`、关键脚本 `py_compile`、两份 40-row exact-rate/consistency 完整性检查和 `git diff --check` 通过。当前系统 Python 未安装 `pytest` 模块；`pip check` 仅报告既有环境的 `pynacl 1.5.0` 缺少 `cffi`，本轮未联网修改环境。
+
+### 2026-07-15：完成 SGD-JSCC step matching 机制的项目级复核
+
+- 作者代码确认：归一化 AWGN 潜变量使用 `signal_scale=gamma/(gamma+1)`，离散模式取 scheduler `alphas_cumprod` 的最近时刻，并以接收潜变量作为该时刻的反向起点；text 与 edge/ControlNet 分别约束全局语义与空间结构。
+- 修正“严格对应”的表述：该结论在归一化 AWGN 与方差口径一致时是 forward marginal 同形；作者实现还有逐样本 L2 球面归一化和离散最近 step，不是对单条已实现 Markov 轨迹的唯一精确识别。
+- 发现与当前负结果直接相关的架构差异：SGD-JSCC 发送的就是 diffusion/VAE latent，而 `EXP-S16-DIFF-001` 是 B1 后的 image-space residual bridge，没有 channel-state/scheduler-state 对齐。因此当前负结果不应外推为 diffusion 上限低。
+- 项目复 AWGN 使用每实坐标 `P/(2*gamma)` 方差，若训练实值 latent diffusion，匹配量应为 `alpha_bar_channel=2*gamma/(2*gamma+1)`，不能直接抄作者口径。
+- 下一 diffusion 候选方向收紧为 **exact-rate channel-state-matched latent diffusion + 逐步 active-coordinate measurement consistency + 预算内语义条件/风险控制**。本轮只做机制与公式复核，未更改主线、未运行新实验、未联网或下载；详细记录已补入 `LITERATURE.md`。
+
+### 2026-07-15：channel-state-matched latent diffusion 取得机制级阶段成果
+
+- 在任何训练输出前冻结 `EXP-S17-LATDIFF-001`：exact-rate `19,712 real` 中只对 `19,632` 个图像活动坐标训练 masked epsilon predictor，项目 `P/(2×SNR)` 口径使用 `alpha=2*gamma/(2*gamma+1)`；selection/holdout 各 256 图且严格不重叠。
+- 原 AMP 运行在 epoch0/batch13 出现 non-finite loss，未产生 selection 输出，失败目录保留；只把 AMP 改为 FP32 的 `EXP-S17-LATDIFF-002` 完整训练，最佳 epoch5 checkpoint SHA `cfc52716...b4e1`，selection matched−B0 PSNR `+0.151483 dB`。
+- 一次性 256图×5SNR holdout 上，matched DDIM 相对 B0 为 PSNR `+0.148715 dB`（image-cluster 95% CI `[+0.129607,+0.168857]`）、LPIPS `-0.035305`（`[-0.038907,-0.031814]`）；活动 latent MSE `0.145516→0.060453`，五档均改善。
+- Step matching 得到直接支持：matched 相对固定 7 dB step 错配为 `+0.233455 dB`（95% CI `[+0.220234,+0.246661]`）；scalar LMMSE 仅 `+0.001526 dB` 且 LPIPS 恶化，不能解释 learned prior 的收益。
+- 收益明显集中在低 SNR：1/4/7/13/19 dB 的 matched−B0 PSNR 为 `+0.61495/+0.19950/+0.01033/-0.05408/-0.02712 dB`。13/19 dB 虽 latent MSE 改善但图像 PSNR 下降，定位出 decoder-unaware latent loss 的瓶颈。
+- 当前冻结 B1 仍更强：`27.0162 dB/0.19090 LPIPS`，matched latent diffusion 为 `26.1319/0.27117`；直接串联旧 B1 反而比 B1 `-0.23127 dB`，确认输入分布偏移，不能包装成系统提升。
+- pseudo 语义诊断仍为净修复：AlexNet eligible rows 上 matched new/repair `26/83`，三分类器多数票 `7/38`；但 COCO pseudo label 不替代正式监督审计。
+- 预注册 8 项检查通过 6 项，正式 verdict 为 `NEGATIVE_OR_PARTIAL`。阶段结论是 **物理匹配 latent diffusion 机制成立、当前系统融合未成立**。中文报告：`reports/channel_matched_latent_diffusion_stage_result_2026-07-15.md`；全程本地离线，official Imagenette validation 未访问。
+- 验证：全仓 `108/108` 标准库 `unittest`、3 个新 Python 文件 `py_compile`、10,000-replicate image-cluster bootstrap、输入 CSV/checkpoint SHA 和 `git diff --check` 全部通过。
+
+### 2026-07-15：decoder-aware latent diffusion 获得同预算显著增益
+
+- 在新 selection/holdout 结果前预注册同 parent、同三轮预算的 control 与 decoder-aware 两分支；后者唯一增加 frozen DeepJSCC decoder 图像 MSE。纯训练 loss 尺度规则在 16 batches 上冻结 `lambda_img=20`，未读取 selection/holdout。
+- 旧 S17 已暴露 validation 0--511；本轮冻结 512--767 为 selection、768--999 为 232 图 fresh holdout。control/decoder 最佳 checkpoint SHA 分别为 `edbcbdbd...2b1f` 与 `5b708117...5d98f`。
+- fresh 232图×5SNR 上，decoder-aware 相对同预算 control 为 `+0.021605 dB` PSNR（image-cluster 95% CI `[+0.018883,+0.024640]`）、`-0.002502` LPIPS（`[-0.002824,-0.002203]`），活动 latent MSE 也下降 `-0.002324`；相对 parent PSNR 为 `+0.021006 dB`。
+- decoder-aware 相对 B0 整体为 `+0.174221 dB/-0.038540 LPIPS`，比上一版更强；但分 SNR PSNR 仍为 `+0.66845/+0.24078/+0.03716/-0.04771/-0.02758 dB`，只有 3/5 档为正。
+- pseudo 语义没有总体恶化：AlexNet control new/repair=`27/66`、decoder=`29/72`；三分类器多数票为 `5/21→5/31`。COCO pseudo audit 不替代监督安全审计。
+- naive decoder-aware DDIM→旧 B1 仍比 B1 `-0.198803 dB`，确认输入分布融合尚未解决。8 项预注册检查通过 7 项，verdict `NEGATIVE_OR_PARTIAL`：**decoder-aware objective 有真实小幅贡献，但还不是全 SNR/最终系统成功。**
+- 下一方法变量冻结为带 `g(alpha)→0` 高 SNR identity limit 的 SNR-conditioned correction envelope，不再扫描 image-loss 权重。现有 1000 validation 已全部暴露，下一正式阶段必须建立新的未使用 COCO selection/holdout manifest。
+- 中文报告：`reports/decoder_aware_latent_diffusion_stage_result_2026-07-15.md`；输出：`outputs/EXP-S17-LATDIFF-003-CONTROL/`、`outputs/EXP-S17-LATDIFF-004-DECODER/`、`outputs/analysis/ANALYSIS-S17-LATDIFF-HOLDOUT-003/`、`outputs/analysis/ANALYSIS-S17-LATDIFF-BOOTSTRAP-002/`。全程本地离线，official Imagenette validation 未访问。
+
+### 2026-07-15：SNR identity envelope 首次让 matched diffusion 全五档 PASS
+
+- 在任何新结果前预注册 frozen decoder-aware diffusion 的单调 correction envelope；网络、6-step DDIM、码率、AWGN 和 payload 全部冻结，只改变 `z=y+g(SNR)(z_diff-y)` 的强度控制。
+- 从 COCO train2017 剩余 107,287 图按 SHA rank 建立全新 256 selection + 256 holdout；与旧 11,000 图 source path/SHA overlap=`0/0`，manifest SHA `c467d2cc...a8bed`。
+- selection 比较 smooth `p={0.25,0.5,1,2}` 与 frozen hard identity。`p=0.5` mean PSNR更高但 13/19 dB 仍负；预注册可靠性优先级选出 `hard_identity_7db`，policy SHA `c31d6853...d05eb`：1/4/7 dB `g=1`，13/19 dB `g=0`。
+- 一次性 holdout 上 selected 相对 B0 为 `+0.189717 dB`（95% CI `[+0.170601,+0.210902]`）、LPIPS `-0.036284`；五档 PSNR delta=`+0.677172/+0.240940/+0.030472/0/0 dB`，低中 SNR 保留 full gain `99.999998%`。
+- selected 相对 full diffusion PSNR `+0.015642 dB`，95% CI `[+0.014230,+0.016915]`；代价是 LPIPS 相对 full 回吐 `+0.001005`，但仍显著优于 B0。该结果明确记录为 distortion/reliability 与 perception 的取舍，不声明全面支配。
+- pseudo semantic 也更保守：AlexNet full→selected new/repair=`17/81→16/71`，majority=`7/32→5/31`；13 dB full 的 majority `2 new/1 repair` 被恒等回退清零。COCO pseudo 指标仍不替代监督审计。
+- B1 仍比 selected 高 `+0.830617 dB`（95% CI `[+0.791172,+0.869723]`），所以整体最强 anchor 未变。本阶段成功的是 **diffusion 支路的全 SNR identity-safe strength control**，不是超过 B1。
+- 预注册 10/10 checks 全过，最终 verdict=`PASS`。下一步不再扫描 envelope；应训练接收 `B0 + identity-controlled diffusion decode` 的同容量融合器，并与只接收 B0 的同预算 B1 做因果对照。
+- 中文报告：`reports/snr_identity_envelope_stage_result_2026-07-15.md`；全程本地离线，未访问 official Imagenette validation。全仓 `112/112` unittest 通过。
