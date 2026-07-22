@@ -1,0 +1,168 @@
+phase: S19-diffusion-information-fusion
+experiment_id: EXP-S19-FUSION-001
+selection_analysis_id: ANALYSIS-S19-FUSION-SELECTION-001
+holdout_analysis_id: ANALYSIS-S19-FUSION-HOLDOUT-001
+bootstrap_analysis_id: ANALYSIS-S19-FUSION-BOOTSTRAP-001
+method: CapacityMatchedB0VersusIdentityDiffusionFusion
+dataset: COCO2017_train2017_fresh_train_selection_holdout
+image_size: 256
+seed: 20260742
+
+protocol:
+  status: models_frozen_before_holdout_output
+  preregistration: reports/diffusion_fusion_ablation_preregistration_2026-07-16.md
+  project_commit_at_registration: abf117bc9aa194cd0a4fa80bd63df6baae1f6d29
+  official_imagenette_accessed: false
+  old_11000_sources_excluded: true
+  s18_512_sources_excluded: true
+  train_selection_holdout_disjoint: true
+  same_architecture: true
+  same_initialization: true
+  same_batches_and_augmentations: true
+  holdout_sealed_until_both_checkpoints_frozen: true
+
+inputs:
+  source_root: data/coco/train2017
+  coco_val_exclusion_root: data/coco/val2017
+  exclusion_manifests:
+    - path: outputs/eval/s16_lowrate_m3_exact19712_uint2r4_coco10k_1k/source_manifest.csv
+      sha256: 93ae3f3b47420c6bf84e1b5dce29601db1490f5519bb99fe39dcdad6680e2de9
+    - path: outputs/eval/s18_fresh_coco_identity_envelope_population/source_manifest.csv
+      sha256: c467d2ccadd94242f51ff683f09d7b43d91a07d5edc538d06c06f2b6d93a8bed
+  population_root: outputs/eval/s19_fresh_coco_fusion_population
+  source_manifest: outputs/eval/s19_fresh_coco_fusion_population/source_manifest.csv
+  source_manifest_sha256: b73c05656865eb6023c40dd57dfde176d05141eaf9b996feff92a41894522fe9
+  cache_manifest: outputs/eval/s19_fresh_coco_fusion_population/cache_manifest.csv
+  cache_manifest_sha256: 8d88daf70a5ad07c213674f883c02d0a5f9b84ca082ff26727a5baead60775e3
+  deepjscc_checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/best.pt
+  deepjscc_checkpoint_sha256: bca5b67a3bca93f17d23688cc5ec2d30ffe8790191e07fbf41926649cf1bb606
+  forbidden_deepjscc_checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/latest.pt
+  latent_diffusion_checkpoint: outputs/EXP-S17-LATDIFF-004-DECODER/checkpoints/best.pt
+  latent_diffusion_checkpoint_sha256: 5b708117a5d25cad0a5909a24f85bb32d1b5dc11c83146ba8c98fad5ee35d98f
+  identity_policy: outputs/analysis/ANALYSIS-S18-IDENTITY-SELECTION-001/selected_policy.json
+  identity_policy_sha256: c31d68533bf4e470d585ff5d279e948a71dca3ead1964902647393b2f37d05eb
+  b1_config: configs/lowrate_m3_b1_anchor_train.yaml
+  b1_config_sha256: 5c40cacbb53a08ea6d4e67a37e63937f3132432f35d55bc82b759743cb2a23bb
+  b1_checkpoint: outputs/EXP-S16-B1-001/checkpoints/best.pt
+  b1_checkpoint_sha256: 7a295976105a9c43c25604c9070e676d25512c7a09b5c50655b6671477b7615a
+  control_checkpoint: outputs/EXP-S19-FUSION-001/checkpoints/control_best.pt
+  control_checkpoint_sha256: c9eab7648bd0120e5db2820b7a94edd13251ed8e1050cec6edb6f6187fbdbcf6
+  fusion_checkpoint: outputs/EXP-S19-FUSION-001/checkpoints/fusion_best.pt
+  fusion_checkpoint_sha256: e7577d59e9c2362e40feb72bb030c1c7b9302b707115d3e000c9c55bbb8942c5
+
+baseline:
+  repo: third_party/Deep-JSCC-PyTorch
+  commit: 2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06
+
+population:
+  rank_seed: 20260742
+  total_count: 5512
+  roles:
+    train: 5000
+    selection: 256
+    holdout: 256
+  transform: resize_shorter_side_256_then_center_crop_256_then_uint8_png
+  exclude_prior_path_and_sha256: true
+  exclude_coco_val2017_filename: true
+
+channel:
+  type: AWGN
+  snrs_db: [1, 4, 7, 13, 19]
+  noise_variance_factor_per_real: 0.5
+  role_base_seeds:
+    train: 20260743
+    selection: 20260744
+    holdout: 20260745
+
+rate:
+  inner_channel: 3
+  dense_real_symbols: 24576
+  active_real_symbols: 19712
+  payload_real_symbols: 80
+  image_active_real_symbols: 19632
+  complex_channel_uses: 9856
+  source_real_dimensions: 196608
+  exact_cbr: 0.050130208333333336
+  active_index_rule: evenly_spaced_floor_indices
+  payload_index_rule: evenly_spaced_within_active_indices
+
+model:
+  latent_channels: 6
+  latent_height: 64
+  latent_width: 64
+  base_channels: 48
+  num_blocks: 6
+  time_embedding_dim: 96
+  group_norm_groups: 8
+
+diffusion:
+  selected_policy_name: hard_identity_7db
+  full_through_snr_db: 7.0
+  identity_from_snr_db: 13.0
+  sampling_steps: 6
+  train_alpha_max: 0.999
+  sampler: deterministic_ddim
+  cache_diffusion_snrs_db: [1, 4, 7]
+  high_snr_auxiliary_is_exact_b0: true
+
+fusion_model:
+  name: dual_input_receiver_residual_cnn
+  input_order: [b0_rgb, auxiliary_rgb, snr_map, b0_sobel_magnitude, b0_laplacian_abs]
+  input_channels: 9
+  base_channels: 64
+  num_blocks: 6
+  snr_norm_max: 20.0
+  residual_gates: {"1": 0.12, "4": 0.10, "7": 0.08, "13": 0.05, "19": 0.04}
+  control_auxiliary: duplicate_b0
+  fusion_auxiliary: identity_controlled_diffusion
+  b1_expansion: copy_b1_nonauxiliary_weights_and_zero_initialize_auxiliary_head_slice
+
+training:
+  seed: 20260746
+  epochs: 10
+  batch_size: 16
+  num_workers: 8
+  crop_size: 128
+  random_flip: true
+  lr: 0.001
+  weight_decay: 0.0
+  grad_clip_norm: 1.0
+  mse_weight: 1.0
+  l1_weight: 0.10
+  selection_rule: independently_maximize_mean_psnr
+  selection_tie_break: earliest_epoch
+  include_epoch_zero: true
+  paired_batches: true
+
+evaluation:
+  batch_size: 16
+  num_workers: 8
+  metrics: [psnr, ms_ssim, lpips, alexnet_pseudo_drift, three_classifier_majority_pseudo_drift]
+  pseudo_original_confidence_min: 0.20
+  sample_grid_count: 8
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260747
+  bootstrap_unit: source_image_cluster_across_snrs
+
+classifiers:
+  alexnet: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  resnet18: outputs/cache/torch/hub/checkpoints/resnet18-f37072fd.pth
+  mobilenet_v3_small: outputs/cache/torch/hub/checkpoints/mobilenet_v3_small-047dcff4.pth
+  imagenet_mean: [0.485, 0.456, 0.406]
+  imagenet_std: [0.229, 0.224, 0.225]
+
+success_criteria:
+  primary_fusion_minus_control_psnr_ci_low_min_db: 0.0
+  fusion_minus_control_mean_lpips_max: 0.0
+  fusion_minus_control_nonnegative_snr_count_min: 4
+  fusion_minus_b1_mean_psnr_min_db: 0.0
+  fusion_alexnet_new_not_greater_than_repair: true
+  fusion_majority_new_not_greater_than_repair: true
+  fusion_majority_new_not_greater_than_control: true
+
+outputs:
+  population_dir: outputs/eval/s19_fresh_coco_fusion_population
+  training_dir: outputs/EXP-S19-FUSION-001
+  selection_dir: outputs/analysis/ANALYSIS-S19-FUSION-SELECTION-001
+  holdout_dir: outputs/analysis/ANALYSIS-S19-FUSION-HOLDOUT-001
+  bootstrap_dir: outputs/analysis/ANALYSIS-S19-FUSION-BOOTSTRAP-001

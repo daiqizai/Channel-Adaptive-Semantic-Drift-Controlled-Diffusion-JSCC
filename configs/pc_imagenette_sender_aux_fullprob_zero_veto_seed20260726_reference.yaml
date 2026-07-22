@@ -1,0 +1,40 @@
+phase: S5-validation
+study: posterior_consistency
+analysis_id: ANALYSIS-PC-SENDER-DIGITAL-SEED-AUDIT-REF-001
+status: frozen_new_seed_unpunctured_reference
+seed: 20260726
+channel_seeds: [20260726]
+snrs: [1, 4, 7, 13, 19]
+primary_snrs: [1, 4, 7]
+batch_size: 8
+proximal_steps: 3
+normalized_step_size: 0.001
+clean_confidence_threshold: 0.50
+minimum_clean_images: 1600
+source_config: configs/s13_coco_train2017_c8_scaleup_export.yaml
+b1_config: configs/s13_scaleup_b1_anchor_train.yaml
+b1_checkpoint: outputs/EXP-S13-001/checkpoints/best.pt
+diffusion_config: configs/s14_scaleup_b1_anchored_diffusion.yaml
+diffusion_checkpoint: outputs/EXP-S14-001/checkpoints/best.pt
+deepjscc_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+imagenette:
+  split_manifest: outputs/analysis/imagenette_scratch_classifiers/split_manifest.json
+  required_split: policy_dev
+  official_val_accessed: false
+  evaluator_checkpoint: outputs/analysis/imagenette_scratch_classifiers/T_cls/checkpoints/best.pt
+  normalization_mean: [0.485, 0.456, 0.406]
+  normalization_std: [0.229, 0.224, 0.225]
+controller:
+  type: imagenette_sender_scratch_fullprob_zero_veto
+  checkpoint: outputs/analysis/imagenette_scratch_risk_classifier/G_aux/checkpoints/best.pt
+  expected_role: G_aux
+  probability_vector_raw_bits: 80
+  probability_quantization: per_class_uint8_then_renormalize
+  description_channel_model: noiseless_feasibility_only
+  score: fullprob_js_risk
+  threshold: 0.0
+  accept_rule: JS(q_source, G_aux(posterior)) - JS(q_source, G_aux(anchor)) <= 0
+multiseed_gates:
+  enabled: true
+  max_primary_final_new_image_cluster_upper: 0.005
+output_dir: outputs/analysis/pc_imagenette_sender_aux_seed20260726_unpunctured_reference

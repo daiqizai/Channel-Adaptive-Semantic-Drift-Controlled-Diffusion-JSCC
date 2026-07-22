@@ -1,0 +1,82 @@
+phase: S15
+study: posterior_consistency
+analysis_id: ANALYSIS-PC-SENDER-UINT2-RESAWARE-ROUTING-SEED20260728-001
+status: preregistered_independent_channel_replication_after_seed20260727_routing_selection
+seed: 20260728
+channel_seeds: [20260728]
+snrs: [1, 4, 7, 13, 19]
+primary_snrs: [1, 4, 7]
+batch_size: 8
+proximal_steps: 3
+normalized_step_size: 0.001
+clean_confidence_threshold: 0.50
+minimum_clean_images: 1600
+source_config: configs/s13_coco_train2017_c8_scaleup_export.yaml
+b1_config: configs/s15_uint2_reservation_aware_b1_finetune_pilot.yaml
+b1_checkpoint: outputs/EXP-S15-001/checkpoints/best.pt
+diffusion_config: configs/s14_scaleup_b1_anchored_diffusion.yaml
+diffusion_checkpoint: outputs/EXP-S14-001/checkpoints/best.pt
+deepjscc_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+reference_mode: paired_unpunctured_same_noise
+imagenette:
+  split_manifest: outputs/analysis/imagenette_scratch_classifiers/split_manifest.json
+  required_split: policy_dev
+  official_val_accessed: false
+  evaluator_checkpoint: outputs/analysis/imagenette_scratch_classifiers/T_cls/checkpoints/best.pt
+  normalization_mean: [0.485, 0.456, 0.406]
+  normalization_std: [0.229, 0.224, 0.225]
+controller:
+  type: imagenette_sender_scratch_fullprob_crossmodel_triplet_inbudget_awgn_zero_veto
+  checkpoint: outputs/analysis/imagenette_scratch_risk_classifier/G_aux/checkpoints/best.pt
+  expected_role: G_aux
+  source_probability_dim: 10
+  payload_codec: digital_uint2_bpsk_r4
+  bits_per_class: 2
+  payload_vector_dim: 20
+  repetitions: 4
+  reserved_real_symbols: 80
+  reserved_index_rule: evenly_spread_floor
+  erase_reserved_symbols_before_decoder: true
+  consistency_excludes_reserved_symbols: true
+  score: fullprob_js_risk
+  threshold: 0.0
+  receiver_guard:
+    type: imagenette_scratch_anchor_top1_guard
+    checkpoint: outputs/analysis/imagenette_scratch_classifiers/G_gate/checkpoints/best.pt
+    checkpoint_sha256: 708aa9e47db27d37080f39564886488beb7795ee9e9f21c4ae0325e6789d4f47
+    expected_role: G_gate
+    accept_rule: G_gate(posterior).top1 == G_gate(anchor).top1
+    require_recovered_source_top1_match: true
+  accept_rule: source_fullprob_js_risk <= 0 AND recovered_G_aux_source_top1 == G_gate_anchor_top1 == G_gate_posterior_top1
+final_routing:
+  rejected_fallback: raw_on_source_anchor_mismatch_else_anchor
+rate:
+  image_size: 256
+  reference_inner_channel: 8
+  total_inner_channel: 8
+  reference_cbr: 0.16666666666666666
+  total_cbr: 0.16666666666666666
+  total_real_symbols: 65536
+  payload_real_symbols: 80
+  image_real_symbols_after_reservation: 65456
+  payload_fraction_of_total: 0.001220703125
+channel:
+  type: AWGN
+  payload_uses_same_channel_call: true
+  description_is_noiseless: false
+statistical_inference:
+  cluster_unit: sample_id
+  bootstrap_replicates: 10000
+  bootstrap_seed: 314159
+  retain_all_seed_snr_rows_per_resampled_image: true
+success_criteria:
+  minimum_source_recovered_top1_agreement_each_snr: 0.95
+  minimum_source_recovered_cosine_each_snr: 0.95
+  minimum_exact_payload_vector_rate_each_snr: 0.95
+  minimum_clean_images_per_class: 0
+  max_primary_final_new_image_cluster_upper: 0.005
+  require_primary_final_failure_not_above_reference_raw: true
+  require_primary_final_new_not_above_inbudget_raw: true
+  require_mean_final_minus_reference_raw_psnr_positive: true
+  require_mean_final_minus_reference_raw_lpips_nonpositive: true
+output_dir: outputs/analysis/pc_imagenette_sender_crossmodel_triplet_uint2_r4_resaware_b1_routing_seed20260728

@@ -183,6 +183,7 @@ def make_report(
     metadata: dict[str, Any],
 ) -> str:
     split_name = str(config.get("split_name", "test-like"))
+    source_experiment = str(config["inputs"].get("source_experiment", "source experiment"))
     all_rows = {row["policy"]: row for row in summary_rows if row["snr_db"] == "all"}
     top1_full = all_rows["top1_full_strength"]
     top1_shrink = all_rows["validation_top1_shrink_schedule"]
@@ -192,7 +193,7 @@ def make_report(
     lines = [
         f"# Frozen Residual Shrink Schedule Check: {split_name}",
         "",
-        f"This report applies residual-shrink schedules selected on EXP-S4-006 validation outputs to the {split_name} split.",
+        f"This report applies residual-shrink schedules selected on {source_experiment} validation outputs to the {split_name} split.",
         f"It does not tune alpha on {split_name} samples.",
         "",
         "## Bottom Line",
@@ -308,7 +309,10 @@ def main() -> None:
     lpips_model = None
     lpips_error = None
     if not args.skip_lpips:
-        lpips_model, lpips_error = try_load_lpips(device, output_dir / "cache")
+        lpips_model, lpips_error = try_load_lpips(
+            device,
+            resolve_project_path(config["classifier"]["cache_dir"]),
+        )
 
     alpha_paths: dict[float, dict[tuple[float, str], Path]] = {}
     alpha_preds: dict[float, dict[float, list[dict[str, Any]]]] = {}

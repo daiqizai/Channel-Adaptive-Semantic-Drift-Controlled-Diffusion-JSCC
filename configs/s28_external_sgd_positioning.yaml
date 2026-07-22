@@ -1,0 +1,154 @@
+phase: S28-external-positioning
+analysis_id: ANALYSIS-S28-CURRENT-VS-SGD-001
+method: FrozenS19LowSNRFusionWithExactB1HighSNRFallback
+dataset: Imagenette2_320_train_policy_dev_frozen_S20_population
+image_size: 256
+seed: 20260774
+
+protocol:
+  status: preregistered_before_current_method_external_output
+  preregistration: reports/current_method_vs_sgd_preregistration_2026-07-21.md
+  s20_b1_and_sgd_outcomes_known: true
+  s27_pristine_replication_outcome_known: true
+  frozen_current_method_no_retraining: true
+  frozen_s20_population_and_channel_noise: true
+  no_selection_or_tuning: true
+  one_shot_external_positioning: true
+  official_imagenette_validation_accessed: false
+  sgd_interpretation: favorable_paper_protocol_upper_bound_with_unmetered_perfect_text
+
+inputs:
+  s20_config: configs/s20_sgd_b1_decision.yaml
+  s20_config_sha256: 4f7b510944fa0694a4ad980879155e2720335b7d05cebad3b7e43a340d35119f
+  s20_aggregate_summary: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/aggregate/summary.json
+  s20_aggregate_summary_sha256: 3023ac917f4705fd6a705ea08b7ebe99b5dec4e529c0b77dcc1d414a7dd364d5
+  population_reference: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/population/population_reference.yaml
+  population_reference_sha256: a08b0d3f3dead68919bea42a0a28c7854e998aea6173fe62d4669bd537ab393f
+  split_manifest: outputs/analysis/imagenette_scratch_classifiers/split_manifest.json
+  split_manifest_sha256: 0947c428a4ac03bd3907220c9305e5acceb564b95e91a6ffe0c658c132994a91
+  deepjscc_checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/best.pt
+  deepjscc_checkpoint_sha256: bca5b67a3bca93f17d23688cc5ec2d30ffe8790191e07fbf41926649cf1bb606
+  latent_diffusion_checkpoint: outputs/EXP-S17-LATDIFF-004-DECODER/checkpoints/best.pt
+  latent_diffusion_checkpoint_sha256: 5b708117a5d25cad0a5909a24f85bb32d1b5dc11c83146ba8c98fad5ee35d98f
+  identity_policy: outputs/analysis/ANALYSIS-S18-IDENTITY-SELECTION-001/selected_policy.json
+  identity_policy_sha256: c31d68533bf4e470d585ff5d279e948a71dca3ead1964902647393b2f37d05eb
+  b1_config: configs/lowrate_m3_b1_anchor_train.yaml
+  b1_config_sha256: 5c40cacbb53a08ea6d4e67a37e63937f3132432f35d55bc82b759743cb2a23bb
+  b1_checkpoint: outputs/EXP-S16-B1-001/checkpoints/best.pt
+  b1_checkpoint_sha256: 7a295976105a9c43c25604c9070e676d25512c7a09b5c50655b6671477b7615a
+  control_checkpoint: outputs/EXP-S19-FUSION-001/checkpoints/control_best.pt
+  control_checkpoint_sha256: c9eab7648bd0120e5db2820b7a94edd13251ed8e1050cec6edb6f6187fbdbcf6
+  fusion_checkpoint: outputs/EXP-S19-FUSION-001/checkpoints/fusion_best.pt
+  fusion_checkpoint_sha256: e7577d59e9c2362e40feb72bb030c1c7b9302b707115d3e000c9c55bbb8942c5
+  t_cls_checkpoint: outputs/analysis/imagenette_scratch_classifiers/T_cls/checkpoints/best.pt
+  t_cls_checkpoint_sha256: b846c8d81dc3dd604f916c82cb2ca5584ecaf88191e1a3009da1b81e3f00924d
+  payload_sender_checkpoint: outputs/analysis/imagenette_scratch_risk_classifier/G_aux/checkpoints/best.pt
+  payload_sender_checkpoint_sha256: 8e074be6ec854edbc144d95d9fe5cd7d098c61bca853915108952acfa094b455
+  frozen_b1_csvs:
+    - path: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/baseline/b1/seed_20260748/per_sample.csv
+      sha256: 5ef4aea9cb58f27bd9a42fe6b877db55929242fde549520b18a345a58d1b59d8
+    - path: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/baseline/b1/seed_20260749/per_sample.csv
+      sha256: b841f2f8cfac9ea432e8d7df01c6887d1f73f61d5ac53614e14d5ab5cec7148c
+    - path: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/baseline/b1/seed_20260750/per_sample.csv
+      sha256: d43a1d4d4d5a312a84c27ff5f8e6263f63b03db17bcae0c09b9fbb167965499c
+  frozen_sgd_csvs:
+    - path: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/sgd_jscc_paper_protocol/seed_20260748/per_sample.csv
+      sha256: c5931fa537f1846293c00f69984fe6d234a892f946f0fe20e5622d827813e672
+    - path: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/sgd_jscc_paper_protocol/seed_20260749/per_sample.csv
+      sha256: 35accbc61eae1bbc2163c80028a3dc4db66cc5195ca0785e40bdecb3c65de77c
+    - path: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/sgd_jscc_paper_protocol/seed_20260750/per_sample.csv
+      sha256: 56332da728ceb3395a4597d080632d44fdf9ba1b4afbefdb3a8a6a7c9203efc5
+
+baseline:
+  repo: third_party/Deep-JSCC-PyTorch
+  commit: 2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06
+
+population:
+  expected_sample_count: 64
+  channel_seeds: [20260748, 20260749, 20260750]
+  snrs_db: [1, 4, 7, 13, 19]
+  expected_rows_per_method: 960
+
+channel:
+  type: AWGN
+  snrs_db: [1, 4, 7, 13, 19]
+  noise_variance_factor_per_real: 0.5
+  standard_normal_generator: torch_cpu_float32
+  seed_derivation: sha256_external_common_v1_base_seed_sample_id_snr
+
+rate:
+  inner_channel: 3
+  dense_real_symbols: 24576
+  active_real_symbols: 19712
+  payload_real_symbols: 80
+  image_active_real_symbols: 19632
+  complex_channel_uses: 9856
+  source_real_dimensions: 196608
+  exact_cbr: 0.050130208333333336
+  auxiliary_real_symbols: 0
+  sgd_main_real_symbols: 16384
+  sgd_active_edge_real_symbols: 3328
+  sgd_caption_packet_bits_per_patch: 536
+  sgd_caption_patches_per_image: 4
+
+payload_sender:
+  quantization_bits: 2
+  repetitions: 4
+
+model:
+  latent_channels: 6
+  latent_height: 64
+  latent_width: 64
+  base_channels: 48
+  num_blocks: 6
+  time_embedding_dim: 96
+  group_norm_groups: 8
+
+diffusion:
+  selected_policy_name: hard_identity_7db
+  sampling_steps: 6
+  train_alpha_max: 0.999
+  use_diffusion_snrs_db: [1, 4, 7]
+  exact_b1_fallback_snrs_db: [13, 19]
+
+fusion_model:
+  input_channels: 9
+  base_channels: 64
+  num_blocks: 6
+  snr_norm_max: 20.0
+  residual_gates: {"1": 0.12, "4": 0.10, "7": 0.08, "13": 0.05, "19": 0.04}
+
+evaluator:
+  expected_role: T_cls
+  clean_confidence_threshold: 0.5
+  normalization_mean: [0.485, 0.456, 0.406]
+  normalization_std: [0.229, 0.224, 0.225]
+
+evaluation:
+  batch_size: 16
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260775
+  bootstrap_unit: source_image_cluster_across_three_channel_seeds_and_five_snrs
+  frozen_b1_metric_abs_tolerance: 0.0001
+  frozen_b1_lpips_abs_tolerance: 0.0001
+  high_snr_exact_b1_pixel_tolerance: 0.0000001
+
+metrics:
+  quality: [PSNR, MS_SSIM, LPIPS]
+  semantic: [T_cls_correct, final_failure, new_error_vs_B1, repair_vs_B1]
+  systems: [runtime_ms_per_image, peak_gpu_memory_mib, physical_symbol_accounting]
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260775
+  bootstrap_unit: source_image_cluster_across_three_channel_seeds_and_five_snrs
+
+success_criteria:
+  contract_reproduction_required: true
+  current_minus_b1_psnr_ci_low_min_db: 0.0
+  current_minus_b1_lpips_ci_high_max: 0.0
+  current_failure_not_greater_than_b1: true
+  current_minus_control_psnr_ci_low_min_db: 0.0
+  current_minus_control_lpips_ci_high_max: 0.0
+
+outputs:
+  directory: outputs/external_baselines/ANALYSIS-S28-CURRENT-VS-SGD-001
+  overwrite_forbidden: true

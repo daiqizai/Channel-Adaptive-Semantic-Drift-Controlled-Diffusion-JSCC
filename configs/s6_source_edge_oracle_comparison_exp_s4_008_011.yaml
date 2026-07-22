@@ -1,0 +1,37 @@
+phase: S6
+analysis_id: ANALYSIS-S6-032
+method: PairedSenderSourceEdgeOracleComparison
+dataset: COCO2017
+seed: 424242
+
+inputs:
+  original_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256/exports/original
+  m0_export_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256
+  receiver_edge_dir: outputs/EXP-S4-008
+  source_edge_oracle_dir: outputs/EXP-S4-011
+  receiver_edge_config: configs/s5_edge_conditioned_residual_refiner_validation_coco256_awgn.yaml
+  source_edge_oracle_config: configs/s5_source_edge_oracle_residual_refiner_validation_coco256_awgn.yaml
+  preregistration: reports/source_edge_oracle_preregistration_2026-07-10.md
+
+split:
+  sample_start: 192
+  sample_count: 64
+
+channel:
+  type: AWGN
+  snrs: [1, 4, 7, 13, 19]
+  main_image_cbr: 0.17
+  source_edge_channel: perfect_oracle_unaccounted
+
+statistics:
+  cluster: sample
+  bootstrap_replicates: 10000
+  bootstrap_seed: 424242
+  confidence: 0.95
+
+success_criteria:
+  source_minus_receiver_raw_psnr_ci_lower_strictly_positive: true
+  source_minus_receiver_raw_psnr_point_positive_each_snr: true
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_011_source_edge_oracle_vs_receiver_edge

@@ -1,0 +1,51 @@
+extends: configs/s22_b1_feature_injection.yaml
+
+phase: S23-b1-feature-shrink
+experiment_id: EXP-S23-B1FS-001
+selection_analysis_id: ANALYSIS-S23-B1FS-SELECTION-001
+holdout_analysis_id: ANALYSIS-S23-B1FS-HOLDOUT-001
+bootstrap_analysis_id: ANALYSIS-S23-B1FS-BOOTSTRAP-001
+method: FrozenB1OneEpochFeatureDirectionWithGlobalShrink
+seed: 20260765
+
+protocol:
+  status: complete_holdout_bootstrap_output
+  preregistration: reports/b1_feature_shrink_preregistration_2026-07-20.md
+  s22_outcome_known_before_registration: true
+  s22_holdout_accessed: false
+  one_endpoint_epoch_fixed: true
+  global_shrink_grid_frozen: true
+  no_per_snr_alpha_search: true
+  holdout_sealed_until_nonzero_policy_and_checkpoint_frozen: true
+  holdout_accessed_after_freeze: true
+  bootstrap_complete: true
+
+inputs:
+  feature_injection_checkpoint: outputs/EXP-S23-B1FS-001/checkpoints/selected.pt
+  feature_injection_checkpoint_sha256: 53692278be57a918a70146a6c72bb5a44fe76e871d590a82f2f6fd5c7a21abbf
+  selected_policy: outputs/analysis/ANALYSIS-S23-B1FS-SELECTION-001/selected_policy.json
+  selected_policy_sha256: 54c2639f569df12b06f65d3356b1d64d14184a32e2603b69c2115d3c7bc8c68f
+
+training:
+  seed: 20260763
+  epochs: 1
+
+feature_shrink:
+  endpoint_epoch: 1
+  global_alphas: [0.0, 0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.35, 0.5, 0.75, 1.0]
+  alpha_applies_to: projection_weight_after_one_epoch
+  selection_rule: maximize_aggregate_psnr_subject_to_aggregate_lpips_not_worse_and_all_low_snr_psnr_nonnegative
+  tie_break: smaller_alpha
+  selected_alpha: 0.15
+
+success_criteria:
+  selection_requires_nonzero_alpha: true
+  selection_fusion_minus_b1_psnr_min_db: 0.0
+  selection_fusion_minus_b1_lpips_max: 0.0
+  selection_nonnegative_low_snr_count_min: 3
+
+outputs:
+  training_dir: outputs/EXP-S23-B1FS-001
+  selection_dir: outputs/analysis/ANALYSIS-S23-B1FS-SELECTION-001
+  holdout_dir: outputs/analysis/ANALYSIS-S23-B1FS-HOLDOUT-001
+  bootstrap_dir: outputs/analysis/ANALYSIS-S23-B1FS-BOOTSTRAP-001

@@ -1,0 +1,106 @@
+phase: S8
+experiment_id: EXP-S8-001
+method: MatchedRateHybridStructureSemanticSketchResidualRefinerPilot
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.16666666666666666
+seed: 20260712
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+rate:
+  main_inner_channel: 6
+  main_cbr: 0.125
+  hybrid_structure_semantic_inner_channel: 2
+  hybrid_structure_semantic_cbr: 0.041666666666666664
+  total_inner_channel: 8
+  total_cbr: 0.16666666666666666
+  reference_inner_channel: 8
+  reference_cbr: 0.16666666666666666
+
+inputs:
+  m0_export_dir: outputs/eval/s7_matched_rate_main_structure_pilot20k_export_384
+  m0_reconstruction_subdir: main_reconstruction
+  structure_export_dir: outputs/eval/s8_hybrid_structure_semantic_r4_export_384
+  structure_reconstruction_subdir: hybrid_structure_reconstruction
+  semantic_sketch_file: outputs/eval/s8_hybrid_structure_semantic_r4_export_384/semantic_sketches.pt
+  original_dir: outputs/eval/s7_matched_rate_main_structure_pilot20k_export_384/exports/original
+  checkpoint: outputs/train/s7_matched_rate_main_cbr0125_pilot20k/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s7_matched_rate_main_cbr0125_pilot20k/checkpoints/latest.pt
+  initial_refiner_checkpoint: outputs/EXP-S7-002/checkpoints/best.pt
+
+split:
+  train_sample_start: 32
+  train_sample_count: 160
+  eval_sample_start: 192
+  eval_sample_count: 64
+
+model:
+  name: matched_rate_hybrid_structure_semantic_sketch_residual_cnn
+  input_channels: 6
+  condition_features:
+    - sobel_magnitude
+    - laplacian_abs
+  condition_source: decoded_structure_rgb
+  semantic_sketch_dim: 32
+  semantic_modulation: zero_initialized_film_after_head
+  base_channels: 64
+  num_blocks: 6
+  snr_norm_max: 20.0
+  residual_gates:
+    "1": 0.12
+    "4": 0.10
+    "7": 0.08
+    "13": 0.05
+    "19": 0.04
+
+training:
+  epochs: 30
+  batch_size: 8
+  num_workers: 4
+  crop_size: 192
+  random_flip: true
+  lr: 0.0001
+  weight_decay: 0.0
+  grad_clip_norm: 1.0
+  mse_weight: 1.0
+  l1_weight: 0.10
+  semantic_kl_weight: 0.0002
+  semantic_kl_temperature: 2.0
+  semantic_teacher: frozen_alexnet_imagenet1k_v1
+  checkpoint_selection: eval_mse_only
+  validation_every_epochs: 3
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 32
+  topk: 5
+
+failure_handling:
+  detector: top1_agreement_with_main_c6_m0
+  accept_when: refined_classifier_top1_equals_main_c6_m0_classifier_top1
+  fallback_output: main_c6_m0_reconstruction
+  uses_original_for_detection: false
+
+evaluation:
+  sample_grid_count: 4
+  pseudo_clean_conf_thresholds: [0.20, 0.30]
+  metrics:
+    - psnr
+    - ssim
+    - ms_ssim
+    - lpips
+    - pseudo_drift_diagnostic_only
+
+notes:
+  - The received 32-D sketch occupies 128 existing real symbols inside c=2; no rate is added.
+  - AlexNet enters training and therefore its COCO pseudo-label metrics are circular diagnostics only.
+  - Model selection uses eval MSE only; independent scratch T_cls is reserved for preregistered Imagenette audit.
+
+outputs:
+  output_dir: outputs/EXP-S8-001

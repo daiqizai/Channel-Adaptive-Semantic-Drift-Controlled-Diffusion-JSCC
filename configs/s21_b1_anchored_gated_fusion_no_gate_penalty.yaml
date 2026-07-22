@@ -1,0 +1,34 @@
+extends: configs/s21_b1_anchored_gated_fusion.yaml
+
+experiment_id: EXP-S21-B1AGF-002
+selection_analysis_id: ANALYSIS-S21-B1AGF-SELECTION-002
+holdout_analysis_id: ANALYSIS-S21-B1AGF-HOLDOUT-002
+bootstrap_analysis_id: ANALYSIS-S21-B1AGF-BOOTSTRAP-002
+seed: 20260757
+
+protocol:
+  status: failed_learned_gate_collapse_after_epoch4_before_holdout
+  preregistration: reports/b1_anchored_gated_fusion_gate_collapse_followup_preregistration_2026-07-20.md
+  parent_failed_experiment: EXP-S21-B1AGF-001
+  parent_failure_record: outputs/EXP-S21-B1AGF-001/failure.json
+  only_method_change_from_parent: spatial_gate_mean_weight_0p0001_to_0
+  holdout_accessed_by_parent: false
+
+inputs:
+  control_checkpoint: outputs/EXP-S21-B1AGF-002/checkpoints/control_best.pt
+  control_checkpoint_sha256: PENDING_TRAINING_FREEZE
+  fusion_checkpoint: outputs/EXP-S21-B1AGF-002/checkpoints/fusion_best.pt
+  fusion_checkpoint_sha256: PENDING_TRAINING_FREEZE
+
+training:
+  seed: 20260757
+  spatial_gate_mean_weight: 0.0
+
+evaluation:
+  bootstrap_seed: 20260758
+
+outputs:
+  training_dir: outputs/EXP-S21-B1AGF-002
+  selection_dir: outputs/analysis/ANALYSIS-S21-B1AGF-SELECTION-002
+  holdout_dir: outputs/analysis/ANALYSIS-S21-B1AGF-HOLDOUT-002
+  bootstrap_dir: outputs/analysis/ANALYSIS-S21-B1AGF-BOOTSTRAP-002

@@ -1,0 +1,47 @@
+extends: configs/s21_b1_anchored_gated_fusion.yaml
+
+experiment_id: ANALYSIS-S21-CONVEX-SELECTION-004
+selection_analysis_id: ANALYSIS-S21-CONVEX-SELECTION-004
+holdout_analysis_id: ANALYSIS-S21-CONVEX-HOLDOUT-004
+bootstrap_analysis_id: ANALYSIS-S21-CONVEX-BOOTSTRAP-004
+method: MonotoneConvexB1MatchedDiffusionEnvelope
+seed: 20260761
+
+protocol:
+  status: selection_all_zero_no_holdout_access
+  preregistration: reports/b1_diffusion_convex_envelope_preregistration_2026-07-20.md
+  parent_failed_experiments: [EXP-S21-B1AGF-001, EXP-S21-B1AGF-002, EXP-S21-B1AR-003]
+  learned_pixel_adapter_family_stopped: true
+  holdout_accessed_by_parents: false
+
+inputs:
+  selected_blend_policy: outputs/analysis/ANALYSIS-S21-CONVEX-SELECTION-004/selected_policy.json
+  selected_blend_policy_sha256: a6fe207b7b7327c2b1f96a86a5c600de0e99796483a2ebe012720c33962f80c7
+
+blend:
+  formula: (1-alpha_snr)*b1_plus_alpha_snr*matched_diffusion
+  candidate_alphas: [0.0, 0.025, 0.05, 0.075, 0.10, 0.15, 0.20, 0.30]
+  selectable_snrs_db: [1, 4, 7]
+  exact_b1_snrs_db: [13, 19]
+  monotonic_rule: alpha_1db_greater_equal_alpha_4db_greater_equal_alpha_7db_greater_equal_0
+  selection_constraints:
+    each_low_snr_psnr_delta_vs_b1_min_db: 0.0
+    aggregate_lpips_delta_vs_b1_max: 0.0
+  selection_objective: maximize_aggregate_mean_psnr
+  tie_break: minimum_sum_alpha_then_lexicographic
+
+evaluation:
+  bootstrap_seed: 20260762
+
+success_criteria:
+  selection_policy_has_nonzero_alpha: true
+  blend_minus_b1_psnr_ci_low_min_db: 0.0
+  blend_minus_b1_lpips_ci_high_max: 0.0
+  blend_minus_b1_nonnegative_all_snr_count_min: 5
+  high_snr_exact_b1_max_abs: 0.0
+  blend_majority_new_not_greater_than_repair: true
+
+outputs:
+  selection_dir: outputs/analysis/ANALYSIS-S21-CONVEX-SELECTION-004
+  holdout_dir: outputs/analysis/ANALYSIS-S21-CONVEX-HOLDOUT-004
+  bootstrap_dir: outputs/analysis/ANALYSIS-S21-CONVEX-BOOTSTRAP-004

@@ -1,0 +1,96 @@
+phase: S6-external-comparison
+study: external_diffusion_jscc_baselines
+analysis_id: SMOKE-EXT-SGDJSCC-COMMON-001
+status: preregistered_before_common_smoke_outcome
+created_at: "2026-07-15"
+official_val_accessed: false
+outcome_claims_allowed: false
+comparison_track: common_contract_adapter_smoke_not_stage_ranking
+
+source:
+  repo: https://github.com/MauroZMJ/SGDJSCC
+  path: third_party/SGDJSCC
+  commit: 2188acc0dd2805355d3d0d2e478cbc27b46b4da5
+  source_read_only: true
+  native_asset_and_model_config: configs/external_sgdjscc_native_smoke.yaml
+
+input:
+  image: outputs/eval/s13_coco_train2017_c8_scaleup_10k_1k/exports/original/sample_010000.png
+  source_manifest: outputs/EXP-S13-001/source_manifest.json
+  split_role: integration_smoke_only
+  source_image_size: 256
+  patch_size: 128
+  expected_patch_count: 4
+  patch_rule: author_split_image_v2_nonoverlapping_for_256x256
+
+channel:
+  type: AWGN
+  snr_db: 1
+  channel_seed: 20260729
+  noise_variance_convention: author_real_awgn_one_over_linear_snr
+  canonical_noise_generator: torch_cpu_generator_float32
+  canonical_noise_layout:
+    - {name: main_latent, real_symbols: 16384}
+    - {name: active_edge, real_symbols: 3328}
+    - {name: text_caption, real_symbols: 45024}
+    - {name: no_information_padding, real_symbols: 800}
+  same_noise_rule: one_frozen_65536_standard_normal_vector_per_image_snr_seed
+  main_noise_scaling: author_per_patch_signal_power_over_linear_snr
+  edge_and_text_noise_variance: one_over_linear_snr
+  use_gt_csi: false
+
+text_transport:
+  captions_per_source_image: 4
+  caption_scope: one_sender_blip2_caption_per_128x128_patch
+  codec: fixed_utf8_packet_crc16_bpsk_repetition
+  max_utf8_payload_bytes_per_patch: 64
+  packet_layout_bytes: [length_u8, payload_64_bytes_zero_padded, crc16_ccitt_false]
+  packet_bits_per_patch: 536
+  bpsk_mapping: {bit_0: -1.0, bit_1: 1.0}
+  repetition: 21
+  real_symbols_per_patch: 11256
+  crc_initial_value: 65535
+  crc_failure_action: erase_caption_to_empty_string
+  invalid_utf8_action: erase_caption_to_empty_string
+  truncation_rule: longest_valid_utf8_prefix_at_most_64_bytes
+
+rate_contract:
+  source_real_dimensions: 196608
+  real_dimensions_per_complex_channel_use: 2
+  total_real_symbols: 65536
+  total_complex_channel_uses: 32768
+  target_cbr: 0.16666666666666666
+  main_real_symbols: 16384
+  active_edge_real_symbols: 3328
+  text_real_symbols: 45024
+  no_information_padding_real_symbols: 800
+  dense_edge_tensor_elements_diagnostic_only: 65536
+  count_only_deterministically_active_edge_coordinates: true
+  exact_total_rate_required: true
+  direct_ranking_rate_gate_after_runtime_validation: true
+
+model:
+  inherit_exactly_from_native_config: true
+  semantic_text_replaced_by_channel_decoded_text: true
+  edge_channel_replaced_by_sparse_known_mask_awgn: true
+  third_party_files_modified: false
+
+environment:
+  python: .venv-sgdjscc/bin/python
+  cuda_device: cuda:0
+  offline_runtime_assets_only: true
+
+success_criteria:
+  require_finite_output: true
+  require_output_shape: [1, 3, 256, 256]
+  require_patch_count: 4
+  require_main_real_symbols: 16384
+  require_active_edge_real_symbols: 3328
+  require_text_real_symbols: 45024
+  require_total_real_symbols: 65536
+  require_common_cbr: 0.16666666666666666
+  require_all_runtime_asset_hashes_match: true
+  semantic_claim_forbidden_for_one_image_smoke: true
+
+output_dir: outputs/smoke/external_sgdjscc_common_snr1_seed20260729_20260715
+overwrite_forbidden: true

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import platform
@@ -27,12 +28,17 @@ from cadsd_jscc.metrics import ms_ssim_per_sample, psnr_per_sample, ssim_per_sam
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Audit continuous-alpha tail refiner with LPIPS and classifier ensemble."
+        description="Audit fixed residual-restoration policies with LPIPS and a classifier ensemble."
     )
     parser.add_argument("--config", default="configs/s6_continuous_alpha_tail_refiner_audit_exp_s4_006.yaml")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--skip-lpips", action="store_true")
+    parser.add_argument(
+        "--skip-quality-metrics",
+        action="store_true",
+        help="Skip redundant image-pair metrics when source runs already provide the quality audit.",
+    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--allow-download", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -141,6 +147,18 @@ def save_json(path: Path, payload: Any) -> None:
         json.dump(payload, handle, indent=2, ensure_ascii=False)
 
 
+def file_fingerprint(path: Path) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {
+        "path": project_relative(path),
+        "bytes": path.stat().st_size,
+        "sha256": digest.hexdigest(),
+    }
+
+
 def git_commit() -> str:
     try:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, text=True).strip()
@@ -179,20 +197,41 @@ def classifier_status(config: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def validate_inputs(config: dict[str, Any]) -> dict[str, str]:
-    paths = {
-        "source_per_sample_csv": resolve_project_path(config["inputs"]["source_per_sample_csv"]),
-        "source_summary_csv": resolve_project_path(config["inputs"]["source_summary_csv"]),
-        "source_config": resolve_project_path(config["inputs"]["source_config"]),
-        "checkpoint": resolve_project_path(config["inputs"]["checkpoint"]),
-        "forbidden_checkpoint": resolve_project_path(config["inputs"]["forbidden_checkpoint"]),
-    }
+    inputs = config["inputs"]
+    paths: dict[str, Path] = {}
+    if "source_runs" in inputs:
+        for run in inputs["source_runs"]:
+            run_id = str(run["id"])
+            for key in ["per_sample_csv", "summary_csv", "config"]:
+                if key in run:
+                    paths[f"source_runs.{run_id}.{key}"] = resolve_project_path(run[key])
+    else:
+        paths.update(
+            {
+                "source_per_sample_csv": resolve_project_path(inputs["source_per_sample_csv"]),
+                "source_summary_csv": resolve_project_path(inputs["source_summary_csv"]),
+                "source_config": resolve_project_path(inputs["source_config"]),
+            }
+        )
+    for key in ["checkpoint", "method_checkpoint", "base_refiner_checkpoint", "jscc_checkpoint"]:
+        if key in inputs:
+            paths[key] = resolve_project_path(inputs[key])
+    for key in ["forbidden_checkpoint", "forbidden_method_checkpoint"]:
+        if key in inputs:
+            paths[key] = resolve_project_path(inputs[key])
     for key, path in paths.items():
-        if key == "forbidden_checkpoint":
+        if key.startswith("forbidden_"):
             continue
         if not path.exists():
             raise FileNotFoundError(f"Required input not found: {key}: {path}")
-    if paths["checkpoint"] == paths["forbidden_checkpoint"]:
+    if "checkpoint" in paths and "forbidden_checkpoint" in paths and paths["checkpoint"] == paths["forbidden_checkpoint"]:
         raise RuntimeError("Config points to forbidden latest.pt checkpoint.")
+    if (
+        "method_checkpoint" in paths
+        and "forbidden_method_checkpoint" in paths
+        and paths["method_checkpoint"] == paths["forbidden_method_checkpoint"]
+    ):
+        raise RuntimeError("Config points to forbidden method latest.pt checkpoint.")
     missing_weights = [
         status["weights_file"]
         for status in classifier_status(config)
@@ -203,43 +242,74 @@ def validate_inputs(config: dict[str, Any]) -> dict[str, str]:
     return {key: project_relative(path) for key, path in paths.items()}
 
 
+def load_source_rows(config: dict[str, Any]) -> list[dict[str, str]]:
+    inputs = config["inputs"]
+    if "source_runs" not in inputs:
+        rows = read_csv(resolve_project_path(inputs["source_per_sample_csv"]))
+        for row in rows:
+            row["__source_id"] = "default"
+        return rows
+    output: list[dict[str, str]] = []
+    for run in inputs["source_runs"]:
+        run_id = str(run["id"])
+        for source in read_csv(resolve_project_path(run["per_sample_csv"])):
+            row = dict(source)
+            row["__source_id"] = run_id
+            if run.get("split") not in (None, ""):
+                row["__source_split"] = str(run["split"])
+            output.append(row)
+    return output
+
+
 def normalize_policy_rows(source_rows: list[dict[str, str]], config: dict[str, Any]) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     policies = config["policies"]
     for policy_cfg in policies:
         source_policy = str(policy_cfg["source_policy"])
         for source in source_rows:
+            if policy_cfg.get("source_id") not in (None, "") and str(source.get("__source_id", "")) != str(policy_cfg["source_id"]):
+                continue
             if str(source.get("policy", "")) != source_policy:
                 continue
+            if policy_cfg.get("source_alpha") not in (None, ""):
+                if source.get("alpha") in (None, "") or abs(float(source["alpha"]) - float(policy_cfg["source_alpha"])) > 1e-9:
+                    continue
             candidate_key = str(policy_cfg["candidate_path_field"])
             final_key = str(policy_cfg["final_path_field"])
+            accepted_key = str(policy_cfg.get("accepted_field", "accepted"))
+            alpha_key = str(policy_cfg.get("alpha_field", "predicted_alpha"))
+            missed_repair_key = str(policy_cfg.get("missed_repair_field", "missed_repair"))
             row = {
                 "policy": str(policy_cfg["key"]),
                 "source_policy": source_policy,
-                "split": source["split"],
+                "source_id": source.get("__source_id", "default"),
+                "split": source.get("__source_split", source.get("split", "unspecified")),
                 "snr_db": float(source["snr_db"]),
                 "sample": source["sample"],
                 "target_mode": source.get("target_mode", ""),
                 "target_alpha": source.get("target_alpha", ""),
                 "utility_target_alpha": source.get("utility_target_alpha", ""),
-                "predicted_alpha": source.get("predicted_alpha", ""),
+                "predicted_alpha": source.get(alpha_key, source.get("predicted_alpha", "")),
                 "original": source["original"],
                 "m0_reconstruction": source["m0_reconstruction"],
                 "candidate": source[candidate_key],
                 "final": source[final_key],
                 "candidate_path_field": candidate_key,
                 "final_path_field": final_key,
-                "accepted": parse_bool(source["accepted"]),
+                "accepted": parse_bool(source[accepted_key]),
                 "source_m0_matches_original_top1": parse_bool(source["m0_matches_original_top1"]),
                 "source_candidate_matches_original_top1": parse_bool(source["candidate_matches_original_top1"]),
                 "source_candidate_matches_m0_top1": parse_bool(source["candidate_matches_m0_top1"]),
                 "source_final_matches_original_top1": parse_bool(source["final_matches_original_top1"]),
-                "source_accepted_repair": parse_bool(source["accepted_repair"]),
-                "source_accepted_new_error": parse_bool(source["accepted_new_error"]),
-                "source_missed_repair": parse_bool(source["missed_repair"]),
+                "source_accepted_repair": parse_bool(source.get("accepted_repair", False)),
+                "source_accepted_new_error": parse_bool(source.get("accepted_new_error", False)),
+                "source_missed_repair": parse_bool(source.get(missed_repair_key, False)),
                 "source_original_top1_index": source.get("original_top1_index", ""),
                 "source_m0_top1_index": source.get("m0_top1_index", ""),
-                "source_candidate_top1_index": source.get("alpha_top1_index", source.get("full_top1_index", "")),
+                "source_candidate_top1_index": source.get(
+                    "candidate_top1_index",
+                    source.get("alpha_top1_index", source.get("full_top1_index", "")),
+                ),
             }
             output.append(row)
     if not output:
@@ -368,9 +438,44 @@ def make_quality_summary(
     return summary_rows
 
 
+def make_source_only_quality_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summary_rows: list[dict[str, Any]] = []
+    group_keys: list[tuple[str, str, str]] = []
+    for policy in sorted({str(row["policy"]) for row in rows}):
+        policy_rows = [row for row in rows if str(row["policy"]) == policy]
+        group_keys.append((policy, "all", "all"))
+        for split in sorted({str(row["split"]) for row in policy_rows}):
+            split_rows = [row for row in policy_rows if str(row["split"]) == split]
+            group_keys.append((policy, split, "all"))
+            for snr in sorted({float(row["snr_db"]) for row in split_rows}):
+                group_keys.append((policy, split, snr_name(snr)))
+    for policy, split, snr in group_keys:
+        subset = [row for row in rows if str(row["policy"]) == policy]
+        if split != "all":
+            subset = [row for row in subset if str(row["split"]) == split]
+        if snr != "all":
+            subset = [row for row in subset if snr_name(float(row["snr_db"])) == snr]
+        summary: dict[str, Any] = {
+            "level": "policy_split_snr" if snr != "all" else ("policy_split" if split != "all" else "policy"),
+            "policy": policy,
+            "split": split,
+            "snr_db": snr,
+            "num_images": len(subset),
+        }
+        for prefix in ["m0", "candidate", "final"]:
+            for metric in ["mse", "psnr_db", "ssim", "ms_ssim", "lpips"]:
+                summary[f"{prefix}_{metric}"] = None
+            summary[f"delta_{prefix}_psnr_vs_m0_db"] = None
+            summary[f"delta_{prefix}_lpips_vs_m0"] = None
+            summary[f"delta_{prefix}_ms_ssim_vs_m0"] = None
+        summary.update(summarize_source_semantics(subset))
+        summary_rows.append(summary)
+    return summary_rows
+
+
 def try_load_lpips(device: torch.device, cache_dir: Path):
     try:
-        os.environ.setdefault("TORCH_HOME", str(cache_dir))
+        os.environ["TORCH_HOME"] = str(cache_dir)
         import lpips
 
         model = lpips.LPIPS(net="alex", verbose=False).to(device)
@@ -386,7 +491,7 @@ def load_classifier(model_cfg: dict[str, Any], config: dict[str, Any], device: t
         raise RuntimeError(f"Classifier weights missing from local cache: {weights_file}")
     cache_dir = resolve_project_path(config["classifiers"]["cache_dir"])
     cache_dir.mkdir(parents=True, exist_ok=True)
-    os.environ.setdefault("TORCH_HOME", str(cache_dir))
+    os.environ["TORCH_HOME"] = str(cache_dir)
 
     import torchvision.models as models
 
@@ -672,29 +777,21 @@ def write_galleries(vote_rows: list[dict[str, Any]], config: dict[str, Any], out
     gallery_dir = output_dir / "galleries"
     count = int(config["evaluation"]["gallery_rows"])
     manifest: dict[str, str] = {}
-    groups = {
-        "continuous_any_classifier_new_errors": [
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for policy in sorted({str(row["policy"]) for row in vote_rows}):
+        slug = "".join(char if char.isalnum() else "_" for char in policy).strip("_")
+        policy_rows = [row for row in vote_rows if row["policy"] == policy]
+        groups[f"{slug}_any_classifier_new_errors"] = [
+            row for row in policy_rows if int(row["accepted_new_error_vote_count"]) >= 1
+        ]
+        groups[f"{slug}_majority_classifier_new_errors"] = [
             row
-            for row in vote_rows
-            if row["policy"] == "continuous_alpha_top1_fallback" and int(row["accepted_new_error_vote_count"]) >= 1
-        ],
-        "continuous_majority_classifier_new_errors": [
-            row
-            for row in vote_rows
-            if row["policy"] == "continuous_alpha_top1_fallback"
-            and int(row["accepted_new_error_vote_count"]) > int(row["classifier_count"]) / 2
-        ],
-        "continuous_any_classifier_repairs": [
-            row
-            for row in vote_rows
-            if row["policy"] == "continuous_alpha_top1_fallback" and int(row["accepted_repair_vote_count"]) >= 1
-        ],
-        "full_strength_any_classifier_new_errors": [
-            row
-            for row in vote_rows
-            if row["policy"] == "full_strength_top1_fallback" and int(row["accepted_new_error_vote_count"]) >= 1
-        ],
-    }
+            for row in policy_rows
+            if int(row["accepted_new_error_vote_count"]) > int(row["classifier_count"]) / 2
+        ]
+        groups[f"{slug}_any_classifier_repairs"] = [
+            row for row in policy_rows if int(row["accepted_repair_vote_count"]) >= 1
+        ]
     for name, rows in groups.items():
         rows = sorted(
             rows,
@@ -729,28 +826,42 @@ def make_report(
     model_summary: list[dict[str, Any]],
     vote_summary: list[dict[str, Any]],
     metadata: dict[str, Any],
+    config: dict[str, Any],
 ) -> str:
     quality_split = [row for row in quality_summary if row["level"] == "policy_split"]
     vote_split = [row for row in vote_summary if row["level"] == "policy_split"]
     model_split = [row for row in model_summary if row["level"] == "classifier_policy_split"]
-    continuous_all = next(
-        row for row in quality_summary if row["level"] == "policy" and row["policy"] == "continuous_alpha_top1_fallback"
+    policy_rows = [row for row in quality_summary if row["level"] == "policy"]
+    report_cfg = config.get("report", {})
+    title = str(report_cfg.get("title", "Residual Policy Perceptual And Ensemble Audit"))
+    description = str(
+        report_cfg.get(
+            "description",
+            "This derived audit reads fixed residual-restoration outputs. It does not train a model, run diffusion, or tune a policy.",
+        )
     )
-    full_all = next(row for row in quality_summary if row["level"] == "policy" and row["policy"] == "full_strength_top1_fallback")
     lines = [
-        "# Continuous-Alpha Tail Refiner Audit",
+        f"# {title}",
         "",
-        "This derived audit reads the existing continuous-alpha tail-only residual refiner outputs. It does not train a model, run diffusion, or tune a policy.",
+        description,
         "",
         "## Bottom Line",
         "",
-        f"- Continuous-alpha top-1 fallback: PSNR delta `{signed(continuous_all['delta_final_psnr_vs_m0_db'])}` dB, LPIPS delta `{signed(continuous_all['delta_final_lpips_vs_m0'])}`, source AlexNet new error `{continuous_all['source_alexnet_accepted_new_error_count']}`.",
-        f"- Full-strength top-1 fallback from the same checkpoint: PSNR delta `{signed(full_all['delta_final_psnr_vs_m0_db'])}` dB, LPIPS delta `{signed(full_all['delta_final_lpips_vs_m0'])}`, source AlexNet new error `{full_all['source_alexnet_accepted_new_error_count']}`.",
-        "- The classifier ensemble is an offline robustness audit only; COCO pseudo labels remain auxiliary, not final clean-correct supervision.",
-        "",
-        "## Quality And Source-AlexNet Summary",
-        "",
     ]
+    for row in policy_rows:
+        lines.append(
+            f"- `{row['policy']}`: PSNR delta `{signed(row['delta_final_psnr_vs_m0_db'])}` dB, "
+            f"LPIPS delta `{signed(row['delta_final_lpips_vs_m0'])}`, source AlexNet new error "
+            f"`{row['source_alexnet_accepted_new_error_count']}`."
+        )
+    lines.extend(
+        [
+            "- The classifier ensemble is an offline robustness audit only; COCO pseudo labels remain auxiliary, not final clean-correct supervision.",
+            "",
+            "## Quality And Source-AlexNet Summary",
+            "",
+        ]
+    )
     lines += markdown_table(
         quality_split,
         [
@@ -808,7 +919,7 @@ def make_report(
             "",
             "## Caveats",
             "",
-            "- The receiver-side decision is still the original AlexNet top-1 fallback saved by the source run.",
+            "- The receiver-side decisions are fixed decisions saved by the source runs; this audit does not retune them.",
             "- ResNet18 and MobileNetV3-Small are only used after the fact to probe cross-model semantic risk.",
             "- This audit does not replace a future labeled clean-correct evaluation.",
             "",
@@ -823,7 +934,7 @@ def main() -> None:
     with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
     manifest = validate_inputs(config)
-    source_rows = read_csv(resolve_project_path(config["inputs"]["source_per_sample_csv"]))
+    source_rows = load_source_rows(config)
     policy_rows = normalize_policy_rows(source_rows, config)
     missing_images = validate_policy_images(policy_rows)
     if missing_images:
@@ -847,6 +958,7 @@ def main() -> None:
         "classifier_status": classifier_status(config),
         "device": str(resolve_device(args.device)),
         "lpips_requested": not args.skip_lpips,
+        "quality_metrics_requested": not args.skip_quality_metrics,
         "allow_download": bool(args.allow_download),
         "proxy_environment_present": proxy_environment_present(),
         "manifest": manifest,
@@ -868,11 +980,15 @@ def main() -> None:
     lpips_error = "Skipped by --skip-lpips" if args.skip_lpips else None
     if not args.skip_lpips:
         lpips_model, lpips_error = try_load_lpips(device, resolve_project_path(config["classifiers"]["cache_dir"]))
-    quality_summary = make_quality_summary(
-        policy_rows,
-        lpips_model,
-        device,
-        int(config["evaluation"]["image_batch_size"]),
+    quality_summary = (
+        make_source_only_quality_summary(policy_rows)
+        if args.skip_quality_metrics
+        else make_quality_summary(
+            policy_rows,
+            lpips_model,
+            device,
+            int(config["evaluation"]["image_batch_size"]),
+        )
     )
 
     all_paths = unique_classifier_paths(policy_rows)
@@ -934,6 +1050,12 @@ def main() -> None:
         "config": project_relative(config_path),
         "output_dir": project_relative(output_dir),
         "source_inputs": manifest,
+        "source_input_fingerprints": {
+            key: file_fingerprint(resolve_project_path(path))
+            for key, path in manifest.items()
+            if resolve_project_path(path).is_file()
+        },
+        "script_fingerprint": file_fingerprint(Path(__file__).resolve()),
         "per_sample_csv": project_relative(per_sample_csv),
         "quality_summary_csv": project_relative(quality_summary_csv),
         "per_model_csv": project_relative(per_model_csv),
@@ -947,6 +1069,7 @@ def main() -> None:
         "loaded_classifiers": loaded_classifiers,
         "classifier_runtime": classifier_runtime,
         "lpips_error": lpips_error,
+        "quality_metrics_skipped": bool(args.skip_quality_metrics),
         "dry_run_payload": dry_run_payload,
         "run_command": " ".join(sys.argv),
         "proxy_environment_present": proxy_environment_present(),
@@ -957,7 +1080,7 @@ def main() -> None:
         "notes": config.get("notes", []),
     }
     save_json(metadata_json, metadata)
-    report_md.write_text(make_report(quality_summary, model_summary, vote_summary, metadata), encoding="utf-8")
+    report_md.write_text(make_report(quality_summary, model_summary, vote_summary, metadata, config), encoding="utf-8")
     print(
         json.dumps(
             {

@@ -26,6 +26,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from cadsd_jscc.metrics import ms_ssim_per_sample, psnr_per_sample, ssim_per_sample
+from cadsd_jscc.semantic_sketch import fixed_rademacher_projection, probabilities_to_sketch
 
 
 def parse_args() -> argparse.Namespace:
@@ -162,18 +163,51 @@ def validate_inputs(config: dict[str, Any], snrs: list[float]) -> dict[str, Any]
         if not (original_dir / name).exists():
             raise FileNotFoundError(f"Original sample missing: {original_dir / name}")
     for snr in snrs:
-        m0_dir = m0_export_dir / "exports" / snr_name(snr) / "reconstruction"
+        m0_subdir = str(config["inputs"].get("m0_reconstruction_subdir", "reconstruction"))
+        m0_dir = m0_export_dir / "exports" / snr_name(snr) / m0_subdir
         if not m0_dir.exists():
             raise FileNotFoundError(f"M0 reconstruction directory missing: {m0_dir}")
         for name in train_names + eval_names:
             if not (m0_dir / name).exists():
                 raise FileNotFoundError(f"M0 sample missing: {m0_dir / name}")
+        if condition_source_name(config) == "decoded_structure_rgb":
+            structure_root = resolve_project_path(config["inputs"]["structure_export_dir"])
+            structure_subdir = str(
+                config["inputs"].get(
+                    "structure_reconstruction_subdir", "structure_reconstruction"
+                )
+            )
+            structure_dir = structure_root / "exports" / snr_name(snr) / structure_subdir
+            if not structure_dir.is_dir():
+                raise FileNotFoundError(
+                    f"Decoded structure reconstruction directory missing: {structure_dir}"
+                )
+            for name in train_names + eval_names:
+                if not (structure_dir / name).is_file():
+                    raise FileNotFoundError(f"Decoded structure sample missing: {structure_dir / name}")
 
     gates = check_residual_gates(config, snrs)
+    semantic_store = load_semantic_sketch_store(config)
+    if semantic_store is not None:
+        required_names = set(train_names + eval_names)
+        missing_names = sorted(required_names - set(semantic_store["names"]))
+        missing_snrs = sorted(
+            snr
+            for snr in snrs
+            if not any(abs(float(value) - snr) < 1e-9 for value in semantic_store["snrs"])
+        )
+        if missing_names or missing_snrs:
+            raise RuntimeError(
+                f"Semantic sketch coverage mismatch: missing_names={missing_names[:3]}, "
+                f"missing_snrs={missing_snrs}"
+            )
     return {
         "train_names": train_names,
         "eval_names": eval_names,
         "residual_gates": {str(snr): gate for snr, gate in gates.items()},
+        "semantic_sketch_file": (
+            project_relative(semantic_store["path"]) if semantic_store is not None else None
+        ),
     }
 
 
@@ -189,6 +223,21 @@ def paired_random_crop(m0: torch.Tensor, target: torch.Tensor, crop_size: int) -
     )
 
 
+def aligned_random_crop(tensors: list[torch.Tensor], crop_size: int) -> list[torch.Tensor]:
+    if not tensors:
+        raise ValueError("aligned_random_crop requires at least one tensor")
+    _, height, width = tensors[0].shape
+    if any(tuple(tensor.shape[-2:]) != (height, width) for tensor in tensors):
+        raise ValueError("aligned_random_crop tensors have different spatial shapes")
+    if crop_size <= 0 or crop_size >= min(height, width):
+        return tensors
+    top = random.randint(0, height - crop_size)
+    left = random.randint(0, width - crop_size)
+    return [
+        tensor[:, top : top + crop_size, left : left + crop_size] for tensor in tensors
+    ]
+
+
 class ResidualPairDataset(Dataset):
     def __init__(
         self,
@@ -199,31 +248,140 @@ class ResidualPairDataset(Dataset):
     ) -> None:
         self.original_dir = resolve_project_path(config["inputs"]["original_dir"])
         self.m0_export_dir = resolve_project_path(config["inputs"]["m0_export_dir"])
+        self.m0_reconstruction_subdir = str(
+            config["inputs"].get("m0_reconstruction_subdir", "reconstruction")
+        )
+        self.condition_source = condition_source_name(config)
+        self.structure_export_dir = (
+            resolve_project_path(config["inputs"]["structure_export_dir"])
+            if self.condition_source == "decoded_structure_rgb"
+            else None
+        )
+        self.structure_reconstruction_subdir = str(
+            config["inputs"].get(
+                "structure_reconstruction_subdir", "structure_reconstruction"
+            )
+        )
         self.snr_norm_max = float(config["model"]["snr_norm_max"])
         self.crop_size = int(config["training"].get("crop_size", 0)) if train else 0
         self.random_flip = bool(config["training"].get("random_flip", False)) if train else False
         self.items: list[tuple[float, str]] = [(float(snr), name) for snr in snrs for name in names]
+        self.semantic_store = load_semantic_sketch_store(config)
 
     def __len__(self) -> int:
         return len(self.items)
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         snr, name = self.items[index]
-        m0_path = self.m0_export_dir / "exports" / snr_name(snr) / "reconstruction" / name
+        m0_path = (
+            self.m0_export_dir
+            / "exports"
+            / snr_name(snr)
+            / self.m0_reconstruction_subdir
+            / name
+        )
         original_path = self.original_dir / name
         m0 = load_rgb_tensor(m0_path)
         target = load_rgb_tensor(original_path)
-        m0, target = paired_random_crop(m0, target, self.crop_size)
+        condition_image = None
+        tensors = [m0, target]
+        if self.condition_source == "decoded_structure_rgb":
+            if self.structure_export_dir is None:  # pragma: no cover - constructor contract.
+                raise RuntimeError("Decoded-structure dataset has no structure export root")
+            condition_path = (
+                self.structure_export_dir
+                / "exports"
+                / snr_name(snr)
+                / self.structure_reconstruction_subdir
+                / name
+            )
+            condition_image = load_rgb_tensor(condition_path)
+            tensors.append(condition_image)
+        cropped = aligned_random_crop(tensors, self.crop_size)
+        m0, target = cropped[:2]
+        condition_image = cropped[2] if len(cropped) == 3 else None
         if self.random_flip and random.random() < 0.5:
             m0 = torch.flip(m0, dims=[2])
             target = torch.flip(target, dims=[2])
-        return {
+            if condition_image is not None:
+                condition_image = torch.flip(condition_image, dims=[2])
+        output = {
             "m0": m0,
             "target": target,
             "snr_db": torch.tensor(float(snr), dtype=torch.float32),
             "snr_norm": torch.tensor(float(snr) / self.snr_norm_max, dtype=torch.float32),
             "name": name,
         }
+        if condition_image is not None:
+            output["condition_image"] = condition_image
+        if self.semantic_store is not None:
+            output["semantic_sketch"] = semantic_sketch_for(
+                self.semantic_store, name=name, snr=snr
+            )
+        return output
+
+
+def load_semantic_sketch_store(config: dict[str, Any]) -> dict[str, Any] | None:
+    configured = config["inputs"].get("semantic_sketch_file")
+    expected_dim = int(config["model"].get("semantic_sketch_dim", 0))
+    if configured is None:
+        if expected_dim != 0:
+            raise ValueError("model.semantic_sketch_dim requires inputs.semantic_sketch_file")
+        return None
+    path = resolve_project_path(configured)
+    if not path.is_file():
+        raise FileNotFoundError(f"Semantic sketch file missing: {path}")
+    payload = torch.load(path, map_location="cpu")
+    if payload.get("official_val_accessed") is not False:
+        raise RuntimeError("Semantic sketch payload does not assert official_val_accessed=false")
+    if int(payload.get("sketch_dim", -1)) != expected_dim or expected_dim <= 0:
+        raise RuntimeError("Semantic sketch dimension mismatch")
+    names = [str(item) for item in payload["names"]]
+    snrs = [float(item) for item in payload["snrs"]]
+    received = payload["received_sketches"].float()
+    if tuple(received.shape) != (len(snrs), len(names), expected_dim):
+        raise RuntimeError(f"Unexpected received semantic sketch shape: {tuple(received.shape)}")
+    return {
+        "path": path,
+        "names": names,
+        "name_to_index": {name: index for index, name in enumerate(names)},
+        "snrs": snrs,
+        "received": received,
+    }
+
+
+def semantic_sketch_for(store: dict[str, Any], name: str, snr: float) -> torch.Tensor:
+    try:
+        name_index = store["name_to_index"][name]
+    except KeyError as exc:
+        raise KeyError(f"Semantic sketch missing sample: {name}") from exc
+    matches = [index for index, value in enumerate(store["snrs"]) if abs(value - float(snr)) < 1e-9]
+    if len(matches) != 1:
+        raise KeyError(f"Semantic sketch missing or ambiguous SNR: {snr}")
+    return store["received"][matches[0], name_index].clone()
+
+
+def semantic_sketch_batch_for_names(
+    config: dict[str, Any],
+    store: dict[str, Any] | None,
+    names: list[str],
+    snr: float,
+) -> torch.Tensor | None:
+    if store is None:
+        return None
+    mode = str(config.get("evaluation", {}).get("semantic_sketch_mode", "received"))
+    if mode == "received":
+        selected_names = names
+    elif mode == "shuffled":
+        all_names = list(store["names"])
+        selected_names = [all_names[(store["name_to_index"][name] + 1) % len(all_names)] for name in names]
+    elif mode == "zeros":
+        return torch.zeros(len(names), int(config["model"]["semantic_sketch_dim"]), dtype=torch.float32)
+    else:
+        raise ValueError(f"Unsupported evaluation.semantic_sketch_mode: {mode!r}")
+    return torch.stack(
+        [semantic_sketch_for(store, name=name, snr=snr) for name in selected_names]
+    )
 
 
 class ResidualBlock(nn.Module):
@@ -239,37 +397,237 @@ class ResidualBlock(nn.Module):
         return x + self.net(x)
 
 
+def condition_feature_names(config: dict[str, Any]) -> list[str]:
+    features = config["model"].get("condition_features", [])
+    if isinstance(features, str):
+        features = [item.strip() for item in features.split(",") if item.strip()]
+    names = [str(item) for item in features]
+    supported = {"sobel_magnitude", "laplacian_abs"}
+    unknown = sorted(set(names) - supported)
+    if unknown:
+        raise ValueError(f"Unsupported model.condition_features: {unknown}; supported={sorted(supported)}")
+    return names
+
+
+def condition_source_name(config: dict[str, Any]) -> str:
+    source = str(config["model"].get("condition_source", "receiver_m0"))
+    supported = {"receiver_m0", "sender_original_oracle", "decoded_structure_rgb"}
+    if source not in supported:
+        raise ValueError(f"Unsupported model.condition_source: {source!r}; supported={sorted(supported)}")
+    if source in {"sender_original_oracle", "decoded_structure_rgb"} and not condition_feature_names(config):
+        raise ValueError(f"{source} requires at least one structural condition feature")
+    if source == "decoded_structure_rgb" and condition_feature_names(config) != [
+        "sobel_magnitude",
+        "laplacian_abs",
+    ]:
+        raise ValueError(
+            "decoded_structure_rgb requires condition_features ordered as "
+            "[sobel_magnitude, laplacian_abs]"
+        )
+    return source
+
+
 class SNRConditionedResidualRefiner(nn.Module):
-    def __init__(self, base_channels: int, num_blocks: int) -> None:
+    def __init__(
+        self,
+        base_channels: int,
+        num_blocks: int,
+        condition_features: list[str] | None = None,
+        condition_source: str = "receiver_m0",
+        semantic_sketch_dim: int = 0,
+    ) -> None:
         super().__init__()
+        self.condition_features = list(condition_features or [])
+        self.condition_source = str(condition_source)
+        self.semantic_sketch_dim = int(semantic_sketch_dim)
+        input_channels = 4 + len(self.condition_features)
         self.head = nn.Sequential(
-            nn.Conv2d(4, base_channels, kernel_size=3, padding=1),
+            nn.Conv2d(input_channels, base_channels, kernel_size=3, padding=1),
             nn.SiLU(inplace=True),
         )
         self.body = nn.Sequential(*[ResidualBlock(base_channels) for _ in range(num_blocks)])
         self.tail = nn.Conv2d(base_channels, 3, kernel_size=3, padding=1)
+        self.semantic_modulation: nn.Module | None = None
+        if self.semantic_sketch_dim > 0:
+            self.semantic_modulation = nn.Sequential(
+                nn.Linear(self.semantic_sketch_dim, base_channels),
+                nn.SiLU(inplace=True),
+                nn.Linear(base_channels, 2 * base_channels),
+            )
+            nn.init.zeros_(self.semantic_modulation[-1].weight)
+            nn.init.zeros_(self.semantic_modulation[-1].bias)
+        self.register_buffer("luma_weights", torch.tensor([0.299, 0.587, 0.114]).view(1, 3, 1, 1), persistent=False)
+        self.register_buffer(
+            "sobel_x",
+            torch.tensor([[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]]).view(1, 1, 3, 3),
+            persistent=False,
+        )
+        self.register_buffer(
+            "sobel_y",
+            torch.tensor([[-1.0, -2.0, -1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]]).view(1, 1, 3, 3),
+            persistent=False,
+        )
+        self.register_buffer(
+            "laplacian",
+            torch.tensor([[0.0, 1.0, 0.0], [1.0, -4.0, 1.0], [0.0, 1.0, 0.0]]).view(1, 1, 3, 3),
+            persistent=False,
+        )
         nn.init.zeros_(self.tail.weight)
         nn.init.zeros_(self.tail.bias)
 
-    def forward(self, m0: torch.Tensor, snr_norm: torch.Tensor, residual_gate_value: torch.Tensor) -> torch.Tensor:
+    def structural_conditions(self, condition_image: torch.Tensor) -> list[torch.Tensor]:
+        if not self.condition_features:
+            return []
+        luma = (
+            condition_image
+            * self.luma_weights.to(dtype=condition_image.dtype, device=condition_image.device)
+        ).sum(dim=1, keepdim=True)
+        conditions: list[torch.Tensor] = []
+        for feature in self.condition_features:
+            if feature == "sobel_magnitude":
+                gx = F.conv2d(
+                    luma,
+                    self.sobel_x.to(dtype=condition_image.dtype, device=condition_image.device),
+                    padding=1,
+                )
+                gy = F.conv2d(
+                    luma,
+                    self.sobel_y.to(dtype=condition_image.dtype, device=condition_image.device),
+                    padding=1,
+                )
+                conditions.append(torch.sqrt(gx.square() + gy.square() + 1e-6).div(4.0).clamp(0.0, 1.0))
+            elif feature == "laplacian_abs":
+                lap = F.conv2d(
+                    luma,
+                    self.laplacian.to(dtype=condition_image.dtype, device=condition_image.device),
+                    padding=1,
+                )
+                conditions.append(lap.abs().div(4.0).clamp(0.0, 1.0))
+            else:  # pragma: no cover - validate config before construction.
+                raise RuntimeError(f"Unexpected condition feature: {feature}")
+        return conditions
+
+    def forward(
+        self,
+        m0: torch.Tensor,
+        snr_norm: torch.Tensor,
+        residual_gate_value: torch.Tensor,
+        condition_image: torch.Tensor | None = None,
+        semantic_sketch: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         b, _, h, w = m0.shape
         snr_map = snr_norm.view(b, 1, 1, 1).expand(b, 1, h, w)
-        residual = torch.tanh(self.tail(self.body(self.head(torch.cat([m0, snr_map], dim=1)))))
+        if self.condition_source in {"sender_original_oracle", "decoded_structure_rgb"}:
+            if condition_image is None:
+                raise ValueError(f"{self.condition_source} refiner requires condition_image")
+            if condition_image.shape != m0.shape:
+                raise ValueError(
+                    f"condition_image shape {tuple(condition_image.shape)} does not match M0 {tuple(m0.shape)}"
+                )
+            structural_input = condition_image
+        else:
+            structural_input = m0
+        conditions = (
+            [structural_input[:, 0:1], structural_input[:, 1:2]]
+            if self.condition_source == "decoded_structure_rgb"
+            else self.structural_conditions(structural_input)
+        )
+        model_input = torch.cat([m0, snr_map, *conditions], dim=1)
+        features = self.head(model_input)
+        if self.semantic_modulation is not None:
+            if semantic_sketch is None:
+                raise ValueError("Semantic-conditioned refiner requires semantic_sketch")
+            if semantic_sketch.shape != (b, self.semantic_sketch_dim):
+                raise ValueError(
+                    f"semantic_sketch shape {tuple(semantic_sketch.shape)} does not match "
+                    f"({b}, {self.semantic_sketch_dim})"
+                )
+            scale, bias = self.semantic_modulation(semantic_sketch).chunk(2, dim=1)
+            features = features * (1.0 + scale[:, :, None, None]) + bias[:, :, None, None]
+        residual = torch.tanh(self.tail(self.body(features)))
         gate = residual_gate_value.view(b, 1, 1, 1)
         return (m0 + gate * residual).clamp(0.0, 1.0)
 
 
 def build_model(config: dict[str, Any]) -> SNRConditionedResidualRefiner:
     model_cfg = config["model"]
+    features = condition_feature_names(config)
+    condition_source = condition_source_name(config)
+    expected_input_channels = 4 + len(features)
+    configured_input_channels = int(model_cfg.get("input_channels", expected_input_channels))
+    if configured_input_channels != expected_input_channels:
+        raise ValueError(
+            f"model.input_channels={configured_input_channels} does not match "
+            f"4 + len(condition_features)={expected_input_channels}"
+        )
     return SNRConditionedResidualRefiner(
         base_channels=int(model_cfg["base_channels"]),
         num_blocks=int(model_cfg["num_blocks"]),
+        condition_features=features,
+        condition_source=condition_source,
+        semantic_sketch_dim=int(model_cfg.get("semantic_sketch_dim", 0)),
     )
+
+
+def condition_image_for_batch(
+    config: dict[str, Any], target: torch.Tensor, decoded: torch.Tensor | None = None
+) -> torch.Tensor | None:
+    source = condition_source_name(config)
+    if source == "sender_original_oracle":
+        return target
+    if source == "decoded_structure_rgb":
+        if decoded is None:
+            raise ValueError("decoded_structure_rgb batch is missing condition_image")
+        return decoded
+    return None
 
 
 def gate_tensor(config: dict[str, Any], snr_db: torch.Tensor, device: torch.device) -> torch.Tensor:
     gates = [residual_gate(config, float(item)) for item in snr_db.detach().cpu().tolist()]
     return torch.tensor(gates, dtype=torch.float32, device=device)
+
+
+def semantic_teacher_logits(model: nn.Module, images: torch.Tensor) -> torch.Tensor:
+    resized = F.interpolate(images, size=(224, 224), mode="bilinear", align_corners=False, antialias=True)
+    mean_tensor = images.new_tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+    std_tensor = images.new_tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+    return model((resized - mean_tensor) / std_tensor)
+
+
+def semantic_distillation_loss(
+    teacher: nn.Module,
+    refined: torch.Tensor,
+    target: torch.Tensor,
+    temperature: float,
+) -> torch.Tensor:
+    if temperature <= 0:
+        raise ValueError("semantic distillation temperature must be positive")
+    with torch.no_grad():
+        target_probability = torch.softmax(semantic_teacher_logits(teacher, target) / temperature, dim=1)
+    refined_log_probability = torch.log_softmax(
+        semantic_teacher_logits(teacher, refined) / temperature, dim=1
+    )
+    return F.kl_div(refined_log_probability, target_probability, reduction="batchmean") * (
+        temperature**2
+    )
+
+
+def semantic_sketch_consistency_loss(
+    teacher: nn.Module,
+    refined: torch.Tensor,
+    received_sketch: torch.Tensor,
+    projection_seed: int,
+) -> torch.Tensor:
+    probabilities = torch.softmax(semantic_teacher_logits(teacher, refined), dim=1)
+    projection = fixed_rademacher_projection(
+        probabilities.shape[1],
+        received_sketch.shape[1],
+        projection_seed,
+        device=probabilities.device,
+        dtype=probabilities.dtype,
+    )
+    predicted_sketch = probabilities_to_sketch(probabilities, projection)
+    return (1.0 - F.cosine_similarity(predicted_sketch, received_sketch, dim=1)).mean()
 
 
 def train_one_epoch(
@@ -278,23 +636,110 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     config: dict[str, Any],
     device: torch.device,
+    semantic_teacher: nn.Module | None = None,
 ) -> dict[str, float]:
     model.train()
     losses: list[float] = []
     mse_losses: list[float] = []
     l1_losses: list[float] = []
+    semantic_losses: list[float] = []
+    sketch_consistency_losses: list[float] = []
+    counterfactual_rank_losses: list[float] = []
     for batch in loader:
         m0 = batch["m0"].to(device, non_blocking=True)
         target = batch["target"].to(device, non_blocking=True)
+        decoded = (
+            batch["condition_image"].to(device, non_blocking=True)
+            if "condition_image" in batch
+            else None
+        )
         snr_db = batch["snr_db"].to(device, non_blocking=True)
         snr_norm = batch["snr_norm"].to(device, non_blocking=True)
         gate = gate_tensor(config, snr_db, device)
+        semantic_sketch = (
+            batch["semantic_sketch"].to(device, non_blocking=True)
+            if "semantic_sketch" in batch
+            else None
+        )
 
         optimizer.zero_grad(set_to_none=True)
-        refined = model(m0, snr_norm, gate)
-        mse_loss = F.mse_loss(refined, target)
+        refined = model(
+            m0,
+            snr_norm,
+            gate,
+            condition_image=condition_image_for_batch(config, target, decoded),
+            semantic_sketch=semantic_sketch,
+        )
+        mse_per_sample = F.mse_loss(refined, target, reduction="none").flatten(start_dim=1).mean(dim=1)
+        mse_loss = mse_per_sample.mean()
         l1_loss = F.l1_loss(refined, target)
-        loss = float(config["training"]["mse_weight"]) * mse_loss + float(config["training"]["l1_weight"]) * l1_loss
+        semantic_weight = float(config["training"].get("semantic_kl_weight", 0.0))
+        sketch_weight = float(config["training"].get("semantic_sketch_consistency_weight", 0.0))
+        if semantic_weight > 0 or sketch_weight > 0:
+            if semantic_teacher is None:
+                raise RuntimeError("semantic training losses require a frozen semantic teacher")
+            semantic_loss = (
+                semantic_distillation_loss(
+                    semantic_teacher,
+                    refined,
+                    target,
+                    float(config["training"].get("semantic_kl_temperature", 1.0)),
+                )
+                if semantic_weight > 0
+                else mse_loss.new_zeros(())
+            )
+            if sketch_weight > 0:
+                if semantic_sketch is None:
+                    raise RuntimeError("semantic sketch consistency requires received semantic_sketch")
+                sketch_consistency_loss = semantic_sketch_consistency_loss(
+                    semantic_teacher,
+                    refined,
+                    semantic_sketch,
+                    int(config["training"]["semantic_projection_seed"]),
+                )
+            else:
+                sketch_consistency_loss = mse_loss.new_zeros(())
+        else:
+            semantic_loss = mse_loss.new_zeros(())
+            sketch_consistency_loss = mse_loss.new_zeros(())
+        rank_weight = float(config["training"].get("counterfactual_rank_weight", 0.0))
+        if rank_weight > 0:
+            if semantic_sketch is None:
+                raise RuntimeError("counterfactual ranking requires semantic_sketch")
+            zero_refined = model(
+                m0,
+                snr_norm,
+                gate,
+                condition_image=condition_image_for_batch(config, target, decoded),
+                semantic_sketch=torch.zeros_like(semantic_sketch),
+            )
+            shuffled_refined = model(
+                m0,
+                snr_norm,
+                gate,
+                condition_image=condition_image_for_batch(config, target, decoded),
+                semantic_sketch=torch.roll(semantic_sketch, shifts=1, dims=0),
+            )
+            margin = float(config["training"].get("counterfactual_rank_margin_mse", 0.0))
+            zero_mse_per_sample = F.mse_loss(
+                zero_refined, target, reduction="none"
+            ).flatten(start_dim=1).mean(dim=1)
+            shuffled_mse_per_sample = F.mse_loss(
+                shuffled_refined, target, reduction="none"
+            ).flatten(start_dim=1).mean(dim=1)
+            counterfactual_rank_loss = (
+                F.relu(mse_per_sample - zero_mse_per_sample + margin).mean()
+                + F.relu(mse_per_sample - shuffled_mse_per_sample + margin).mean()
+            )
+        else:
+            counterfactual_rank_loss = mse_loss.new_zeros(())
+        loss = (
+            float(config["training"]["mse_weight"]) * mse_loss
+            + float(config["training"]["l1_weight"]) * l1_loss
+            + semantic_weight * semantic_loss
+            + sketch_weight * sketch_consistency_loss
+            + rank_weight * counterfactual_rank_loss
+        )
         loss.backward()
         grad_clip = float(config["training"].get("grad_clip_norm", 0.0))
         if grad_clip > 0:
@@ -304,10 +749,16 @@ def train_one_epoch(
         losses.append(float(loss.detach().cpu()))
         mse_losses.append(float(mse_loss.detach().cpu()))
         l1_losses.append(float(l1_loss.detach().cpu()))
+        semantic_losses.append(float(semantic_loss.detach().cpu()))
+        sketch_consistency_losses.append(float(sketch_consistency_loss.detach().cpu()))
+        counterfactual_rank_losses.append(float(counterfactual_rank_loss.detach().cpu()))
     return {
         "loss": float(mean(losses) or 0.0),
         "mse_loss": float(mean(mse_losses) or 0.0),
         "l1_loss": float(mean(l1_losses) or 0.0),
+        "semantic_kl_loss": float(mean(semantic_losses) or 0.0),
+        "semantic_sketch_consistency_loss": float(mean(sketch_consistency_losses) or 0.0),
+        "counterfactual_rank_loss": float(mean(counterfactual_rank_losses) or 0.0),
     }
 
 
@@ -320,20 +771,63 @@ def quick_eval_loss(
 ) -> dict[str, float]:
     model.eval()
     mse_losses: list[float] = []
+    zero_mse_losses: list[float] = []
+    shuffled_mse_losses: list[float] = []
     psnrs: list[float] = []
     for batch in loader:
         m0 = batch["m0"].to(device, non_blocking=True)
         target = batch["target"].to(device, non_blocking=True)
+        decoded = (
+            batch["condition_image"].to(device, non_blocking=True)
+            if "condition_image" in batch
+            else None
+        )
         snr_db = batch["snr_db"].to(device, non_blocking=True)
         snr_norm = batch["snr_norm"].to(device, non_blocking=True)
         gate = gate_tensor(config, snr_db, device)
-        refined = model(m0, snr_norm, gate)
+        semantic_sketch = (
+            batch["semantic_sketch"].to(device, non_blocking=True)
+            if "semantic_sketch" in batch
+            else None
+        )
+        refined = model(
+            m0,
+            snr_norm,
+            gate,
+            condition_image=condition_image_for_batch(config, target, decoded),
+            semantic_sketch=semantic_sketch,
+        )
         mse_losses.append(float(F.mse_loss(refined, target).detach().cpu()))
+        if semantic_sketch is not None:
+            zero_refined = model(
+                m0,
+                snr_norm,
+                gate,
+                condition_image=condition_image_for_batch(config, target, decoded),
+                semantic_sketch=torch.zeros_like(semantic_sketch),
+            )
+            shuffled_refined = model(
+                m0,
+                snr_norm,
+                gate,
+                condition_image=condition_image_for_batch(config, target, decoded),
+                semantic_sketch=torch.roll(semantic_sketch, shifts=1, dims=0),
+            )
+            zero_mse_losses.append(float(F.mse_loss(zero_refined, target).detach().cpu()))
+            shuffled_mse_losses.append(float(F.mse_loss(shuffled_refined, target).detach().cpu()))
         psnrs.extend(psnr_per_sample(refined, target).detach().cpu().tolist())
-    return {
+    result = {
         "eval_mse": float(mean(mse_losses) or 0.0),
         "eval_psnr_db": float(mean(psnrs) or 0.0),
     }
+    if zero_mse_losses:
+        result.update(
+            {
+                "eval_zero_sketch_mse": float(mean(zero_mse_losses) or 0.0),
+                "eval_shuffled_sketch_mse": float(mean(shuffled_mse_losses) or 0.0),
+            }
+        )
+    return result
 
 
 def load_classifier(config: dict[str, Any], device: torch.device):
@@ -491,22 +985,61 @@ def refine_and_save_snr(
     device: torch.device,
 ) -> tuple[list[Path], float]:
     model.eval()
-    m0_dir = resolve_project_path(config["inputs"]["m0_export_dir"]) / "exports" / snr_name(snr) / "reconstruction"
+    m0_subdir = str(config["inputs"].get("m0_reconstruction_subdir", "reconstruction"))
+    m0_dir = (
+        resolve_project_path(config["inputs"]["m0_export_dir"])
+        / "exports"
+        / snr_name(snr)
+        / m0_subdir
+    )
+    original_dir = resolve_project_path(config["inputs"]["original_dir"])
     refined_dir = output_dir / "exports" / snr_name(snr) / "refined"
     refined_dir.mkdir(parents=True, exist_ok=False)
     refined_paths: list[Path] = []
     elapsed = 0.0
     batch_size = int(config["training"]["batch_size"])
+    semantic_store = load_semantic_sketch_store(config)
     for start in range(0, len(names), batch_size):
         batch_names = names[start : start + batch_size]
         batch = torch.stack([load_rgb_tensor(m0_dir / name) for name in batch_names]).to(device)
+        condition_batch = None
+        if condition_source_name(config) == "sender_original_oracle":
+            condition_batch = torch.stack(
+                [load_rgb_tensor(original_dir / name) for name in batch_names]
+            ).to(device)
+        elif condition_source_name(config) == "decoded_structure_rgb":
+            structure_subdir = str(
+                config["inputs"].get(
+                    "structure_reconstruction_subdir", "structure_reconstruction"
+                )
+            )
+            structure_dir = (
+                resolve_project_path(config["inputs"]["structure_export_dir"])
+                / "exports"
+                / snr_name(snr)
+                / structure_subdir
+            )
+            condition_batch = torch.stack(
+                [load_rgb_tensor(structure_dir / name) for name in batch_names]
+            ).to(device)
         snr_db = torch.full((len(batch_names),), float(snr), dtype=torch.float32, device=device)
         snr_norm = snr_db / float(config["model"]["snr_norm_max"])
         gate = gate_tensor(config, snr_db, device)
+        semantic_batch = (
+            semantic_sketch_batch_for_names(config, semantic_store, batch_names, snr).to(device)
+            if semantic_store is not None
+            else None
+        )
         if device.type == "cuda":
             torch.cuda.synchronize(device)
         begin = time.perf_counter()
-        refined = model(batch, snr_norm, gate)
+        refined = model(
+            batch,
+            snr_norm,
+            gate,
+            condition_image=condition_batch,
+            semantic_sketch=semantic_batch,
+        )
         if device.type == "cuda":
             torch.cuda.synchronize(device)
         elapsed += time.perf_counter() - begin
@@ -530,7 +1063,13 @@ def evaluate_snr(
     device: torch.device,
 ) -> dict[str, Any]:
     original_dir = resolve_project_path(config["inputs"]["original_dir"])
-    m0_dir = resolve_project_path(config["inputs"]["m0_export_dir"]) / "exports" / snr_name(snr) / "reconstruction"
+    m0_subdir = str(config["inputs"].get("m0_reconstruction_subdir", "reconstruction"))
+    m0_dir = (
+        resolve_project_path(config["inputs"]["m0_export_dir"])
+        / "exports"
+        / snr_name(snr)
+        / m0_subdir
+    )
     refined_paths, elapsed = refine_and_save_snr(model, config, snr, names, output_dir, device)
     final_dir = output_dir / "exports" / snr_name(snr) / "final"
     final_dir.mkdir(parents=True, exist_ok=False)
@@ -813,6 +1352,22 @@ def main() -> None:
     )
 
     model = build_model(config).to(device)
+    initial_refiner = config["inputs"].get("initial_refiner_checkpoint")
+    if initial_refiner is not None:
+        initial_path = resolve_project_path(initial_refiner)
+        if not initial_path.is_file():
+            raise FileNotFoundError(f"Initial refiner checkpoint missing: {initial_path}")
+        initial_payload = torch.load(initial_path, map_location=device)
+        initial_state = initial_payload.get("model_state_dict", initial_payload)
+        incompatible = model.load_state_dict(initial_state, strict=False)
+        allowed_missing = {
+            name for name in model.state_dict() if name.startswith("semantic_modulation.")
+        }
+        if set(incompatible.missing_keys) != allowed_missing or incompatible.unexpected_keys:
+            raise RuntimeError(
+                f"Unsafe initial refiner mismatch: missing={incompatible.missing_keys}, "
+                f"unexpected={incompatible.unexpected_keys}"
+            )
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=float(config["training"]["lr"]),
@@ -824,15 +1379,41 @@ def main() -> None:
     latest_state_path = output_dir / "checkpoints" / "latest.pt"
     best_state_path.parent.mkdir(parents=True, exist_ok=True)
 
+    classifier_model = None
+    classifier_preprocess = None
+    categories = None
+    semantic_kl_weight = float(config["training"].get("semantic_kl_weight", 0.0))
+    semantic_sketch_weight = float(
+        config["training"].get("semantic_sketch_consistency_weight", 0.0)
+    )
+    if semantic_kl_weight > 0 or semantic_sketch_weight > 0:
+        classifier_model, classifier_preprocess, categories = load_classifier(config, device)
+        classifier_model.requires_grad_(False).eval()
+
     epochs = int(config["training"]["epochs"])
     validate_every = int(config["training"].get("validation_every_epochs", 10))
     for epoch in range(epochs):
-        train_stats = train_one_epoch(model, train_loader, optimizer, config, device)
+        train_stats = train_one_epoch(
+            model,
+            train_loader,
+            optimizer,
+            config,
+            device,
+            semantic_teacher=classifier_model,
+        )
         row: dict[str, Any] = {"epoch": epoch, **train_stats}
         if (epoch + 1) % validate_every == 0 or epoch == epochs - 1:
             eval_stats = quick_eval_loss(model, eval_loader, config, device)
             row.update(eval_stats)
-            if eval_stats["eval_mse"] < best_eval_mse:
+            counterfactual_ok = True
+            if bool(config["training"].get("checkpoint_require_counterfactual_advantage", False)):
+                counterfactual_ok = (
+                    "eval_zero_sketch_mse" in eval_stats
+                    and eval_stats["eval_mse"] < eval_stats["eval_zero_sketch_mse"]
+                    and eval_stats["eval_mse"] < eval_stats["eval_shuffled_sketch_mse"]
+                )
+                row["counterfactual_checkpoint_eligible"] = counterfactual_ok
+            if counterfactual_ok and eval_stats["eval_mse"] < best_eval_mse:
                 best_eval_mse = eval_stats["eval_mse"]
                 torch.save(
                     {
@@ -858,11 +1439,19 @@ def main() -> None:
     if best_state_path.exists():
         checkpoint = torch.load(best_state_path, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
+    else:
+        raise RuntimeError(
+            "No validation epoch satisfied checkpoint selection; "
+            "counterfactual semantic advantage may have failed"
+        )
     write_csv(output_dir / "train_history.csv", history)
 
     cache_root = resolve_project_path("outputs/cache")
     cache_root.mkdir(parents=True, exist_ok=True)
-    classifier_model, classifier_preprocess, categories = load_classifier(config, device)
+    if classifier_model is None:
+        classifier_model, classifier_preprocess, categories = load_classifier(config, device)
+    if classifier_preprocess is None or categories is None:  # pragma: no cover - load contract.
+        raise RuntimeError("Classifier metadata was not initialized")
     lpips_model, lpips_error = (None, "Skipped by --skip-lpips") if args.skip_lpips else try_load_lpips(device, cache_root)
 
     results = []

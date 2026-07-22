@@ -1,0 +1,54 @@
+phase: S6-external-comparison
+experiment_id: EXP-EXT-AUTHOR-RATE-DJSCC-002
+status: registered_after_numeric_failure_before_stable_run_output
+created_at: "2026-07-15"
+parent_failed_experiment: EXP-EXT-AUTHOR-RATE-DJSCC-001
+parent_failure: outputs/train/external_author_rate_deepjscc_c3_mask19712/failure.json
+change_scope: numerical_stabilization_only_fp32_and_lower_learning_rate
+official_val_accessed: false
+dataset: COCO2017
+image_size: 256
+seed: 20260730
+
+channel:
+  type: AWGN
+  train_snr_db: 7
+  noise_variance_convention: complex_awgn_per_real_half_variance
+
+rate:
+  source_real_dimensions: 196608
+  inner_channel: 3
+  dense_real_symbols: 24576
+  active_real_symbols: 19712
+  complex_channel_uses: 9856
+  exact_cbr: 0.050130208333333336
+  mask_rule: evenly_spaced_floor_indices_over_flattened_chw
+
+protocol:
+  source_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  source_inner_channel: 8
+  warm_start_selection: encoder_decoder_geometric_l2
+
+data:
+  train_root: data/coco/train2017
+  val_root: data/coco/val2017
+  train_subset: 20000
+  val_subset: 512
+  subset_method: torch_randperm_seed
+
+training:
+  batch_size: 32
+  num_workers: 8
+  amp: false
+  grad_clip_norm: 1.0
+  weight_decay: 0.0005
+  epochs: 12
+  learning_rate: 0.00002
+
+baseline:
+  repo: third_party/Deep-JSCC-PyTorch
+  source_url: https://github.com/chunbaobao/Deep-JSCC-PyTorch
+  commit: 2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06
+
+output_dir: outputs/train/external_author_rate_deepjscc_c3_mask19712_fp32_lr2e5
+overwrite_forbidden: true

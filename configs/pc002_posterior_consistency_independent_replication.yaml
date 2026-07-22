@@ -1,0 +1,35 @@
+phase: S5-validation
+study: posterior_consistency
+analysis_id: ANALYSIS-PC-002
+seed: 20260716
+source_config: configs/s13_coco_train2017_c8_scaleup_export.yaml
+source_rank_start: 11064
+sample_count: 256
+snrs: [1, 4, 7, 13, 19]
+batch_size: 8
+proximal_steps: 3
+normalized_step_size: 0.001
+b1_config: configs/s13_scaleup_b1_anchor_train.yaml
+b1_checkpoint: outputs/EXP-S13-001/checkpoints/best.pt
+diffusion_config: configs/s14_scaleup_b1_anchored_diffusion.yaml
+diffusion_checkpoint: outputs/EXP-S14-001/checkpoints/best.pt
+deepjscc_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+classifiers:
+  cache_dir: outputs/cache/torch
+  models:
+    - key: alexnet
+      model_name: alexnet
+      weights_enum: AlexNet_Weights
+      weights: IMAGENET1K_V1
+      weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+    - key: resnet18
+      model_name: resnet18
+      weights_enum: ResNet18_Weights
+      weights: IMAGENET1K_V1
+      weights_file: outputs/cache/torch/hub/checkpoints/resnet18-f37072fd.pth
+    - key: mobilenet_v3_small
+      model_name: mobilenet_v3_small
+      weights_enum: MobileNet_V3_Small_Weights
+      weights: IMAGENET1K_V1
+      weights_file: outputs/cache/torch/hub/checkpoints/mobilenet_v3_small-047dcff4.pth
+output_dir: outputs/analysis/s16_posterior_consistency_independent_replication

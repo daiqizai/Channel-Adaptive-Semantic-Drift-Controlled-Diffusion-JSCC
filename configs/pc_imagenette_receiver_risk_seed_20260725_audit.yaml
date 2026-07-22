@@ -1,0 +1,25 @@
+phase: S5-validation
+study: posterior_consistency
+analysis_id: ANALYSIS-PC-RISK-SEED-AUDIT-001
+frozen_controller:
+  controller_json: outputs/analysis/pc_imagenette_receiver_risk_controller_dev/controller.json
+  controller_sha256: 3ff792a366074202d1727042c40c0cbc777843a5c65d48276e3dfd9be6199f6f
+  empirical_cdfs: outputs/analysis/pc_imagenette_receiver_risk_controller_dev/empirical_cdfs.npz
+  empirical_cdfs_sha256: 2a7f062ab53da9309f6ccad8b9c2a8977b9b79e5d95c760559d674d2503e6956
+audit_source:
+  extraction_config: configs/pc_imagenette_receiver_risk_seed_20260725_features.yaml
+  extraction_config_sha256: c1465c585b7e2e12c246668e8b71777c831b4dcf8408dfc6b9ce130ab93d5d33
+  risk_features_csv: outputs/analysis/pc_imagenette_receiver_risk_seed_20260725_features/risk_features.csv
+  audit_csv: outputs/analysis/pc_imagenette_receiver_risk_seed_20260725_features/per_sample.csv
+  schema_json: outputs/analysis/pc_imagenette_receiver_risk_seed_20260725_features/risk_feature_schema.json
+  expected_channel_seed: 20260725
+  expected_rows: 9470
+evaluation:
+  primary_snrs: [1, 4, 7]
+  minimum_clean_images: 1600
+  minimum_reference_reject_rate: 0.05
+  maximum_reference_reject_rate: 0.15
+  gates:
+    max_primary_final_new_image_cluster_upper: 0.005
+    minimum_posterior_psnr_gain_retained_fraction: 0.80
+output_dir: outputs/analysis/pc_imagenette_receiver_risk_seed_20260725_audit

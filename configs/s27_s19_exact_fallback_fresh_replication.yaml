@@ -1,0 +1,162 @@
+phase: S27-s19-exact-fallback-pristine-replication
+analysis_id: ANALYSIS-S27-S19-XF-FRESH-001
+method: FrozenS19LowSNRFusionWithExactB1HighSNRFallback
+dataset: COCO2017_train2017_pristine_holdout
+image_size: 256
+seed: 20260771
+
+protocol:
+  status: complete_pristine_replication_output_pass
+  preregistration: reports/s19_exact_fallback_fresh_replication_preregistration_2026-07-21.md
+  s19_s23_s25_s26_outcomes_known: true
+  all_s16_s18_s19_s21_sources_excluded_by_path_and_sha256: true
+  frozen_s19_checkpoints_no_retraining: true
+  no_selection_or_tuning: true
+  one_shot_pristine_holdout_evaluation: true
+  official_imagenette_accessed: false
+
+inputs:
+  source_root: data/coco/train2017
+  coco_val_exclusion_root: data/coco/val2017
+  exclusion_manifests:
+    - path: outputs/eval/s16_lowrate_m3_exact19712_uint2r4_coco10k_1k/source_manifest.csv
+      sha256: 93ae3f3b47420c6bf84e1b5dce29601db1490f5519bb99fe39dcdad6680e2de9
+    - path: outputs/eval/s18_fresh_coco_identity_envelope_population/source_manifest.csv
+      sha256: c467d2ccadd94242f51ff683f09d7b43d91a07d5edc538d06c06f2b6d93a8bed
+    - path: outputs/eval/s19_fresh_coco_fusion_population/source_manifest.csv
+      sha256: b73c05656865eb6023c40dd57dfde176d05141eaf9b996feff92a41894522fe9
+    - path: outputs/eval/s21_fresh_coco_b1_anchored_fusion_population/source_manifest.csv
+      sha256: 4f31ecb619531e61322e471de709adef4df6efdc787544d21b7d16cc0a1c7db5
+  population_root: outputs/eval/s27_fresh_s19_exact_fallback_population
+  source_manifest: outputs/eval/s27_fresh_s19_exact_fallback_population/source_manifest.csv
+  source_manifest_sha256: fa1a2ae172fd06f0a00efcd31d482b6848c6775ffbd25d2c20b027474b910caa
+  cache_manifest: outputs/eval/s27_fresh_s19_exact_fallback_population/cache_manifest.csv
+  cache_manifest_sha256: 2f5b6ec34a681e3725e05378b47fdc54eb80a4fd0515a4437a5f7abab8e556fa
+  deepjscc_checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/best.pt
+  deepjscc_checkpoint_sha256: bca5b67a3bca93f17d23688cc5ec2d30ffe8790191e07fbf41926649cf1bb606
+  forbidden_deepjscc_checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/latest.pt
+  latent_diffusion_checkpoint: outputs/EXP-S17-LATDIFF-004-DECODER/checkpoints/best.pt
+  latent_diffusion_checkpoint_sha256: 5b708117a5d25cad0a5909a24f85bb32d1b5dc11c83146ba8c98fad5ee35d98f
+  identity_policy: outputs/analysis/ANALYSIS-S18-IDENTITY-SELECTION-001/selected_policy.json
+  identity_policy_sha256: c31d68533bf4e470d585ff5d279e948a71dca3ead1964902647393b2f37d05eb
+  b1_config: configs/lowrate_m3_b1_anchor_train.yaml
+  b1_config_sha256: 5c40cacbb53a08ea6d4e67a37e63937f3132432f35d55bc82b759743cb2a23bb
+  b1_checkpoint: outputs/EXP-S16-B1-001/checkpoints/best.pt
+  b1_checkpoint_sha256: 7a295976105a9c43c25604c9070e676d25512c7a09b5c50655b6671477b7615a
+  control_checkpoint: outputs/EXP-S19-FUSION-001/checkpoints/control_best.pt
+  control_checkpoint_sha256: c9eab7648bd0120e5db2820b7a94edd13251ed8e1050cec6edb6f6187fbdbcf6
+  fusion_checkpoint: outputs/EXP-S19-FUSION-001/checkpoints/fusion_best.pt
+  fusion_checkpoint_sha256: e7577d59e9c2362e40feb72bb030c1c7b9302b707115d3e000c9c55bbb8942c5
+
+baseline:
+  repo: third_party/Deep-JSCC-PyTorch
+  commit: 2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06
+
+population:
+  rank_seed: 20260771
+  total_count: 512
+  roles:
+    holdout: 512
+  transform: resize_shorter_side_256_then_center_crop_256_then_uint8_png
+  exclude_prior_path_and_sha256: true
+  exclude_coco_val2017_filename: true
+
+channel:
+  type: AWGN
+  snrs_db: [1, 4, 7, 13, 19]
+  noise_variance_factor_per_real: 0.5
+  role_base_seeds:
+    holdout: 20260772
+
+rate:
+  inner_channel: 3
+  dense_real_symbols: 24576
+  active_real_symbols: 19712
+  payload_real_symbols: 80
+  image_active_real_symbols: 19632
+  complex_channel_uses: 9856
+  source_real_dimensions: 196608
+  exact_cbr: 0.050130208333333336
+  active_index_rule: evenly_spaced_floor_indices
+  payload_index_rule: evenly_spaced_within_active_indices
+  auxiliary_uses_same_received_codeword: true
+  fusion_side_information_real_symbols: 0
+
+model:
+  latent_channels: 6
+  latent_height: 64
+  latent_width: 64
+  base_channels: 48
+  num_blocks: 6
+  time_embedding_dim: 96
+  group_norm_groups: 8
+
+diffusion:
+  selected_policy_name: hard_identity_7db
+  full_through_snr_db: 7.0
+  identity_from_snr_db: 13.0
+  sampling_steps: 6
+  train_alpha_max: 0.999
+  sampler: deterministic_ddim
+  cache_diffusion_snrs_db: [1, 4, 7]
+  high_snr_auxiliary_is_exact_b0: true
+
+fusion_model:
+  name: dual_input_receiver_residual_cnn
+  input_order: [b0_rgb, auxiliary_rgb, snr_map, b0_sobel_magnitude, b0_laplacian_abs]
+  input_channels: 9
+  base_channels: 64
+  num_blocks: 6
+  snr_norm_max: 20.0
+  residual_gates: {"1": 0.12, "4": 0.10, "7": 0.08, "13": 0.05, "19": 0.04}
+  control_auxiliary: duplicate_b0
+  fusion_auxiliary: identity_controlled_diffusion
+  b1_expansion: copy_b1_nonauxiliary_weights_and_zero_initialize_auxiliary_head_slice
+
+exact_fallback:
+  use_frozen_branch_snrs_db: [1, 4, 7]
+  use_exact_b1_snrs_db: [13, 19]
+  fusion_branch: frozen_s19_fusion
+  matched_control_branch: frozen_s19_control
+  fallback: frozen_b1
+  routing_inputs: [snr_db]
+  learned_parameters: 0
+  side_information_real_symbols: 0
+
+training:
+  crop_size: 128
+  random_flip: true
+
+evaluation:
+  batch_size: 16
+  num_workers: 8
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260773
+  bootstrap_unit: source_image_cluster_across_five_snrs
+  pseudo_original_confidence_min: 0.20
+
+classifiers:
+  alexnet: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  resnet18: outputs/cache/torch/hub/checkpoints/resnet18-f37072fd.pth
+  mobilenet_v3_small: outputs/cache/torch/hub/checkpoints/mobilenet_v3_small-047dcff4.pth
+  imagenet_mean: [0.485, 0.456, 0.406]
+  imagenet_std: [0.229, 0.224, 0.225]
+
+success_criteria:
+  population_path_overlap_max: 0
+  population_sha_overlap_max: 0
+  high_snr_exact_b1_max_abs: 0.0000001
+  routed_fusion_minus_control_psnr_ci_low_min_db: 0.0
+  routed_fusion_minus_control_lpips_ci_high_max: 0.0
+  routed_fusion_minus_b1_psnr_mean_min_db: 0.05
+  routed_fusion_minus_b1_psnr_ci_low_min_db: 0.03
+  routed_fusion_minus_b1_lpips_ci_high_max: 0.0
+  routed_fusion_minus_b1_nonnegative_snr_count_min: 5
+  routed_fusion_majority_new_not_greater_than_repair: true
+  routed_fusion_majority_failure_not_greater_than_control: true
+
+outputs:
+  population_dir: outputs/eval/s27_fresh_s19_exact_fallback_population
+  directory: outputs/analysis/ANALYSIS-S27-S19-XF-FRESH-001
+  summary_sha256: 4d0d1426962be2c92fc3b85993b68e42935e6670d7ae4c3b9d5439660e8864f1
+  per_sample_sha256: d20fbf0e90870070b84db444b5a3db2455f2d2722f4fa094ae7ec190136a4dc1

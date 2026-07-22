@@ -1,0 +1,79 @@
+phase: S6
+analysis_id: exp_s4_006_008_009_010_edge_capacity_ablation
+method: PairedEdgeCapacityFactorialValidationAblation
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+design:
+  edge_features:
+    - sobel_magnitude
+    - laplacian_abs
+  capacity_levels:
+    small:
+      base_channels: 48
+      num_blocks: 5
+      epochs: 40
+    large:
+      base_channels: 64
+      num_blocks: 6
+      epochs: 60
+  note: The capacity factor is a capacity/training-budget package because epochs change from 40 to 60 with width/depth.
+
+arms:
+  - key: small_no_edge
+    experiment_id: EXP-S4-006
+    capacity: small
+    edge_conditioned: false
+    config: outputs/EXP-S4-006/config.yaml
+    checkpoint: outputs/EXP-S4-006/checkpoints/best.pt
+    per_sample_csv: outputs/EXP-S4-006/per_sample.csv
+    summary_csv: outputs/EXP-S4-006/summary.csv
+  - key: small_edge
+    experiment_id: EXP-S4-010
+    capacity: small
+    edge_conditioned: true
+    config: outputs/EXP-S4-010/config.yaml
+    checkpoint: outputs/EXP-S4-010/checkpoints/best.pt
+    per_sample_csv: outputs/EXP-S4-010/per_sample.csv
+    summary_csv: outputs/EXP-S4-010/summary.csv
+  - key: large_no_edge
+    experiment_id: EXP-S4-009
+    capacity: large
+    edge_conditioned: false
+    config: outputs/EXP-S4-009/config.yaml
+    checkpoint: outputs/EXP-S4-009/checkpoints/best.pt
+    per_sample_csv: outputs/EXP-S4-009/per_sample.csv
+    summary_csv: outputs/EXP-S4-009/summary.csv
+  - key: large_edge
+    experiment_id: EXP-S4-008
+    capacity: large
+    edge_conditioned: true
+    config: outputs/EXP-S4-008/config.yaml
+    checkpoint: outputs/EXP-S4-008/checkpoints/best.pt
+    per_sample_csv: outputs/EXP-S4-008/per_sample.csv
+    summary_csv: outputs/EXP-S4-008/summary.csv
+
+bootstrap:
+  cluster: sample
+  preserve_all_snrs_per_cluster: true
+  replicates: 10000
+  seed: 42
+  confidence_level: 0.95
+  interval: percentile
+
+validation:
+  summary_psnr_tolerance_db: 0.00001
+  require_checkpoint_config_match: true
+  require_identical_sample_snr_keys: true
+  require_identical_original_and_m0_paths: true
+
+runtime:
+  torch_num_threads: 1
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_006_008_009_010_edge_capacity_ablation

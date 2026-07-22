@@ -1,0 +1,72 @@
+phase: S15
+experiment_id: EXP-S15-001
+method: UInt2ReservationAwareB1FineTunePilot
+dataset: COCO2017_train2017_internal_split
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.16666666666666666
+seed: 20260728
+protocol:
+  preregistration: reports/reservation_aware_diffusion_jscc_preregistration_2026-07-14.md
+  source_manifest_sha256: 51b7efe4bd340259b5bb6aa8a13f9829372a4d39c7c680e859e4ecc53421e8de
+  initial_b1_checkpoint_sha256: 80133f9d9649c1a5d9514cf2b4f0d04802b6ebe03cc970bfcec86eddfd165562
+  official_imagenette_accessed: false
+inputs:
+  m0_export_dir: outputs/eval/s15_coco_train2017_c8_uint2_reserved_2k_200
+  m0_reconstruction_subdir: reconstruction
+  original_dir: outputs/eval/s15_coco_train2017_c8_uint2_reserved_2k_200/exports/original
+  checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+  initial_refiner_checkpoint: outputs/EXP-S13-001/checkpoints/best.pt
+split:
+  train_sample_start: 0
+  train_sample_count: 2000
+  eval_sample_start: 2000
+  eval_sample_count: 200
+model:
+  name: uint2_reservation_aware_scaleup_c8_receiver_structure_residual_cnn
+  input_channels: 6
+  condition_features: [sobel_magnitude, laplacian_abs]
+  condition_source: receiver_m0
+  base_channels: 64
+  num_blocks: 6
+  snr_norm_max: 20.0
+  residual_gates: {"1": 0.12, "4": 0.10, "7": 0.08, "13": 0.05, "19": 0.04}
+training:
+  epochs: 3
+  batch_size: 16
+  num_workers: 8
+  crop_size: 128
+  random_flip: true
+  lr: 0.0001
+  weight_decay: 0.0
+  grad_clip_norm: 1.0
+  mse_weight: 1.0
+  l1_weight: 0.10
+  validation_every_epochs: 1
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 64
+  topk: 5
+failure_handling:
+  detector: top1_agreement_with_uint2_reserved_b0
+  accept_when: refined_classifier_top1_equals_reserved_b0_classifier_top1
+  fallback_output: reserved_b0_reconstruction
+  uses_original_for_detection: false
+evaluation:
+  sample_grid_count: 4
+  pseudo_clean_conf_thresholds: [0.20, 0.30]
+  metrics: [psnr, ssim, ms_ssim, lpips, pseudo_drift, pseudo_final_failure, accept_rate]
+success_criteria:
+  mean_raw_minus_m0_psnr_min_db: 0.80
+  minimum_psnr_improved_snr_count: 5
+  mean_raw_minus_m0_lpips_max: 0.0
+  minimum_lpips_improved_snr_count: 4
+  raw_new_error_not_greater_than_repair: true
+outputs:
+  output_dir: outputs/EXP-S15-001

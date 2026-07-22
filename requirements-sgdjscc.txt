@@ -1,0 +1,26 @@
+# Isolated author-code environment for third_party/SGDJSCC commit 2188acc0.
+# Kept separate from the main project environment because xformers 0.0.22.post7
+# requires the author-pinned torch 2.1.0 stack.
+numpy==1.23.2
+setuptools==80.10.2
+torch==2.1.0
+torchvision==0.16.0
+xformers==0.0.22.post7
+pytorch-lightning==2.4.0
+transformers==4.44.2
+diffusers==0.26.3
+huggingface-hub==0.25.1
+timm==0.9.16
+einops==0.8.2
+omegaconf==2.3.1
+efficientnet-pytorch==0.7.1
+openai-clip==1.0.1
+matplotlib==3.10.9
+torch-fidelity==0.4.0
+scikit-image==0.24.0
+lpips==0.1.4
+pytorch-msssim==1.0.0
+torchmetrics==1.9.0
+clean-fid==0.1.35
+safetensors==0.8.0
+pytest==9.1.1

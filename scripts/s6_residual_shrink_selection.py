@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import itertools
 import json
 import os
 import platform
@@ -28,7 +29,7 @@ from cadsd_jscc.metrics import ms_ssim_per_sample, psnr_per_sample, ssim_per_sam
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate residual-strength shrink candidates over existing EXP-S4-006 outputs."
+        description="Evaluate residual-strength shrink candidates over existing residual-refiner outputs."
     )
     parser.add_argument("--config", default="configs/s6_residual_shrink_selection_exp_s4_006.yaml")
     parser.add_argument("--device", default="auto")
@@ -183,7 +184,7 @@ def validate_inputs(config: dict[str, Any], snrs: list[float]) -> dict[str, Any]
 
 
 def load_classifier(config: dict[str, Any], device: torch.device):
-    os.environ.setdefault("TORCH_HOME", str(resolve_project_path(config["classifier"]["cache_dir"])))
+    os.environ["TORCH_HOME"] = str(resolve_project_path(config["classifier"]["cache_dir"]))
     import torchvision.models as models
 
     weights = getattr(models.AlexNet_Weights, str(config["classifier"]["weights"]))
@@ -194,7 +195,7 @@ def load_classifier(config: dict[str, Any], device: torch.device):
 
 def try_load_lpips(device: torch.device, cache_root: Path):
     try:
-        os.environ.setdefault("TORCH_HOME", str(cache_root / "torch"))
+        os.environ["TORCH_HOME"] = str(cache_root)
         import lpips
 
         model = lpips.LPIPS(net="alex", verbose=False).to(device)
@@ -446,12 +447,15 @@ def choose_schedule(
     summary_rows: list[dict[str, Any]],
     policy: str,
     snrs: list[float],
+    residual_gates: dict[float, float] | None = None,
+    enforce_effective_strength_nonincreasing: bool = False,
 ) -> tuple[dict[float, float | None], list[dict[str, Any]]]:
-    choices: dict[float, float | None] = {}
-    choice_rows: list[dict[str, Any]] = []
+    candidates_by_snr: dict[float, list[dict[str, Any]]] = {}
+    m0_by_snr: dict[float, dict[str, Any]] = {}
     for snr in snrs:
         m0_row = next(row for row in summary_rows if row["policy"] == "m0" and float(row["snr_db"]) == float(snr))
-        candidates = [
+        m0_by_snr[float(snr)] = m0_row
+        candidates_by_snr[float(snr)] = [
             row
             for row in summary_rows
             if row["policy"] == policy
@@ -459,6 +463,54 @@ def choose_schedule(
             and float(row["snr_db"]) == float(snr)
             and float(row["final_failure_rate"]) <= float(m0_row["final_failure_rate"]) + 1e-12
         ]
+
+    if enforce_effective_strength_nonincreasing:
+        if residual_gates is None:
+            raise ValueError("residual_gates are required for monotonic effective-strength selection")
+        option_lists: list[list[dict[str, Any]]] = []
+        for snr in snrs:
+            options = [*candidates_by_snr[float(snr)], {**m0_by_snr[float(snr)], "alpha": None}]
+            option_lists.append(options)
+
+        valid_schedules: list[tuple[tuple[dict[str, Any], ...], list[float]]] = []
+        for schedule in itertools.product(*option_lists):
+            strengths = [
+                float(residual_gates[float(snr)]) * (0.0 if row.get("alpha") in (None, "") else float(row["alpha"]))
+                for snr, row in zip(snrs, schedule)
+            ]
+            if all(left + 1e-12 >= right for left, right in zip(strengths, strengths[1:])):
+                valid_schedules.append((schedule, strengths))
+        if not valid_schedules:
+            raise RuntimeError("No schedule satisfies the effective-strength monotonicity constraint")
+
+        best_schedule, best_strengths = max(
+            valid_schedules,
+            key=lambda item: (
+                sum(float(row["final_psnr_db"]) for row in item[0]),
+                -sum(float(row["final_failure_rate"]) for row in item[0]),
+            ),
+        )
+        choices: dict[float, float | None] = {}
+        choice_rows: list[dict[str, Any]] = []
+        for snr, row, strength in zip(snrs, best_schedule, best_strengths):
+            alpha = None if row.get("alpha") in (None, "") else float(row["alpha"])
+            choices[float(snr)] = alpha
+            choice_rows.append(
+                {
+                    **row,
+                    "selected_for_schedule": policy,
+                    "residual_gate": float(residual_gates[float(snr)]),
+                    "effective_strength": strength,
+                    "selection_reason": "max_mean_psnr_under_m0_failure_and_monotonic_effective_strength",
+                }
+            )
+        return choices, choice_rows
+
+    choices: dict[float, float | None] = {}
+    choice_rows: list[dict[str, Any]] = []
+    for snr in snrs:
+        m0_row = m0_by_snr[float(snr)]
+        candidates = candidates_by_snr[float(snr)]
         if not candidates:
             choices[float(snr)] = None
             choice_rows.append({**m0_row, "selected_for_schedule": policy, "selection_reason": "no_safe_alpha_fallback_to_m0"})
@@ -629,8 +681,11 @@ def make_report(
         row for row in summary_rows if row["snr_db"] == "all" and row["policy"] == "always_alpha" and float(row["alpha"]) == 1.0
     )
 
+    source_experiment = str(metadata.get("source_experiment") or "source experiment")
+    split_note = str(metadata.get("selection_split") or f"{source_experiment} validation split")
+
     lines = [
-        "# EXP-S4-006 Residual Shrink Selection",
+        f"# {source_experiment} Residual Shrink Selection",
         "",
         "This derived validation-only analysis evaluates whether shrinking the existing residual refinement can improve the quality/semantic tradeoff.",
         "It reads existing M0 and refined PNG files, forms `x_alpha = clamp(m0 + alpha * (refined - m0), 0, 1)`, then evaluates frozen AlexNet pseudo-label consistency.",
@@ -659,6 +714,7 @@ def make_report(
             ("selected_for_schedule", "Schedule"),
             ("snr_db", "SNR"),
             ("alpha", "Alpha"),
+            ("effective_strength", "Effective Strength"),
             ("delta_psnr_vs_m0_db", "Delta PSNR"),
             ("final_failure_rate", "Failure"),
             ("accept_rate", "Accept"),
@@ -703,7 +759,7 @@ def make_report(
             "",
             "## Caveats",
             "",
-            "- This uses the same EXP-S4-006 validation split, so selected alphas are not test-safe.",
+            f"- This uses the same {split_note}, so selected alphas are not test-safe.",
             "- The semantic metric is still frozen AlexNet pseudo-label consistency on COCO images.",
             "- Lower alpha is a proxy for residual-strength control, not a trained semantic-risk-aware refiner yet.",
             "",
@@ -752,7 +808,10 @@ def main() -> None:
     lpips_model = None
     lpips_error = None
     if not args.skip_lpips:
-        lpips_model, lpips_error = try_load_lpips(device, output_dir / "cache")
+        lpips_model, lpips_error = try_load_lpips(
+            device,
+            resolve_project_path(config["classifier"]["cache_dir"]),
+        )
 
     candidate_root = output_dir / "candidates"
     candidate_path_map: dict[float, dict[tuple[float, str], Path]] = {}
@@ -819,8 +878,28 @@ def main() -> None:
                 ]
                 aggregate_all_summary(rows_for_policy, summary_rows, lpips_model, device, image_batch_size, alpha=alpha)
 
-    top1_choices, top1_choice_rows = choose_schedule(summary_rows, "top1_fallback_alpha", snrs)
-    always_choices, always_choice_rows = choose_schedule(summary_rows, "always_alpha", snrs)
+    selection_cfg = config.get("shrink", {}).get("selection", {})
+    enforce_monotonic = bool(selection_cfg.get("enforce_effective_strength_nonincreasing", False))
+    source_config_path = resolve_project_path(config["inputs"]["source_config"])
+    with source_config_path.open("r", encoding="utf-8") as handle:
+        source_config = yaml.safe_load(handle)
+    residual_gates = {
+        float(key): float(value) for key, value in source_config["model"]["residual_gates"].items()
+    }
+    top1_choices, top1_choice_rows = choose_schedule(
+        summary_rows,
+        "top1_fallback_alpha",
+        snrs,
+        residual_gates=residual_gates,
+        enforce_effective_strength_nonincreasing=enforce_monotonic,
+    )
+    always_choices, always_choice_rows = choose_schedule(
+        summary_rows,
+        "always_alpha",
+        snrs,
+        residual_gates=residual_gates,
+        enforce_effective_strength_nonincreasing=enforce_monotonic,
+    )
     scheduled_top1_rows = build_scheduled_policy_rows(
         policy_rows,
         top1_choices,
@@ -857,12 +936,16 @@ def main() -> None:
     schedule_payload = {
         "top1_fallback_alpha": {str(key): value for key, value in top1_choices.items()},
         "always_alpha": {str(key): value for key, value in always_choices.items()},
+        "effective_strength_nonincreasing": enforce_monotonic,
+        "residual_gates": {str(key): value for key, value in residual_gates.items()},
         "selection_rows": schedule_rows,
     }
     save_json(schedule_json, schedule_payload)
     metadata = {
         "analysis_id": config["analysis_id"],
         "method": config["method"],
+        "source_experiment": config["inputs"].get("source_experiment", ""),
+        "selection_split": config.get("shrink", {}).get("selection", {}).get("split", ""),
         "project_commit": git_commit(),
         "git_dirty_state": git_dirty_state(),
         "python": sys.version,

@@ -1,0 +1,60 @@
+phase: S7
+analysis_id: ANALYSIS-S7-001
+method: FrozenCrossSplitMatchedTotalRateSystemComparison
+dataset: COCO2017
+seed: 20260711
+analysis_mode: posthoc_descriptive_after_frozen_cross_split_runs
+
+rate:
+  denominator: 48
+  reference_inner_channel: 8
+  reference_cbr: 0.16666666666666666
+  matched_main_inner_channel: 6
+  matched_main_cbr: 0.125
+  matched_structure_inner_channel: 2
+  matched_structure_cbr: 0.041666666666666664
+  matched_total_inner_channel: 8
+  matched_total_cbr: 0.16666666666666666
+
+inputs:
+  original_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384/exports/original
+  reference_export_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384
+  matched_export_dir: outputs/eval/s7_matched_rate_main_structure_pilot20k_export_384
+  matched_refiner_checkpoint: outputs/EXP-S7-002/checkpoints/best.pt
+  splits:
+    - name: validation
+      sample_start: 192
+      sample_count: 64
+      matched_output_dir: outputs/EXP-S7-002
+      reference_semantic_csv: outputs/EXP-S4-008/per_sample.csv
+      matched_semantic_csv: outputs/EXP-S7-002/per_sample.csv
+    - name: heldout
+      sample_start: 0
+      sample_count: 32
+      matched_output_dir: outputs/analysis/exp_s7_002_matched_rate_heldout
+      reference_semantic_csv: outputs/analysis/exp_s4_008_edge_heldout_gate_check/per_sample.csv
+      matched_semantic_csv: outputs/analysis/exp_s7_002_matched_rate_heldout/per_sample.csv
+    - name: testlike
+      sample_start: 256
+      sample_count: 64
+      matched_output_dir: outputs/analysis/exp_s7_002_matched_rate_testlike
+      reference_semantic_csv: outputs/analysis/exp_s4_008_edge_testlike_gate_check/per_sample.csv
+      matched_semantic_csv: outputs/analysis/exp_s7_002_matched_rate_testlike/per_sample.csv
+    - name: fresh_holdout
+      sample_start: 320
+      sample_count: 64
+      matched_output_dir: outputs/analysis/exp_s7_002_matched_rate_fresh_holdout
+      reference_semantic_csv: outputs/analysis/exp_s4_008_edge_fresh_holdout_gate_check/per_sample.csv
+      matched_semantic_csv: outputs/analysis/exp_s7_002_matched_rate_fresh_holdout/per_sample.csv
+
+evaluation:
+  snrs: [1, 4, 7, 13, 19]
+  primary_frozen_splits: [heldout, testlike, fresh_holdout]
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260711
+  cluster: image
+  save_visual_snr: 7
+  save_visual_count: 4
+
+outputs:
+  output_dir: outputs/analysis/s7_matched_rate_system_cross_split_comparison

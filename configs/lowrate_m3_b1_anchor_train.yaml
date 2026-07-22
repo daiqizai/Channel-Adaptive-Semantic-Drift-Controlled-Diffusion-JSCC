@@ -1,0 +1,85 @@
+phase: S16-lowrate-M3
+experiment_id: EXP-S16-B1-001
+method: Exact19712ReceiverStructureResidualAnchor
+dataset: COCO2017_train2017_internal_split
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.050130208333333336
+seed: 20260714
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+protocol:
+  status: preregistered_before_training_output
+  preregistration: reports/lowrate_m3_minimal_closure_preregistration_2026-07-15.md
+  source_manifest_sha256: 93ae3f3b47420c6bf84e1b5dce29601db1490f5519bb99fe39dcdad6680e2de9
+  total_active_real_symbols: 19712
+  payload_reserved_real_symbols: 80
+  image_active_real_symbols: 19632
+  official_imagenette_accessed: false
+
+inputs:
+  m0_export_dir: outputs/eval/s16_lowrate_m3_exact19712_uint2r4_coco10k_1k
+  m0_reconstruction_subdir: reconstruction
+  original_dir: outputs/eval/s16_lowrate_m3_exact19712_uint2r4_coco10k_1k/exports/original
+  checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/latest.pt
+
+split:
+  train_sample_start: 0
+  train_sample_count: 10000
+  eval_sample_start: 10000
+  eval_sample_count: 1000
+
+model:
+  name: exact19712_receiver_structure_residual_cnn
+  input_channels: 6
+  condition_features: [sobel_magnitude, laplacian_abs]
+  condition_source: receiver_m0
+  base_channels: 64
+  num_blocks: 6
+  snr_norm_max: 20.0
+  residual_gates: {"1": 0.12, "4": 0.10, "7": 0.08, "13": 0.05, "19": 0.04}
+
+training:
+  epochs: 10
+  batch_size: 16
+  num_workers: 8
+  crop_size: 128
+  random_flip: true
+  lr: 0.001
+  weight_decay: 0.0
+  grad_clip_norm: 1.0
+  mse_weight: 1.0
+  l1_weight: 0.10
+  validation_every_epochs: 1
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 64
+  topk: 5
+
+failure_handling:
+  detector: top1_agreement_with_exact19712_b0
+  accept_when: refined_classifier_top1_equals_exact19712_b0_classifier_top1
+  fallback_output: exact19712_b0_reconstruction
+  uses_original_for_detection: false
+
+evaluation:
+  sample_grid_count: 4
+  pseudo_clean_conf_thresholds: [0.20, 0.30]
+  metrics: [psnr, ssim, ms_ssim, lpips, pseudo_drift, pseudo_final_failure, accept_rate]
+
+success_criteria:
+  mean_raw_minus_m0_psnr_min_db: 0.0
+  minimum_psnr_improved_snr_count: 3
+  mean_raw_minus_m0_lpips_max: 0.0
+  minimum_lpips_improved_snr_count: 3
+  raw_new_error_not_greater_than_repair: true
+
+outputs:
+  output_dir: outputs/EXP-S16-B1-001

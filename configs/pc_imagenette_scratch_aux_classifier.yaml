@@ -1,0 +1,76 @@
+phase: S5-validation
+study: posterior_consistency
+analysis_id: TRAIN-PC-AUX-001
+method: ScratchAuxiliarySemanticRiskFeatureModel
+dataset: Imagenette2-320
+seed: 1618033
+
+data:
+  archive: data/imagenette/imagenette2-320.tgz
+  archive_size_bytes: 341663724
+  archive_md5: 3df6f0d01a2c9592104656642f5e78a3
+  train_image_count: 9469
+  val_image_count: 3925
+  root: data/imagenette/imagenette2-320
+  train_dir: data/imagenette/imagenette2-320/train
+  val_dir: data/imagenette/imagenette2-320/val
+  image_size: 256
+  classes:
+    - n01440764
+    - n02102040
+    - n02979186
+    - n03000684
+    - n03028079
+    - n03394916
+    - n03417042
+    - n03425413
+    - n03445777
+    - n03888257
+
+split:
+  method: stratified_sha256_relative_path
+  seed: 20260710
+  ratios:
+    cls_train: 0.70
+    cls_cal: 0.10
+    policy_dev: 0.20
+  official_val_role: sealed_final_test
+  require_content_sha256: true
+  reject_exact_content_duplicates: true
+
+training:
+  epochs: 80
+  batch_size: 128
+  num_workers: 8
+  optimizer: sgd
+  lr: 0.10
+  momentum: 0.90
+  weight_decay: 0.0001
+  label_smoothing: 0.10
+  scheduler: cosine
+  warmup_epochs: 5
+  amp: true
+  grad_clip_norm: 5.0
+  train_crop_scale: [0.60, 1.00]
+  random_horizontal_flip: true
+  randaugment_num_ops: 2
+  randaugment_magnitude: 9
+  random_erasing_probability: 0.10
+  normalization_mean: [0.485, 0.456, 0.406]
+  normalization_std: [0.229, 0.224, 0.225]
+  checkpoint_selection: cls_cal_macro_top1
+  temperature_scaling_split: cls_cal
+  no_tta: true
+
+scratch_classifiers:
+  G_aux:
+    role: auxiliary_receiver_risk_feature_model
+    architecture: efficientnet_b0
+    weights: null
+    seed: 1618033
+    min_cal_macro_top1: 0.85
+    output_dir: outputs/analysis/imagenette_scratch_risk_classifier/G_aux
+
+outputs:
+  classifier_root: outputs/analysis/imagenette_scratch_risk_classifier
+  split_manifest: outputs/analysis/imagenette_scratch_classifiers/split_manifest.json

@@ -1,0 +1,102 @@
+phase: S9
+analysis_id: imagenette_hybrid_semantic_controller_policy_dev_20260711
+method: MatchedRateHybridSemanticSketchAlphaController
+dataset: Imagenette2-320
+seed: 20260719
+
+protocol:
+  base_supervised_config: configs/s6_imagenette_supervised_clean_eval.yaml
+  preregistration: reports/imagenette_hybrid_semantic_controller_preregistration_2026-07-11.md
+  split: policy_dev
+  pipeline: hybrid_semantic_controller
+  official_val_is_sealed: true
+  analysis_role: mainline_m3_external_supervised_policy_development
+
+inputs:
+  reference_c8_config: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/config.yaml
+  reference_c8_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  matched_training_config: configs/s7_matched_rate_jscc_pilot_coco256_awgn.yaml
+  main_c6_checkpoint: outputs/train/s7_matched_rate_main_cbr0125_pilot20k/checkpoints/best.pt
+  structure_c2_checkpoint: outputs/train/s7_matched_rate_structure_cbr004167_pilot20k/checkpoints/best.pt
+  refiner_config: configs/s8_per_sample_counterfactual_semantic_refiner_validation.yaml
+  refiner_checkpoint: outputs/EXP-S8-003/checkpoints/best.pt
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 32
+  topk: 5
+
+semantic_payload:
+  source_probability_dim: 1000
+  sketch_dim: 32
+  projection: fixed_rademacher
+  projection_seed: 20260712
+  repetitions: 4
+  reserved_real_symbols: 128
+  payload_fraction_of_c2_real_latent: 0.0078125
+  erase_before_structure_decoder: true
+
+semantic_controller:
+  candidate_formula: quantize_png(main_c6 + alpha * (hybrid_raw - main_c6))
+  alpha_candidates: [0.0, 0.25, 0.5, 0.75, 1.0]
+  score: cosine(project_alexnet_probability(candidate), received_source_sketch)
+  decision: maximum_score
+  tie_break: smaller_alpha
+  threshold_free: true
+  original_image_available_at_receiver: false
+
+rate:
+  denominator: 48
+  reference_inner_channel: 8
+  reference_cbr: 0.16666666666666666
+  main_inner_channel: 6
+  main_cbr: 0.125
+  structure_inner_channel: 2
+  structure_cbr: 0.041666666666666664
+  total_inner_channel: 8
+  total_cbr: 0.16666666666666666
+
+channel:
+  type: AWGN
+  snrs: [1, 4, 7, 13, 19]
+  channel_seed: 20260719
+  reference_seed_offset: 300000
+  main_seed_offset: 100000
+  structure_seed_offset: 220000
+  independent_arm_noise: true
+
+evaluation:
+  batch_size: 32
+  num_workers: 8
+  primary_clean_threshold: 0.50
+  primary_snrs: [1, 4, 7]
+  quantize_png: true
+  lpips: true
+  lpips_net: alex
+  lpips_cache_dir: outputs/cache/torch
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260719
+  bootstrap_cluster: image_id
+
+success_criteria:
+  raw_failure_vs_reference_ci_upper_max: 0.0
+  raw_new_error_rate_upper_max_conditional_on_reference_correct: 0.005
+  raw_psnr_vs_reference_ci_lower_strictly_positive: true
+  raw_psnr_point_positive_each_snr: true
+  raw_lpips_delta_negative: true
+  require_negative_lpips_delta: true
+  controller_failure_vs_hybrid_raw_ci_upper_strictly_negative: true
+  minimum_raw_psnr_gain_retained: 0.50
+
+reporting:
+  primary_arm_label: M3_hybrid_sketch_alpha_controller
+  secondary_arm_label: M2_hybrid_raw
+  internal_primary_field: matched_raw
+  internal_secondary_field: matched_top1_fallback
+
+outputs:
+  output_dir: outputs/analysis/imagenette_hybrid_semantic_controller_policy_dev

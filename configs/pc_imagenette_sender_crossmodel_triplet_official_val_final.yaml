@@ -1,0 +1,25 @@
+analysis_id: ANALYSIS-PC-SENDER-CROSSMODEL-OFFICIAL-VAL-001
+status: locked_pending_policy_replay_and_hash_population
+preregistration: reports/posterior_sender_crossmodel_triplet_official_val_preregistration_2026-07-14.md
+audit_template: configs/pc_imagenette_sender_crossmodel_triplet_official_val_template.yaml
+official_val_source_config: configs/s6_imagenette_supervised_clean_eval.yaml
+training_split_manifest: outputs/analysis/imagenette_scratch_classifiers/split_manifest.json
+audit_script: scripts/pc_imagenette_sender_inbudget_awgn_audit.py
+canonical_output_dir: outputs/analysis/imagenette_supervised_final
+staging_output_dir: outputs/analysis/.imagenette_supervised_final.staging
+consumed_marker: outputs/analysis/.imagenette_supervised_final.OFFICIAL_VAL_CONSUMED.json
+official_val_manifest_name: official_val_manifest.json
+resolved_audit_config_name: resolved_audit_config.yaml
+device: cuda:0
+expected:
+  images: 3925
+  channel_seeds: [20260711, 20260712, 20260713]
+  snrs: [1, 4, 7, 13, 19]
+  rows: 58875
+  official_val_atime_probe_incident_recorded: true
+final_lock:
+  unlocked: false
+  locked_at_utc: null
+  protocol_sha256: null
+  deepjscc_repo_head: 2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06
+  artifacts: {}

@@ -1,0 +1,18 @@
+phase: S5-validation
+study: posterior_consistency
+analysis_id: ANALYSIS-PC-001
+seed: 20260715
+source_config: configs/s13_coco_train2017_c8_scaleup_export.yaml
+source_rank_start: 11000
+sample_count: 64
+snrs: [1, 4, 7, 13, 19]
+batch_size: 8
+proximal_steps: 3
+normalized_step_size: 0.001
+b1_config: configs/s13_scaleup_b1_anchor_train.yaml
+b1_checkpoint: outputs/EXP-S13-001/checkpoints/best.pt
+diffusion_config: configs/s14_scaleup_b1_anchored_diffusion.yaml
+diffusion_checkpoint: outputs/EXP-S14-001/checkpoints/best.pt
+deepjscc_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+classifier_weights: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+output_dir: outputs/analysis/s15_received_latent_posterior_pilot

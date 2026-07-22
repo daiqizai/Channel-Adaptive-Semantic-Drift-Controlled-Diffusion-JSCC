@@ -1,0 +1,65 @@
+phase: S6-external-comparison
+study: author_working_point_rate_alignment
+analysis_id: ANALYSIS-EXT-AUTHOR-RATE-PILOT-001
+status: preregistered_before_any_author_rate_output
+created_at: "2026-07-15"
+official_val_accessed: false
+outcome_claims_allowed: false
+pilot_claim_scope: integration_and_direction_only
+
+population_reference_config: configs/external_common_comparison_pilot.yaml
+
+channel:
+  type: AWGN
+  snrs_db: [1, 4, 7, 13, 19]
+  base_seed: 20260730
+  standard_normal_generator: torch_cpu_float32
+  seed_derivation: sha256_external_common_v1_base_seed_sample_id_snr
+  noise_variance_convention: complex_awgn_per_real_half_variance
+
+rate:
+  source_real_dimensions: 196608
+  total_real_symbols: 19712
+  total_complex_channel_uses: 9856
+  exact_cbr: 0.050130208333333336
+  paper_nominal_cbr: 0.05
+  paper_nominal_cbr_label: 1/20
+  released_sgd_main_real_symbols: 16384
+  released_sgd_active_edge_real_symbols: 3328
+
+methods:
+  exact_rate_deepjscc:
+    label: DeepJSCC-c3-trained-with-fixed-19712-of-24576-active-real-coordinates
+    reproduction: project_exact_rate_baseline
+    inner_channel: 3
+    dense_real_symbols: 24576
+    active_real_symbols: 19712
+    mask_rule: evenly_spaced_floor_indices_over_flattened_chw
+    checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fp32_lr2e5/checkpoints/best.pt
+    checkpoint_sha256: 9874c3c613229d96e6310ea3413846eaf639ef470730732589184d7fa898c445
+    training_note: EXP-EXT-AUTHOR-RATE-DJSCC-001-failed-numerically_then-EXP-EXT-AUTHOR-RATE-DJSCC-002-stabilized-before-evaluation
+  sgd_jscc_paper_protocol:
+    label: SGD-JSCC-released-weights-paper-free-perfect-text-protocol
+    reproduction: released_weights_common_awgn_adapter
+    source_commit: 2188acc0dd2805355d3d0d2e478cbc27b46b4da5
+    base_config: configs/external_sgdjscc_common_complex_awgn_smoke.yaml
+    main_real_symbols: 16384
+    active_edge_real_symbols: 3328
+    caption_transport: perfect_and_unmetered_as_in_paper
+    physical_total_rate_comparable: false
+    interpretation: paper_protocol_upper_bound_not_strict_end_to_end_physical_link
+
+evaluator_reference_config: configs/external_common_comparison_pilot.yaml
+
+success_criteria:
+  require_40_rows_per_method: true
+  require_exact_19712_image_branch_real_symbols: true
+  require_semantic_metrics: true
+  forbid_calling_free_text_protocol_a_strict_physical_rate_match: true
+
+outputs:
+  root: outputs/external_baselines/ANALYSIS-EXT-AUTHOR-RATE-PILOT-001
+  deepjscc: outputs/external_baselines/ANALYSIS-EXT-AUTHOR-RATE-PILOT-001/deepjscc_exact_rate
+  sgd_jscc: outputs/external_baselines/ANALYSIS-EXT-AUTHOR-RATE-PILOT-001/sgd_jscc_paper_protocol
+  aggregate: outputs/external_baselines/ANALYSIS-EXT-AUTHOR-RATE-PILOT-001/aggregate
+  overwrite_forbidden: true

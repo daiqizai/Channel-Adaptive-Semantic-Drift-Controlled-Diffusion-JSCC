@@ -1,0 +1,75 @@
+phase: S5
+analysis_id: exp_s4_009_capacity_matched_no_edge_heldout_gate_check
+source_experiment: EXP-S4-009
+split_name: held-out
+method: CapacityMatchedNoEdgeResidualRefinerHeldoutConfidenceGateCheck
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  m0_export_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256
+  original_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_256/exports/original
+  refiner_checkpoint: outputs/EXP-S4-009/checkpoints/best.pt
+  source_config: outputs/EXP-S4-009/config.yaml
+  checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+source_refiner_split:
+  train_sample_start: 32
+  train_sample_count: 160
+  eval_sample_start: 192
+  eval_sample_count: 64
+
+split:
+  heldout_sample_start: 0
+  heldout_sample_count: 32
+
+model:
+  name: capacity_matched_no_edge_residual_cnn
+  input_channels: 4
+  condition_features: []
+  base_channels: 64
+  num_blocks: 6
+  snr_norm_max: 20.0
+  residual_gates:
+    "1": 0.12
+    "4": 0.10
+    "7": 0.08
+    "13": 0.05
+    "19": 0.04
+
+inference:
+  batch_size: 16
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 32
+  topk: 5
+
+policy:
+  baseline: top1_equal
+  candidate: top1_equal_or_refined_conf_gain_ge_0p05
+  refined_conf_gain_margin: 0.05
+  decision_inputs:
+    - m0_top1_prob
+    - refined_top1_prob
+    - m0_top1_index
+    - refined_top1_index
+  uses_original_for_detection: false
+
+evaluation:
+  sample_grid_count: 4
+  pseudo_clean_conf_thresholds: [0.20, 0.30]
+  warning: held-out split for the EXP-S4-009 matched no-edge control
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_009_capacity_matched_no_edge_heldout_gate_check

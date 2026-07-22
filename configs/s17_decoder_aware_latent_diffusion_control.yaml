@@ -1,0 +1,137 @@
+phase: S17-decoder-aware-channel-matched-latent-diffusion
+experiment_id: EXP-S17-LATDIFF-003-CONTROL
+analysis_id: ANALYSIS-S17-LATDIFF-HOLDOUT-003
+method: ExactRateChannelStateMatchedLatentDiffusionControlFinetune
+dataset: COCO2017_train2017_internal_split
+image_size: 256
+seed: 20260734
+
+protocol:
+  status: preregistered_decoder_aware_followup_before_fresh_population_output
+  role: matched_optimization_budget_control
+  preregistration: reports/decoder_aware_latent_diffusion_preregistration_2026-07-15.md
+  project_commit_at_registration: abf117bc9aa194cd0a4fa80bd63df6baae1f6d29
+  source_manifest_sha256: 93ae3f3b47420c6bf84e1b5dce29601db1490f5519bb99fe39dcdad6680e2de9
+  official_imagenette_accessed: false
+  selection_and_holdout_disjoint: true
+  prior_exposed_validation_end_exclusive: 512
+
+inputs:
+  cache_root: outputs/eval/s16_lowrate_m3_exact19712_uint2r4_coco10k_1k
+  source_manifest: outputs/eval/s16_lowrate_m3_exact19712_uint2r4_coco10k_1k/source_manifest.csv
+  deepjscc_checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/best.pt
+  deepjscc_checkpoint_sha256: bca5b67a3bca93f17d23688cc5ec2d30ffe8790191e07fbf41926649cf1bb606
+  b1_config: configs/lowrate_m3_b1_anchor_train.yaml
+  b1_checkpoint: outputs/EXP-S16-B1-001/checkpoints/best.pt
+  b1_checkpoint_sha256: 7a295976105a9c43c25604c9070e676d25512c7a09b5c50655b6671477b7615a
+  parent_latent_diffusion_checkpoint: outputs/EXP-S17-LATDIFF-002/checkpoints/best.pt
+  parent_latent_diffusion_checkpoint_sha256: cfc5271660103e29567e05f5d0242dcb02edc5e625054e115490fbed4b3cb4e1
+  forbidden_deepjscc_checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/latest.pt
+
+baseline:
+  repo: third_party/Deep-JSCC-PyTorch
+  commit: 2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06
+
+channel:
+  type: AWGN
+  snrs_db: [1, 4, 7, 13, 19]
+  noise_variance_factor_per_real: 0.5
+  snr_definition_note: use the frozen project implementation sigma2=P/(2*10^(SNR/10))
+  selection_base_seed: 20260735
+  holdout_base_seed: 20260736
+
+rate:
+  inner_channel: 3
+  dense_real_symbols: 24576
+  active_real_symbols: 19712
+  payload_real_symbols: 80
+  image_active_real_symbols: 19632
+  complex_channel_uses: 9856
+  source_real_dimensions: 196608
+  exact_cbr: 0.050130208333333336
+  active_index_rule: evenly_spaced_floor_indices
+  payload_index_rule: evenly_spaced_within_active_indices
+
+split:
+  train_role: train
+  train_count: 10000
+  selection_role: validation
+  selection_start: 512
+  selection_count: 256
+  holdout_role: validation
+  holdout_start: 768
+  holdout_count: 232
+
+model:
+  latent_channels: 6
+  latent_height: 64
+  latent_width: 64
+  base_channels: 48
+  num_blocks: 6
+  time_embedding_dim: 96
+  group_norm_groups: 8
+  prediction_type: epsilon
+  input_conditioning: [received_diffusion_state, full_coordinate_valid_mask, log_snr]
+
+diffusion:
+  channel_alpha_formula: 1/(1+noise_variance_factor_per_real/10^(snr_db/10))
+  train_logsnr_min_source: channel_alpha_at_1db
+  train_alpha_max: 0.999
+  sampling_steps: 6
+  sampler: deterministic_ddim
+  measurement_blend: 0.0
+  fixed_step_ablation_snr_db: 7
+  reserved_and_inactive_coordinates_frozen_to_zero: true
+
+training:
+  epochs: 3
+  batch_size: 24
+  num_workers: 8
+  random_horizontal_flip: true
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  grad_clip_norm: 1.0
+  amp: false
+  epsilon_mse_weight: 1.0
+  x0_mse_weight: 0.1
+  decoder_image_mse_weight: 0.0
+  validation_every_epochs: 1
+  checkpoint_metric: selection_mean_matched_ddim_psnr
+
+loss_diagnostic:
+  seed: 20260734
+  batches: 16
+  target_decoder_to_base_loss_ratio: 0.075
+  allowed_decoder_image_mse_weights: [5.0, 10.0, 20.0, 40.0]
+
+evaluation:
+  batch_size: 16
+  num_workers: 4
+  quantize_png: false
+  candidates: [b0, scalar_lmmse, fixed_step_ddim, parent_matched_ddim, control_matched_ddim, matched_one_step, matched_ddim, b1, matched_ddim_b1]
+  metrics: [active_latent_mse, psnr, ms_ssim, lpips, alexnet_pseudo_failure, alexnet_pseudo_new_error, alexnet_pseudo_repair, three_classifier_majority_new_error]
+  pseudo_original_confidence_min: 0.20
+  classifier_weights_local_only: true
+  sample_grid_count: 8
+
+classifiers:
+  alexnet: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  resnet18: outputs/cache/torch/hub/checkpoints/resnet18-f37072fd.pth
+  mobilenet_v3_small: outputs/cache/torch/hub/checkpoints/mobilenet_v3_small-047dcff4.pth
+  imagenet_mean: [0.485, 0.456, 0.406]
+  imagenet_std: [0.229, 0.224, 0.225]
+
+success_criteria:
+  matched_active_latent_mse_better_than_raw_all_five_snrs: true
+  matched_ddim_mean_psnr_minus_b0_min_db: 0.0
+  matched_ddim_psnr_improved_snr_count_min: 4
+  matched_ddim_mean_lpips_minus_b0_max: 0.0
+  matched_ddim_mean_psnr_minus_control_min_db: 0.0
+  matched_ddim_psnr_improved_vs_control_snr_count_min: 3
+  alexnet_pseudo_new_error_not_greater_than_repair: true
+  majority_new_error_not_greater_than_majority_repair: true
+
+outputs:
+  train_dir: outputs/EXP-S17-LATDIFF-003-CONTROL
+  holdout_dir: outputs/analysis/ANALYSIS-S17-LATDIFF-HOLDOUT-003
+  loss_diagnostic_dir: outputs/analysis/ANALYSIS-S17-LATDIFF-LOSS-DIAGNOSTIC-001

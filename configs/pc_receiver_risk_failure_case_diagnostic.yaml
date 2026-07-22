@@ -1,0 +1,29 @@
+phase: S5-validation
+study: posterior_consistency
+analysis_id: ANALYSIS-PC-RISK-FAIL-001
+status: posthoc_diagnostic_after_frozen_negative_verdict
+source_extraction_config: configs/pc_imagenette_receiver_risk_seed_20260725_features.yaml
+source_extraction_config_sha256: c1465c585b7e2e12c246668e8b71777c831b4dcf8408dfc6b9ce130ab93d5d33
+frozen_decisions_csv: outputs/analysis/pc_imagenette_receiver_risk_seed_20260725_audit/decisions.csv
+frozen_decisions_sha256: 82646e4d6c9f81c292dfbcfbbb0c28b3deb20197b8624beca94ed2d94836c3d2
+frozen_audit_csv: outputs/analysis/pc_imagenette_receiver_risk_seed_20260725_features/per_sample.csv
+frozen_audit_sha256: 849104b88cad23edde2ace7818611bdabe4c9a5e18abae6d308d897a2785ccbc
+selection:
+  primary_snrs: [1, 4, 7]
+  include_missed_new_error: true
+  include_rejected_posterior_repair: true
+  expected_missed_new_error_rows: 2
+  expected_rejected_posterior_repair_rows: 11
+diagnostics:
+  models: [G_gate, G_aux, T_cls]
+  states: [source, anchor, raw, posterior]
+  learned_sender_description:
+    top1_bits: 4
+    probability_bits: 80
+    probability_quantization: per_class_uint8_then_renormalize
+    channel_model: noiseless_feasibility_only
+  oracle_true_class_bits: 4
+  diff_visualization_scale: 10.0
+  metric_abs_tolerance: 0.00001
+  official_val_accessed: false
+output_dir: outputs/analysis/pc_receiver_risk_failure_cases_seed20260725

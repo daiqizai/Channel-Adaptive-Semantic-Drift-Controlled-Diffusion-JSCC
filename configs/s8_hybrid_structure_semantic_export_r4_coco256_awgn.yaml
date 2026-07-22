@@ -1,0 +1,57 @@
+phase: S8
+analysis_id: EXPORT-S8-002
+method: MatchedRateHybridStructureSemanticSketchExportR4
+dataset: COCO2017
+image_size: 256
+seed: 20260712
+
+inputs:
+  matched_export: outputs/eval/s7_matched_rate_main_structure_pilot20k_export_384
+  original_dir: outputs/eval/s7_matched_rate_main_structure_pilot20k_export_384/exports/original
+  structure_checkpoint: outputs/train/s7_matched_rate_structure_cbr004167_pilot20k/checkpoints/best.pt
+  training_config: configs/s7_matched_rate_jscc_pilot_coco256_awgn.yaml
+
+semantic_teacher:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  source_probability_dim: 1000
+  sketch_dim: 32
+  projection: fixed_rademacher
+  projection_seed: 20260712
+
+payload:
+  modulation: normalized_analog_repetition
+  repetitions: 4
+  reserved_real_symbols: 128
+  reserved_index_rule: evenly_spread_floor
+  erase_reserved_symbols_before_structure_decoder: true
+
+channel:
+  type: AWGN
+  snrs: [1, 4, 7, 13, 19]
+  structure_semantic_seed_offset: 220000
+
+rate:
+  denominator: 48
+  main_inner_channel: 6
+  main_cbr: 0.125
+  hybrid_structure_semantic_inner_channel: 2
+  hybrid_structure_semantic_cbr: 0.041666666666666664
+  total_inner_channel: 8
+  total_cbr: 0.16666666666666666
+  reference_inner_channel: 8
+  reference_cbr: 0.16666666666666666
+
+evaluation:
+  batch_size: 32
+  num_workers: 4
+  export_count: 384
+  quantize_png: true
+  minimum_mean_sketch_cosine_each_snr: 0.95
+  maximum_relative_first2_structure_mse_increase: 0.10
+
+outputs:
+  output_dir: outputs/eval/s8_hybrid_structure_semantic_r4_export_384

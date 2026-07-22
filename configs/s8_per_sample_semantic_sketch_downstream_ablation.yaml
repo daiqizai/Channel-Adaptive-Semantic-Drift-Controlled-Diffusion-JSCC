@@ -1,0 +1,21 @@
+phase: S8
+analysis_id: ANALYSIS-S8-005
+method: FrozenPerSampleCounterfactualDownstreamCrossSplitAblation
+seed: 20260716
+source_config: configs/s8_per_sample_counterfactual_semantic_refiner_validation.yaml
+checkpoint: outputs/EXP-S8-003/checkpoints/best.pt
+generate_received: true
+sample_ranges:
+  - {name: heldout, start: 0, count: 32}
+  - {name: testlike, start: 256, count: 64}
+  - {name: fresh_holdout, start: 320, count: 64}
+snrs: [1, 4, 7, 13, 19]
+modes: [received, zeros, shuffled]
+bootstrap_replicates: 10000
+bootstrap_cluster: sample
+success_criteria:
+  pooled_received_minus_zeros_psnr_ci_lower_strictly_positive: true
+  pooled_received_minus_shuffled_psnr_ci_lower_strictly_positive: true
+  received_point_not_worse_each_split_snr: true
+outputs:
+  output_dir: outputs/analysis/s8_per_sample_semantic_sketch_downstream_ablation

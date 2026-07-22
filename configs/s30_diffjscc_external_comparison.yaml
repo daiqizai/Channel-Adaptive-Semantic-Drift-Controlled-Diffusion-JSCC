@@ -1,0 +1,190 @@
+phase: S30-external-diffjscc-comparison
+analysis_id: ANALYSIS-S30-DIFFJSCC-COMPARISON-001
+method: OfficialDiffJSCCOpenImageC16
+dataset: Imagenette2_320_train_policy_dev_frozen_S20_population
+image_size: 256
+created_at: 2026-07-21
+
+protocol:
+  status: preregistered_before_any_diffjscc_reconstruction
+  preregistration: reports/diffjscc_external_comparison_preregistration_2026-07-21.md
+  s20_and_s28_outcomes_known: true
+  official_diffjscc_outcome_on_this_population_known: false
+  no_training_or_checkpoint_selection: true
+  no_threshold_or_sampler_tuning: true
+  official_imagenette_validation_accessed: false
+  claim_scope: external_positioning_with_known_current_method_not_blind_confirmation
+  source_repository_modified: false
+
+assets:
+  repository: third_party/DiffJSCC
+  repository_url: https://github.com/mingyuyng/DiffJSCC
+  repository_commit: 13aeb62451b872ce41ceba132c9c30a9ca172c53
+  repository_license_file_present: false
+  checkpoint_repository: Mingyuyang/DiffJSCC-OpenImage-CBR-1-96
+  checkpoint_revision: 318d46f7f7331ae95fb162b460c1ebfd7d20b6fa
+  checkpoint_license: apache-2.0
+  checkpoint_directory: third_party/DiffJSCC/checkpoints/DiffJSCC-OpenImage-CBR-1-96
+  checkpoint_file: third_party/DiffJSCC/checkpoints/DiffJSCC-OpenImage-CBR-1-96/model.ckpt
+  checkpoint_expected_bytes: 9859655693
+  checkpoint_sha256: ae1e6df0b706d09857cfa02d399f94cc171d8d0ce44f851d96cb032bd7dec579
+  model_config: third_party/DiffJSCC/checkpoints/DiffJSCC-OpenImage-CBR-1-96/config.yaml
+  model_config_sha256: 32351c11750dfa6f2299f65433725fdf99bbc3771cb17981ad7db9d89d1c248f
+  author_readme_sha256: c820229763c1c51749384a957a47402c69f54e9ae85d170ea2e830f4d41f083b
+  blip_metadata_repository: Salesforce/blip2-opt-2.7b
+  blip_metadata_revision: 59a1ef6c1e5117b3f65523d1c6066825bcf315e3
+  blip_metadata_directory: third_party/DiffJSCC/runtime_assets/blip2-opt-2.7b-metadata
+  blip_metadata_tree_sha256: 765e8aef6200b54bd8b415938fa9ff65289fa3268a63b47073053942e4ffa53c
+  blip_metadata_only_not_caption_weights: true
+  blip_weights_directory: third_party/DiffJSCC/runtime_assets/blip2-opt-2.7b
+  blip_weight_files:
+    - name: model-00001-of-00002.safetensors
+      bytes: 9996328120
+      sha256: b81228c9ac1b3dee1731ee71d51fe3b2c34f915019c44c25a793b51300ae24fc
+    - name: model-00002-of-00002.safetensors
+      bytes: 4982879016
+      sha256: 536bd73b8f1de7d94f503b23fea2eaa4f7f3ea5f74f8f874fcb21d6df1555a19
+  blip_weight_index: third_party/DiffJSCC/runtime_assets/blip2-opt-2.7b-metadata/model.safetensors.index.json
+  blip_weight_index_sha256: 1f2648af0e35c2d781c029503b9e49827850ae9174409a20ec252975ea1dd2b1
+  open_clip_source: third_party/open_clip_2_24
+  open_clip_version: 2.24.0
+  open_clip_release_archive_sha256: 83d78a78f756685e80fdb8baa2f2fb308c791fabdbfe1c0ddcd6fed7d22de7b6
+  open_clip_tree_sha256: 276039089577001752a297280887f66abe6a469ad3aca4593535fec3c79969c4
+  open_clip_tree_files: 209
+  open_clip_license_sha256: 4a5b4f13ea4792a8211a69f32d2b460b6d520e57cd23c6301e707c76a6e97a55
+  transformers_runtime: third_party/DiffJSCC/runtime_env/transformers_4_51_1
+  transformers_version: 4.51.1
+  transformers_metadata_sha256: bf6457b48c84d081e95bbc2cfdb94f77511a398cea682476e78b8159bee4c2c3
+  tokenizers_version: 0.21.4
+  tokenizers_metadata_sha256: ef1cc38a5ceceb768e2963515069bc1a6f539408fb0262443765caa8773e7123
+  huggingface_hub_version: 0.30.2
+  huggingface_hub_metadata_sha256: 108629785c047a774d9859ec1342d5668145bf4b7547306105a523c5ce0e2aea
+  execution_venv: .venv-sgdjscc
+  torch_version: 2.1.0+cu121
+  torch_metadata_sha256: 2b669af163e1b10eeaf66088219bad19f01b08433d52a5e0a6227654aad89500
+  torchvision_version: 0.16.0+cu121
+  torchvision_metadata_sha256: 38291a53736e8b66b67569e8af6df9881e77aa5dec04594df92cafbf20ea1b0b
+  pytorch_lightning_version: 2.4.0
+  pytorch_lightning_metadata_sha256: 2370bb0a392e886527e03970e2aeeedcf350b78dcd95a01acb2d7324aec623cc
+  xformers_version: 0.0.22.post7
+  xformers_metadata_sha256: 3827edb335e7cafd40c2ef9a2638eaae72344e80a203dd070786552d6985ad4c
+  author_legacy_runtime_requested: torch_1.13.1_cu116_lightning_1.4.2_xformers_0.0.16
+  compatibility_boundary: API_only_no_algorithm_or_weight_change
+  frozen_checkpoint_excludes_blip_weights_by_author_design: true
+  exact_author_blip_base_weights_required: true
+  frozen_checkpoint_must_supply_openclip_weights: true
+
+inputs:
+  s20_config: configs/s20_sgd_b1_decision.yaml
+  population_reference: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/population/population_reference.yaml
+  population_reference_sha256: a08b0d3f3dead68919bea42a0a28c7854e998aea6173fe62d4669bd537ab393f
+  split_manifest: outputs/analysis/imagenette_scratch_classifiers/split_manifest.json
+  split_manifest_sha256: 0947c428a4ac03bd3907220c9305e5acceb564b95e91a6ffe0c658c132994a91
+  current_per_sample: outputs/external_baselines/ANALYSIS-S28-CURRENT-VS-SGD-001/current_per_sample.csv
+  current_per_sample_sha256: d7e6d089cb10d17d1dfdfff74f5fec6948ed146ab6cfffca53f1bb73be685c8b
+  b1_per_sample: outputs/external_baselines/ANALYSIS-S28-CURRENT-VS-SGD-001/regenerated_b1_per_sample.csv
+  b1_per_sample_sha256: 3475b423dba094ee268696e07c23a3b0d1399123c492eaf0c5867fd858609895
+  s28_summary: outputs/external_baselines/ANALYSIS-S28-CURRENT-VS-SGD-001/summary.json
+  s28_summary_sha256: bffa52eaac2dac4fee3e49bd70b8804ff93acb9bdaf960c0b6f730cc64aa9fbc
+  t_cls_checkpoint: outputs/analysis/imagenette_scratch_classifiers/T_cls/checkpoints/best.pt
+  t_cls_checkpoint_sha256: b846c8d81dc3dd604f916c82cb2ca5584ecaf88191e1a3009da1b81e3f00924d
+
+population:
+  expected_sample_count: 64
+  source_transform: torchvision_resize_256_then_center_crop_256
+  channel_seeds: [20260748, 20260749, 20260750]
+  snrs_db: [1, 4, 7, 13, 19]
+  expected_rows_full: 960
+  smoke:
+    sample_count: 1
+    channel_seeds: [20260748]
+    snrs_db: [1]
+  first_seed_stage:
+    sample_count: 64
+    channel_seeds: [20260748]
+    snrs_db: [1, 4, 7, 13, 19]
+    expected_rows: 320
+
+channel:
+  type: AWGN
+  standard_normal_generator: torch_cpu_float32
+  seed_derivation: sha256_external_common_v1_base_seed_sample_id_snr
+  noise_variance_convention: complex_awgn_per_real_half_variance
+  canonical_noise_real_symbols: 19712
+  diffjscc_uses_prefix_real_symbols: 16384
+  same_full_noise_sha_as_s20_s28: true
+  author_training_snr_range_db: [0, 14]
+  extrapolation_snrs_db: [19]
+
+rate:
+  source_real_dimensions_at_comparison_resolution: 196608
+  project_budget_real_symbols: 19712
+  project_budget_complex_channel_uses: 9856
+  project_exact_cbr: 0.050130208333333336
+  author_input_short_edge_after_resize: 512
+  author_latent_shape_at_square_input: [16, 32, 32]
+  diffjscc_real_symbols: 16384
+  diffjscc_complex_channel_uses: 8192
+  effective_cbr_against_256_source: 0.041666666666666664
+  author_labeled_cbr_against_512_source: 0.010416666666666666
+  author_labeled_cbr_name: 1/96
+  project_budget_fraction_used: 0.8311688311688312
+  unused_project_budget_real_symbols: 3328
+  receiver_generated_caption_real_symbols: 0
+  direct_rate_claim: budget_ceiling_fair_but_not_exact_rate_matched
+
+author_inference:
+  sampling_steps: 100
+  repeat_times: 1
+  control_strength: 1.0
+  color_fix_type: wavelet
+  use_intermediate_guidance: false
+  cfg_scale: 1.0
+  input_resize: author_auto_resize_short_edge_to_at_least_512_bicubic
+  output_resize: author_resize_back_to_256_lanczos
+  caption_source: receiver_side_blip2_from_noisy_jscc_reconstruction
+  blip_image_processor_fast: false
+  sampler_seed_derivation: sha256_diffjscc_sampler_v1_base_seed_sample_id_snr
+  batch_size: 1
+
+evaluator:
+  expected_role: T_cls
+  clean_confidence_threshold: 0.5
+  normalization_mean: [0.485, 0.456, 0.406]
+  normalization_std: [0.229, 0.224, 0.225]
+
+metrics:
+  quality: [PSNR, MS_SSIM, LPIPS]
+  semantic: [T_cls_correct, final_failure]
+  internal_author_delta: [DiffJSCC_minus_author_JSCC]
+  external_delta: [current_minus_DiffJSCC, B1_minus_DiffJSCC]
+  systems: [runtime_ms_per_image, peak_gpu_memory_mib, physical_symbol_accounting]
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260782
+  bootstrap_unit: source_image_cluster_across_channel_seeds_and_snrs
+
+decision_rules:
+  protocol_pass_requires:
+    - exact_source_commit_and_checkpoint_hash
+    - exact_frozen_population_membership
+    - exact_canonical_noise_prefix_and_full_noise_sha
+    - runtime_observed_latent_shape_16x32x32
+    - no_sender_side_information
+    - all_rows_and_metrics_finite
+  current_strictly_dominates_if:
+    - current_minus_diffjscc_psnr_cluster_ci_low_gt_0
+    - current_minus_diffjscc_lpips_cluster_ci_high_lt_0
+    - current_failure_rate_not_higher
+  diffjscc_strictly_dominates_if:
+    - diffjscc_minus_current_psnr_cluster_ci_low_gt_0
+    - diffjscc_minus_current_lpips_cluster_ci_high_lt_0
+    - diffjscc_failure_rate_not_higher
+  otherwise: report_pareto_or_inconclusive_without_forcing_single_winner
+
+outputs:
+  preflight: outputs/external_baselines/ANALYSIS-S30-DIFFJSCC-PREFLIGHT-001
+  checkpoint_audit: outputs/external_baselines/ANALYSIS-S30-DIFFJSCC-CHECKPOINT-AUDIT-001
+  smoke: outputs/external_baselines/ANALYSIS-S30-DIFFJSCC-SMOKE-001
+  first_seed_stage: outputs/external_baselines/ANALYSIS-S30-DIFFJSCC-FIRST-SEED-001
+  full: outputs/external_baselines/ANALYSIS-S30-DIFFJSCC-COMPARISON-001
+  overwrite_forbidden: true

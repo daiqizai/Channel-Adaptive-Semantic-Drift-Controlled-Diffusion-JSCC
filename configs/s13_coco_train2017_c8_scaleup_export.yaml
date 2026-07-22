@@ -1,0 +1,43 @@
+phase: S13
+export_id: EXPORT-S13-001
+method: DeterministicCOCOTrain2017C8ScaleupCache
+dataset: COCO2017
+image_size: 256
+seed: 20260713
+
+protocol:
+  preregistration: reports/coco_train2017_scaleup_protocol_preregistration_2026-07-12.md
+  official_imagenette_accessed: false
+
+inputs:
+  source_root: data/coco/train2017
+  exclusion_root: data/coco/val2017
+  checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+split:
+  train_count: 10000
+  validation_count: 1000
+
+channel:
+  type: AWGN
+  snrs: [1, 4, 7, 13, 19]
+
+rate:
+  denominator: 48
+  inner_channel: 8
+  cbr: 0.16666666666666666
+
+baseline:
+  repo: third_party/Deep-JSCC-PyTorch
+  source_url: https://github.com/chunbaobao/Deep-JSCC-PyTorch
+  commit: 2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06
+
+evaluation:
+  batch_size: 32
+  num_workers: 8
+  quantize_png: true
+  sample_grid_count: 4
+
+outputs:
+  output_dir: outputs/eval/s13_coco_train2017_c8_scaleup_10k_1k

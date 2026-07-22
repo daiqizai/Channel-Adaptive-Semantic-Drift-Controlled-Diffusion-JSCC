@@ -1,0 +1,58 @@
+phase: S24-recent-progress-derived-metrics
+analysis_id: ANALYSIS-S24-RECENT-PROGRESS-SUMMARY-001
+date: 2026-07-20
+method: FrozenArtifactRecentProgressAggregation
+
+protocol:
+  status: complete_derived_aggregation_output
+  known_outcomes_only: true
+  no_model_selection: true
+  no_holdout_reuse_for_tuning: true
+  official_imagenette_accessed: false
+  comparison_rule: absolute_metrics_only_within_same_population
+  cross_population_rule: compare_paired_deltas_and_protocol_properties_only
+
+inputs:
+  s19_per_sample: outputs/analysis/ANALYSIS-S19-FUSION-HOLDOUT-001/per_sample.csv
+  s19_per_sample_sha256: cd5ba7899b52790cd242a447b22a455395be32939bc180f16e8ddd2ffa260f54
+  s19_bootstrap: outputs/analysis/ANALYSIS-S19-FUSION-BOOTSTRAP-001/bootstrap_summary.json
+  s19_bootstrap_sha256: 07c1abc366feb52eca949e0829e8a4dc3b2cf6ac6cfcc464a430490f10a071e4
+  s20_summary: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/aggregate/summary.json
+  s20_summary_sha256: 3023ac917f4705fd6a705ea08b7ebe99b5dec4e529c0b77dcc1d414a7dd364d5
+  s23_per_sample: outputs/analysis/ANALYSIS-S23-B1FS-HOLDOUT-001/per_sample.csv
+  s23_per_sample_sha256: 9f4dd87d0923121da89e7e4c968d63d15164e4d72707665b6a08ebc58e771fa3
+  s23_bootstrap: outputs/analysis/ANALYSIS-S23-B1FS-BOOTSTRAP-001/bootstrap_summary.json
+  s23_bootstrap_sha256: 14ce060d7481300de6f510b7475a13b5febd593255b308c5cff717b681e10ca7
+  s23_config: configs/s23_b1_feature_shrink.yaml
+  s23_config_sha256: 28b128c7fccf774ebf0a327f211d25c85ded1b926fbf0d9582a33ad9e36b2faf
+
+metrics:
+  image_quality: [psnr, ms_ssim, lpips]
+  semantic: [alexnet_clean_confident_failure, three_classifier_majority_failure, new_error, repair]
+  inference: [source_cluster_ci95, active_real_symbols, side_information_symbols, parameters, receiver_postprocess_latency]
+  alexnet_original_confidence_min: 0.20
+
+bootstrap:
+  unit: source_image_cluster_across_five_snrs
+  clusters: 256
+  replicates: 10000
+  seed: 20260766
+
+latency:
+  scope: receiver_postprocessor_given_cached_b0_and_diffusion
+  device: cuda:0
+  batch_size: 16
+  warmup_iterations: 50
+  timed_iterations: 200
+  excludes: [deepjscc_encoder_channel_decoder, six_step_diffusion_generation, classifiers, metrics]
+
+outputs:
+  directory: outputs/analysis/ANALYSIS-S24-RECENT-PROGRESS-SUMMARY-001
+  summary_sha256: 72b607fa9b405fddad9b95341850993ec0a8bb66f0238bfdcf96f680d5c4f327
+  same_population_method_metrics_sha256: 75c14d370fe926648f776601e3718c05b617918c1171bf2d51a97a1191a0d4b2
+  paired_quality_comparisons_sha256: db55c399148f9f820a1bf47acf1b0a0833508812c3cb3d3ec4b17ad9b6700606
+  paired_semantic_comparisons_sha256: 299093aa5fd15177f306ae941a8ca4df9a50867237a1f08b1fd5e189347d75b4
+  readable_figures:
+    s23_same_holdout_quality_sha256: b2b2333b50a0d163955c7a149a1056a7522726546418509c78750fa4dbf3e3ca
+    s23_per_snr_deltas_sha256: 70ed991251f8a49533005159a431f38c72dd78e5cb2d5b149d548ebd85087b6f
+    s23_semantic_failure_sha256: 478360993955f515ed3db934488ce95905842a8358eba9fdc56a16d1814e39d2

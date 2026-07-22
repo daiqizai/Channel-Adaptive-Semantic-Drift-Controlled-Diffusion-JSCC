@@ -1,0 +1,31 @@
+phase: S5-validation
+study: posterior_consistency
+analysis_id: ANALYSIS-PC-RISK-CTRL-DEV-001
+feature_source:
+  risk_features_csv: outputs/analysis/pc_imagenette_receiver_risk_features_multiseed/risk_features.csv
+  risk_features_sha256: 7b81120f8a2a23140800845257d19126800fae1e5f2cb78a4c6398266917233d
+  audit_csv: outputs/analysis/pc_imagenette_receiver_risk_features_multiseed/per_sample.csv
+  audit_sha256: c1441695d08e0baeb9e82cb4729c2e53a479855be857f109114c78cec1c6d46c
+  schema_json: outputs/analysis/pc_imagenette_receiver_risk_features_multiseed/risk_feature_schema.json
+  schema_sha256: 7a39e8a1bbd61d84c63ec29f783e20fa0318ef921e0bc44dd9e459b391e967d7
+  expected_rows: 28410
+score:
+  name: js_uncertainty_mean_percentile_v1
+  aggregation: arithmetic_mean_empirical_percentiles
+  empirical_cdf_side: right
+  components:
+    - {feature: gate_raw_posterior_js, direction: 1}
+    - {feature: gate_anchor_posterior_js, direction: 1}
+    - {feature: aux_raw_posterior_js, direction: 1}
+    - {feature: aux_anchor_posterior_js, direction: 1}
+    - {feature: gate_posterior_confidence, direction: -1}
+    - {feature: aux_posterior_confidence, direction: -1}
+selection:
+  reference_filter: teacher_clean_correct_and_teacher_anchor_correct
+  primary_snrs: [1, 4, 7]
+  objective: first_smallest_reference_reject_rate_passing_all_gates
+  reference_reject_rate_grid: [0.005, 0.01, 0.02, 0.03, 0.05, 0.075, 0.10, 0.15, 0.20]
+  gates:
+    max_primary_final_new_image_cluster_upper: 0.005
+    minimum_posterior_psnr_gain_retained_fraction: 0.80
+output_dir: outputs/analysis/pc_imagenette_receiver_risk_controller_dev

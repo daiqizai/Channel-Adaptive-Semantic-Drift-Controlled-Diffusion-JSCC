@@ -1,0 +1,62 @@
+extends: configs/s21_b1_anchored_gated_fusion.yaml
+
+phase: S22-b1-feature-injection
+experiment_id: EXP-S22-B1FI-001
+selection_analysis_id: ANALYSIS-S22-B1FI-SELECTION-001
+holdout_analysis_id: ANALYSIS-S22-B1FI-HOLDOUT-001
+bootstrap_analysis_id: ANALYSIS-S22-B1FI-BOOTSTRAP-001
+method: FrozenB1ZeroConvMatchedDiffusionFeatureInjection
+seed: 20260763
+
+protocol:
+  status: selection_epoch_zero_no_holdout_access
+  preregistration: reports/b1_feature_injection_preregistration_2026-07-20.md
+  s21_output_merge_stage_closed: true
+  s21_holdout_accessed: false
+  b1_backbone_frozen: true
+  only_auxiliary_projection_trainable: true
+  high_snr_exact_b1_by_input_identity: true
+  holdout_sealed_until_checkpoint_frozen: true
+
+inputs:
+  feature_injection_checkpoint: outputs/EXP-S22-B1FI-001/checkpoints/best.pt
+  feature_injection_checkpoint_sha256: b7eac7ece17cef6d4c478f69a1d6f623a24e545a7eda3bd8d1681250bbda0d79
+
+feature_injection:
+  insertion_point: add_to_frozen_b1_head_features_before_frozen_residual_body
+  auxiliary_input: matched_diffusion_minus_b0_rgb
+  auxiliary_channels: 3
+  target_feature_channels: 64
+  projection: conv3x3_bias_false
+  initialization: all_zero
+  envelope: {"1": 1.0, "4": 1.0, "7": 1.0, "13": 0.0, "19": 0.0}
+  control_auxiliary: b0_minus_b0_equals_zero
+  trainable_parameters_expected: 1728
+  control_and_epoch0_fusion_equal_b1: true
+
+training:
+  seed: 20260763
+  epochs: 10
+  lr: 0.0001
+  weight_decay: 0.0
+  mse_weight: 1.0
+  l1_weight: 0.10
+  lpips_weight: 0.01
+  selection_rule: maximize_mean_psnr_subject_to_lpips_not_worse_than_epoch0
+
+evaluation:
+  bootstrap_seed: 20260764
+
+success_criteria:
+  initial_fusion_equals_b1_max_abs: 0.000001
+  high_snr_fusion_equals_b1_max_abs: 0.0000001
+  fusion_minus_b1_psnr_ci_low_min_db: 0.0
+  fusion_minus_b1_lpips_ci_high_max: 0.0
+  fusion_minus_b1_nonnegative_low_snr_count_min: 3
+  fusion_majority_new_not_greater_than_repair: true
+
+outputs:
+  training_dir: outputs/EXP-S22-B1FI-001
+  selection_dir: outputs/analysis/ANALYSIS-S22-B1FI-SELECTION-001
+  holdout_dir: outputs/analysis/ANALYSIS-S22-B1FI-HOLDOUT-001
+  bootstrap_dir: outputs/analysis/ANALYSIS-S22-B1FI-BOOTSTRAP-001

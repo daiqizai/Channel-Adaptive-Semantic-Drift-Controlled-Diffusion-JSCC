@@ -1,0 +1,19 @@
+phase: S8
+analysis_id: ANALYSIS-S8-004
+method: FrozenPerSampleCounterfactualValidationAblation
+seed: 20260715
+source_config: configs/s8_per_sample_counterfactual_semantic_refiner_validation.yaml
+checkpoint: outputs/EXP-S8-003/checkpoints/best.pt
+received_outputs: outputs/EXP-S8-003
+sample_start: 192
+sample_count: 64
+snrs: [1, 4, 7, 13, 19]
+modes: [received, zeros, shuffled]
+bootstrap_replicates: 10000
+bootstrap_cluster: sample
+success_criteria:
+  received_minus_zeros_psnr_ci_lower_strictly_positive: true
+  received_minus_shuffled_psnr_ci_lower_strictly_positive: true
+  received_point_not_worse_each_snr: true
+outputs:
+  output_dir: outputs/analysis/s8_per_sample_semantic_sketch_validation_ablation

@@ -1,0 +1,68 @@
+phase: S16-lowrate-M3
+analysis_id: ANALYSIS-S16-LOWRATE-M3-STAGE-001
+status: preregistered_before_stage_output
+created_at: "2026-07-15"
+official_val_accessed: false
+outcome_claims_allowed: false
+pilot_claim_scope: lowrate_integration_and_direction_only
+population_reference_config: configs/external_common_comparison_pilot.yaml
+preregistration: reports/lowrate_m3_minimal_closure_preregistration_2026-07-15.md
+
+channel:
+  type: AWGN
+  snrs_db: [1, 4, 7, 13, 19]
+  base_seed: 20260730
+  noise_variance_convention: complex_awgn_per_real_half_variance
+
+rate:
+  source_real_dimensions: 196608
+  total_real_symbols: 19712
+  total_complex_channel_uses: 9856
+  exact_cbr: 0.050130208333333336
+  dense_real_symbols: 24576
+  active_real_symbols: 19712
+  image_active_real_symbols: 19632
+
+method:
+  exact_checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/best.pt
+  exact_checkpoint_sha256: bca5b67a3bca93f17d23688cc5ec2d30ffe8790191e07fbf41926649cf1bb606
+  inner_channel: 3
+  baseline_repo: third_party/Deep-JSCC-PyTorch
+  b1_config: configs/lowrate_m3_b1_anchor_train.yaml
+  b1_checkpoint: outputs/EXP-S16-B1-001/checkpoints/best.pt
+  b1_checkpoint_sha256: 7a295976105a9c43c25604c9070e676d25512c7a09b5c50655b6671477b7615a
+  diffusion_config: configs/lowrate_m3_b1_anchored_diffusion.yaml
+  diffusion_checkpoint: outputs/EXP-S16-DIFF-001/checkpoints/best.pt
+  diffusion_checkpoint_sha256: 44915d7e116cc9a46cb590501f075196afdc4827cb658d170795540de448bc8a
+  diffusion_parent_decision: negative_all_preregistered_checks_except_sampling_steps
+  sender_checkpoint: outputs/analysis/imagenette_scratch_risk_classifier/G_aux/checkpoints/best.pt
+  sender_checkpoint_sha256: 8e074be6ec854edbc144d95d9fe5cd7d098c61bca853915108952acfa094b455
+  gate_checkpoint: outputs/analysis/imagenette_scratch_classifiers/G_gate/checkpoints/best.pt
+  gate_checkpoint_sha256: 708aa9e47db27d37080f39564886488beb7795ee9e9f21c4ae0325e6789d4f47
+  payload_codec: digital_uint2_bpsk_r4
+  payload_bits: 20
+  payload_repetitions: 4
+  payload_real_symbols: 80
+  posterior_steps: 3
+  posterior_normalized_step_size: 0.001
+  posterior_payload_normalization_source: recovered_uint2_bits
+  posterior_valid_coordinates: nonpayload_active_coordinates_only
+  rejected_fallback: anchor
+
+evaluator:
+  checkpoint: outputs/analysis/imagenette_scratch_classifiers/T_cls/checkpoints/best.pt
+  checkpoint_sha256: b846c8d81dc3dd604f916c82cb2ca5584ecaf88191e1a3009da1b81e3f00924d
+  expected_role: T_cls
+
+success_criteria:
+  require_40_rows: true
+  require_exact_rate_every_row: true
+  posterior_consistency_nonincreasing_every_row: true
+  final_mean_psnr_minus_anchor_min_db: -0.10
+  final_mean_lpips_minus_anchor_max: 0.0
+  final_new_error_not_greater_than_repair: true
+  final_failure_not_greater_than_anchor: true
+
+outputs:
+  output_dir: outputs/analysis/ANALYSIS-S16-LOWRATE-M3-STAGE-001
+  overwrite_forbidden: true

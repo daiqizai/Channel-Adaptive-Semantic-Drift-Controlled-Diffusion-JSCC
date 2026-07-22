@@ -1,0 +1,106 @@
+phase: S6-external-comparison
+study: external_diffusion_jscc_baselines
+analysis_id: SMOKE-EXT-SGDJSCC-001
+status: preregistered_before_smoke_outcome
+created_at: "2026-07-14"
+official_val_accessed: false
+outcome_claims_allowed: false
+comparison_track: author_native_smoke_not_direct_ranking
+
+source:
+  repo: https://github.com/MauroZMJ/SGDJSCC
+  path: third_party/SGDJSCC
+  commit: 2188acc0dd2805355d3d0d2e478cbc27b46b4da5
+  source_read_only: true
+  license_status: absent_in_repository_audit
+
+input:
+  image: outputs/eval/s13_coco_train2017_c8_scaleup_10k_1k/exports/original/sample_010000.png
+  split_role: integration_smoke_only
+  source_image_size: 256
+  author_preprocess: center_crop_long_side_then_resize_128
+  model_image_size: 128
+
+channel:
+  type: AWGN
+  snr_db: 1
+  seed: 2025
+  use_gt_csi: false
+
+model:
+  use_semantic: true
+  use_text: true
+  use_controlnet: true
+  use_jscc_feature: true
+  use_gt_text: false
+  diffusion_step: 50
+  step_style: continuous
+  guidance_scale: 4.0
+  controlnet_scale: 0.2
+  cfg_method: pcs_1.0
+  canny_cr: 0.2
+  mask_method: none
+  edge_threshold: 0.25
+  scaling_factor: 15.45
+
+assets:
+  checkpoint_dir: third_party/SGDJSCC/checkpoint
+  checkpoints:
+    JSCC_model.pth:
+      bytes: 571393727
+      sha256: 455cb603d071d9aee7f6e3704c3228f543178453bc7c25ffcbfd95e5ab1915fe
+    diffusion_backbone.pth:
+      bytes: 937827298
+      sha256: 3c338aff5b69665629fd7bdc338f6becdc5c61fde1438ad7d1708be0f12892d4
+    diffusion_controlnet.pth:
+      bytes: 1129676258
+      sha256: 3049b9d81835c6459238c78fdb07ebdf963877131251095fa695daa02920db74
+    muge-epoch-19-checkpoint.pth:
+      bytes: 291968351
+      sha256: 0db6b14550925cbd4ca12160f9f19c78302b0814f560695d6ded37bf0eb3c683
+  blip2_dir: third_party/SGDJSCC/runtime_assets/blip2-opt-2.7b-coco
+  blip2_revision: cda95b9319b722f79c9451a3d8ff92eea02048dc
+  blip2_files:
+    model-00001-of-00002.safetensors:
+      bytes: 9998365880
+      sha256: 2e42fbb755c1e6f20163897c930b21195991f30dfd82d17cf65ccf992d4e8c69
+    model-00002-of-00002.safetensors:
+      bytes: 5497664472
+      sha256: ec126c79363120a346db188eb3524a07547f4fdd6d63a049d855650444dedd4f
+  clip_model: third_party/SGDJSCC/runtime_assets/ViT-L-14.pt
+  clip_sha256: b8cca3fd41ae0c99ba7e8951adf17d267cdb84cd88be6f7c2e0eca1737a03836
+  hf_home: third_party/SGDJSCC/runtime_assets/hf_home
+  stable_diffusion_scheduler_repo: CompVis/stable-diffusion-v1-4
+  stable_diffusion_scheduler_revision: 133a221b8aa7292a167afc5127cb63fb5005638b
+
+environment:
+  python: .venv-sgdjscc/bin/python
+  expected_python: "3.10"
+  expected_torch: 2.1.0
+  expected_torchvision: 0.16.0
+  expected_transformers: 4.44.2
+  expected_diffusers: 0.26.3
+  expected_huggingface_hub: 0.25.1
+  expected_xformers: 0.0.22.post7
+  cuda_device: cuda:0
+
+rate_instrumentation:
+  count_main_channel_tensor: true
+  count_edge_dense_tensor: true
+  count_edge_nonzero_active_tensor: true
+  record_text_utf8_bits_without_claiming_channel_cost: true
+  pilots_real_symbols: 0
+  native_denominator: 3x128x128_real_source_dimensions
+  unknown_text_channel_symbols_blocks_common_ranking: true
+
+success_criteria:
+  require_finite_output: true
+  require_output_shape: [1, 3, 128, 128]
+  require_main_channel_count_observed: true
+  require_edge_channel_count_observed: true
+  require_all_checkpoint_hashes_match: true
+  require_all_runtime_asset_hashes_match: true
+  semantic_claim_forbidden_for_one_image_smoke: true
+
+output_dir: outputs/smoke/external_sgdjscc_native_snr1_seed2025_20260714
+overwrite_forbidden: true

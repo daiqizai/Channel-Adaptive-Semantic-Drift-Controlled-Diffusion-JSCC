@@ -1,0 +1,138 @@
+phase: S18-snr-conditioned-identity-envelope
+experiment_id: EXP-S18-IDENTITY-001
+selection_analysis_id: ANALYSIS-S18-IDENTITY-SELECTION-001
+holdout_analysis_id: ANALYSIS-S18-IDENTITY-HOLDOUT-001
+method: FrozenDecoderAwareLatentDiffusionWithSNRIdentityEnvelope
+dataset: COCO2017_train2017_fresh_unseen_population
+image_size: 256
+seed: 20260738
+
+protocol:
+  status: policy_frozen_before_holdout_output
+  preregistration: reports/snr_identity_envelope_preregistration_2026-07-15.md
+  project_commit_at_registration: abf117bc9aa194cd0a4fa80bd63df6baae1f6d29
+  official_imagenette_accessed: false
+  networks_frozen: true
+  old_11000_sources_excluded: true
+  selection_and_holdout_disjoint: true
+
+inputs:
+  source_root: data/coco/train2017
+  coco_val_exclusion_root: data/coco/val2017
+  prior_source_manifest: outputs/eval/s16_lowrate_m3_exact19712_uint2r4_coco10k_1k/source_manifest.csv
+  prior_source_manifest_sha256: 93ae3f3b47420c6bf84e1b5dce29601db1490f5519bb99fe39dcdad6680e2de9
+  cache_root: outputs/eval/s18_fresh_coco_identity_envelope_population
+  source_manifest: outputs/eval/s18_fresh_coco_identity_envelope_population/source_manifest.csv
+  source_manifest_sha256: c467d2ccadd94242f51ff683f09d7b43d91a07d5edc538d06c06f2b6d93a8bed
+  deepjscc_checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/best.pt
+  deepjscc_checkpoint_sha256: bca5b67a3bca93f17d23688cc5ec2d30ffe8790191e07fbf41926649cf1bb606
+  latent_diffusion_checkpoint: outputs/EXP-S17-LATDIFF-004-DECODER/checkpoints/best.pt
+  latent_diffusion_checkpoint_sha256: 5b708117a5d25cad0a5909a24f85bb32d1b5dc11c83146ba8c98fad5ee35d98f
+  b1_config: configs/lowrate_m3_b1_anchor_train.yaml
+  b1_checkpoint: outputs/EXP-S16-B1-001/checkpoints/best.pt
+  b1_checkpoint_sha256: 7a295976105a9c43c25604c9070e676d25512c7a09b5c50655b6671477b7615a
+  selected_policy: outputs/analysis/ANALYSIS-S18-IDENTITY-SELECTION-001/selected_policy.json
+  selected_policy_sha256: c31d68533bf4e470d585ff5d279e948a71dca3ead1964902647393b2f37d05eb
+  forbidden_deepjscc_checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/latest.pt
+
+baseline:
+  repo: third_party/Deep-JSCC-PyTorch
+  commit: 2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06
+
+population:
+  rank_seed: 20260738
+  total_count: 512
+  selection_role: selection
+  selection_count: 256
+  holdout_role: holdout
+  holdout_count: 256
+  transform: resize_shorter_side_256_then_center_crop_256_then_uint8_png
+  exclude_prior_path_and_sha256: true
+  exclude_coco_val2017_filename: true
+
+channel:
+  type: AWGN
+  snrs_db: [1, 4, 7, 13, 19]
+  noise_variance_factor_per_real: 0.5
+  selection_base_seed: 20260739
+  holdout_base_seed: 20260740
+
+rate:
+  inner_channel: 3
+  dense_real_symbols: 24576
+  active_real_symbols: 19712
+  payload_real_symbols: 80
+  image_active_real_symbols: 19632
+  complex_channel_uses: 9856
+  source_real_dimensions: 196608
+  exact_cbr: 0.050130208333333336
+  active_index_rule: evenly_spaced_floor_indices
+  payload_index_rule: evenly_spaced_within_active_indices
+
+model:
+  latent_channels: 6
+  latent_height: 64
+  latent_width: 64
+  base_channels: 48
+  num_blocks: 6
+  time_embedding_dim: 96
+  group_norm_groups: 8
+  prediction_type: epsilon
+  input_conditioning: [received_diffusion_state, full_coordinate_valid_mask, log_snr]
+
+diffusion:
+  channel_alpha_formula: 1/(1+noise_variance_factor_per_real/10^(snr_db/10))
+  train_alpha_max: 0.999
+  sampling_steps: 6
+  sampler: deterministic_ddim
+  measurement_blend: 0.0
+  reserved_and_inactive_coordinates_frozen_to_zero: true
+
+envelope:
+  representation: received_plus_strength_times_diffusion_correction
+  alpha_reference_snr_db: 1
+  baseline: full
+  candidates:
+    - {name: smooth_p0p25, kind: smooth_power, exponent: 0.25}
+    - {name: smooth_p0p5, kind: smooth_power, exponent: 0.5}
+    - {name: smooth_p1, kind: smooth_power, exponent: 1.0}
+    - {name: smooth_p2, kind: smooth_power, exponent: 2.0}
+    - {name: hard_identity_7db, kind: hard_cutoff, full_through_snr_db: 7.0, identity_from_snr_db: 13.0}
+  selection_order: [nonnegative_snr_count_desc, mean_psnr_delta_desc, mean_lpips_delta_asc, config_order]
+  nonnegative_tolerance_db: 1.0e-9
+
+evaluation:
+  batch_size: 16
+  num_workers: 4
+  quantize_png: false
+  metrics: [active_latent_mse, psnr, ms_ssim, lpips, alexnet_pseudo_failure, alexnet_pseudo_new_error, alexnet_pseudo_repair, three_classifier_majority_new_error]
+  pseudo_original_confidence_min: 0.20
+  classifier_weights_local_only: true
+  sample_grid_count: 8
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260741
+
+classifiers:
+  alexnet: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  resnet18: outputs/cache/torch/hub/checkpoints/resnet18-f37072fd.pth
+  mobilenet_v3_small: outputs/cache/torch/hub/checkpoints/mobilenet_v3_small-047dcff4.pth
+  imagenet_mean: [0.485, 0.456, 0.406]
+  imagenet_std: [0.229, 0.224, 0.225]
+
+success_criteria:
+  selected_minus_full_psnr_bootstrap_ci_low_min_db: 0.0
+  selected_minus_b0_mean_psnr_min_db: 0.0
+  selected_minus_b0_positive_snr_count_min: 3
+  selected_minus_b0_nonnegative_snr_count_min: 5
+  selected_minus_b0_mean_lpips_max: 0.0
+  low_mid_snr_full_psnr_gain_retention_min: 0.95
+  selected_alexnet_new_not_greater_than_repair: true
+  selected_alexnet_new_not_greater_than_full: true
+  selected_majority_new_not_greater_than_repair: true
+  selected_majority_new_not_greater_than_full: true
+
+outputs:
+  population_dir: outputs/eval/s18_fresh_coco_identity_envelope_population
+  selection_dir: outputs/analysis/ANALYSIS-S18-IDENTITY-SELECTION-001
+  holdout_dir: outputs/analysis/ANALYSIS-S18-IDENTITY-HOLDOUT-001
+  bootstrap_dir: outputs/analysis/ANALYSIS-S18-IDENTITY-BOOTSTRAP-001

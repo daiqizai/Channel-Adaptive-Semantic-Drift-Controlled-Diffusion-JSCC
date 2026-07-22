@@ -1,0 +1,81 @@
+phase: S6
+analysis_id: exp_s4_008_edge_monotonic_fresh_holdout_residual_shrink_schedule_check
+method: FrozenEdgeMonotonicResidualShrinkScheduleCheck
+split_name: fresh-holdout
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+inputs:
+  source_experiment: EXP-S4-008
+  validation_shrink_schedule: outputs/analysis/exp_s4_008_edge_monotonic_residual_shrink_selection/selected_schedule.json
+  validation_shrink_summary: outputs/analysis/exp_s4_008_edge_monotonic_residual_shrink_selection/summary.csv
+  source_config: outputs/analysis/exp_s4_008_edge_fresh_holdout_gate_check/config.yaml
+  per_sample_csv: outputs/analysis/exp_s4_008_edge_fresh_holdout_gate_check/per_sample.csv
+  summary_csv: outputs/analysis/exp_s4_008_edge_fresh_holdout_gate_check/summary.csv
+  original_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384/exports/original
+  m0_export_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384
+  refined_export_dir: outputs/analysis/exp_s4_008_edge_fresh_holdout_gate_check/exports
+  jscc_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+frozen_schedules:
+  - name: top1_full_strength
+    source_policy: top1_fallback_alpha
+    alphas_by_snr:
+      "1": 1.0
+      "4": 1.0
+      "7": 1.0
+      "13": 1.0
+      "19": 1.0
+  - name: validation_top1_shrink_schedule
+    source_policy: top1_fallback_alpha
+    schedule_source: outputs/analysis/exp_s4_008_edge_monotonic_residual_shrink_selection/selected_schedule.json::top1_fallback_alpha
+    alphas_by_snr:
+      "1": 0.75
+      "4": 0.75
+      "7": 0.75
+      "13": 1.0
+      "19": 0.75
+  - name: always_full_strength
+    source_policy: always_alpha
+    alphas_by_snr:
+      "1": 1.0
+      "4": 1.0
+      "7": 1.0
+      "13": 1.0
+      "19": 1.0
+  - name: validation_always_m0_failure_constrained_schedule
+    source_policy: always_alpha
+    schedule_source: outputs/analysis/exp_s4_008_edge_monotonic_residual_shrink_selection/selected_schedule.json::always_alpha
+    alphas_by_snr:
+      "1": 1.0
+      "4": 1.0
+      "7": 0.25
+      "13": 0.25
+      "19": 0.25
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 32
+  topk: 5
+
+evaluation:
+  image_batch_size: 16
+  sample_grid_count: 4
+  metrics: [psnr, ssim, ms_ssim, lpips_optional, pseudo_final_failure, accept_rate, repair_count, accepted_new_error_count]
+
+notes:
+  - This applies the EXP-S4-008 validation-selected monotonic effective-strength schedules to untouched sample_000320-sample_000383 without retuning.
+  - No alpha or threshold may be changed after inspecting this output.
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_008_edge_monotonic_fresh_holdout_residual_shrink_schedule_check

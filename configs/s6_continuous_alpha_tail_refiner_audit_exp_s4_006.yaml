@@ -14,8 +14,10 @@ inputs:
   source_per_sample_csv: outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/per_sample.csv
   source_summary_csv: outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/summary.csv
   source_config: configs/s6_alpha_head_residual_refiner_tail_regression_benefit_exp_s4_006.yaml
-  checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
-  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+  method_checkpoint: outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/checkpoints/best.pt
+  forbidden_method_checkpoint: outputs/analysis/exp_s4_006_alpha_head_residual_refiner_tail_regression_benefit/checkpoints/latest.pt
+  base_refiner_checkpoint: outputs/EXP-S4-006/checkpoints/best.pt
+  jscc_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
 
 policies:
   - key: continuous_alpha_top1_fallback

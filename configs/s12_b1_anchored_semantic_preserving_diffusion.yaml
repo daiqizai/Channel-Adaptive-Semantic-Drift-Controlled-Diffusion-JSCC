@@ -1,0 +1,102 @@
+phase: S12
+experiment_id: EXP-S12-001
+method: B1AnchoredSemanticPreservingShortChainResidualShiftDiffusion
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.16666666666666666
+seed: 20260720
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+protocol:
+  status: controlled_pilot_not_final
+  preregistration: reports/b1_anchored_semantic_preserving_diffusion_preregistration_2026-07-12.md
+  anchor_description: The inherited `m0` columns denote the frozen B1 `c8 + receiver-structure residual CNN` anchor, not bare DeepJSCC.
+  official_imagenette_accessed: false
+
+inputs:
+  anchor_config: configs/s11_p0_c8_same_refiner_validation.yaml
+  anchor_checkpoint: outputs/EXP-S11-001/checkpoints/best.pt
+  m0_export_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384
+  m0_reconstruction_subdir: reconstruction
+  original_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384/exports/original
+  checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+
+split:
+  train_sample_start: 32
+  train_sample_count: 160
+  eval_sample_start: 192
+  eval_sample_count: 64
+
+model:
+  name: b1_anchored_semantic_preserving_short_chain_diffusion
+  input_channels: 10
+  condition_features: [sobel_magnitude, laplacian_abs]
+  condition_source: receiver_m0
+  diffusion_condition_source: receiver_anchor_structural_maps
+  base_channels: 64
+  num_blocks: 6
+  snr_norm_max: 20.0
+  residual_gates: {"1": 0.08, "4": 0.07, "7": 0.06, "13": 0.05, "19": 0.04}
+
+diffusion:
+  process: residual_shift_stochastic_bridge
+  train_timesteps: 20
+  sampling_steps: 6
+  bridge_noise_sigma: 0.05
+  prediction_type: bounded_anchor_correction
+  sampler: deterministic_bridge_ode
+
+training:
+  epochs: 30
+  batch_size: 16
+  num_workers: 4
+  crop_size: 128
+  random_flip: true
+  lr: 0.0005
+  weight_decay: 0.0001
+  grad_clip_norm: 1.0
+  mse_weight: 1.0
+  l1_weight: 0.05
+  edge_l1_weight: 0.05
+  semantic_kl_weight: 0.0001
+  semantic_kl_temperature: 1.0
+  validation_every_epochs: 3
+
+training_semantic_teacher:
+  model_name: resnet18
+  weights: IMAGENET1K_V1
+  weights_file: outputs/cache/torch/hub/checkpoints/resnet18-f37072fd.pth
+  use_for_checkpoint_selection: false
+
+classifier:
+  backend: torchvision
+  model_name: alexnet
+  weights: IMAGENET1K_V1
+  cache_dir: outputs/cache/torch
+  weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+  batch_size: 32
+  topk: 5
+
+failure_handling:
+  detector: top1_agreement_with_b1_anchor
+  accept_when: diffusion_top1_equals_b1_anchor_top1
+  fallback_output: frozen_b1_anchor
+  uses_original_for_detection: false
+
+evaluation:
+  sample_grid_count: 4
+  pseudo_clean_conf_thresholds: [0.20, 0.30]
+  metrics: [psnr, ssim, ms_ssim, lpips, pseudo_drift, incremental_new_error, repair]
+
+success_criteria:
+  mean_raw_minus_anchor_lpips_max: 0.0
+  mean_raw_minus_anchor_psnr_min_db: -0.10
+  minimum_lpips_improved_snr_count: 3
+  raw_new_error_not_greater_than_repair: true
+  maximum_sampling_steps: 8
+
+outputs:
+  output_dir: outputs/EXP-S12-001

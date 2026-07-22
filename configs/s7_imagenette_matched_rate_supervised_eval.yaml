@@ -1,0 +1,74 @@
+phase: S7
+analysis_id: imagenette_matched_total_rate_policy_dev_20260711
+method: MatchedTotalRateMainStructureSupervisedPolicyDevAudit
+dataset: Imagenette2-320
+seed: 20260711
+
+protocol:
+  base_supervised_config: configs/s6_imagenette_supervised_clean_eval.yaml
+  preregistration: reports/imagenette_matched_rate_preregistration_2026-07-11.md
+  split: policy_dev
+  official_val_is_sealed: true
+  analysis_role: external_supervised_policy_development
+
+inputs:
+  reference_c8_config: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/config.yaml
+  reference_c8_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  matched_training_config: configs/s7_matched_rate_jscc_pilot_coco256_awgn.yaml
+  main_c6_checkpoint: outputs/train/s7_matched_rate_main_cbr0125_pilot20k/checkpoints/best.pt
+  structure_c2_checkpoint: outputs/train/s7_matched_rate_structure_cbr004167_pilot20k/checkpoints/best.pt
+  refiner_config: configs/s7_matched_rate_decoded_structure_refiner_validation.yaml
+  refiner_checkpoint: outputs/EXP-S7-002/checkpoints/best.pt
+
+rate:
+  denominator: 48
+  reference_inner_channel: 8
+  reference_cbr: 0.16666666666666666
+  main_inner_channel: 6
+  main_cbr: 0.125
+  structure_inner_channel: 2
+  structure_cbr: 0.041666666666666664
+  total_inner_channel: 8
+  total_cbr: 0.16666666666666666
+
+channel:
+  type: AWGN
+  snrs: [1, 4, 7, 13, 19]
+  channel_seed: 20260711
+  reference_seed_offset: 300000
+  main_seed_offset: 100000
+  structure_seed_offset: 200000
+  independent_arm_noise: true
+
+arms:
+  names:
+    - reference_c8
+    - matched_main_c6
+    - matched_raw
+    - matched_top1_fallback
+  gate_rule: G_gate(matched_raw).top1 == G_gate(matched_main_c6).top1
+  refiner_condition: decoded_structure_rgb_first_two_channels
+
+evaluation:
+  batch_size: 32
+  num_workers: 8
+  primary_clean_threshold: 0.50
+  primary_snrs: [1, 4, 7]
+  quantize_png: true
+  lpips: true
+  lpips_net: alex
+  lpips_cache_dir: outputs/cache/torch
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260711
+  bootstrap_cluster: image_id
+
+success_criteria:
+  raw_failure_vs_reference_ci_upper_max: 0.0
+  raw_new_error_rate_upper_max_conditional_on_reference_correct: 0.005
+  raw_psnr_vs_reference_ci_lower_strictly_positive: true
+  raw_psnr_point_positive_each_snr: true
+  raw_lpips_delta_negative: true
+  require_negative_lpips_delta: true
+
+outputs:
+  output_dir: outputs/analysis/imagenette_matched_rate_policy_dev

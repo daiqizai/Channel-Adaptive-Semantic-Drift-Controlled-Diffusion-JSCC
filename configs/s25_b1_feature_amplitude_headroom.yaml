@@ -1,0 +1,49 @@
+extends: configs/s23_b1_feature_shrink.yaml
+
+phase: S25-b1-feature-amplitude-headroom
+analysis_id: ANALYSIS-S25-B1FA-HEADROOM-001
+method: FrozenB1FeatureAmplitudeOracleHeadroomDiagnostic
+seed: 20260767
+
+protocol:
+  status: complete_selection_diagnostic_output_route_closed
+  preregistration: reports/b1_feature_amplitude_headroom_preregistration_2026-07-20.md
+  s23_selection_and_holdout_outcomes_known: true
+  development_selection_only: true
+  target_dependent_oracles_are_upper_bounds_only: true
+  no_new_model_training: true
+  no_holdout_access: true
+  official_imagenette_accessed: false
+
+inputs:
+  endpoint_checkpoint: outputs/EXP-S23-B1FS-001/checkpoints/endpoint_epoch1.pt
+  endpoint_checkpoint_sha256: 028f98701a5070775683221223032f419405b50305bc9758dde84478af5dc014
+
+amplitude_headroom:
+  alphas: [0.0, 0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.35, 0.5, 0.75, 1.0]
+  fixed_reference_alpha: 0.15
+  psnr_oracle_tie_break: smaller_alpha
+  semantic_safe_oracle_rule: when_b1_majority_is_correct_disallow_candidate_majority_failure
+  semantic_safe_oracle_tie_break: maximize_psnr_then_smaller_alpha
+  semantic_models: [alexnet, resnet18, mobilenet_v3_small]
+
+evaluation:
+  batch_size: 16
+  num_workers: 8
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260768
+  bootstrap_unit: source_image_cluster_across_five_snrs
+
+decision:
+  continue_to_receiver_visible_controller_only_if:
+    semantic_safe_oracle_minus_fixed_psnr_min_db: 0.02
+    semantic_safe_oracle_minus_fixed_psnr_ci_low_min_db: 0.0
+    semantic_safe_oracle_minus_fixed_lpips_max: 0.0
+    low_snr_nonreference_alpha_fraction_min: 0.10
+  interpretation: feasibility_upper_bound_not_method_result
+
+outputs:
+  directory: outputs/analysis/ANALYSIS-S25-B1FA-HEADROOM-001
+  summary_sha256: 8b8bcf65e46c2d1965696e46eecdcd1ab75864c916f6a3ab9f6a4757094d8add
+  alpha_candidates_long_sha256: 4b88d25a3b5bd1e44f989ab53991ae7845a3adfe37dd2c037bbe81772a4dc891
+  oracle_choices_sha256: f5f690461dab903e8f98bf2068e7061a0d7e296819c0cafd7aa7578f7417828b

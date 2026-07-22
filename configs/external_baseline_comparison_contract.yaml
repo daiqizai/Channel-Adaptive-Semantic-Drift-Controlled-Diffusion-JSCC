@@ -1,0 +1,219 @@
+phase: S6-external-comparison
+study: external_diffusion_jscc_baselines
+analysis_id: ANALYSIS-EXT-BASELINE-001
+status: protocol_only_no_outcomes
+created_at: "2026-07-14"
+official_val_accessed: false
+outcome_claims_allowed: false
+
+research_boundary:
+  project_mainline_unchanged: true
+  awgn_minimal_closure_preserved: true
+  semantic_drift_is_primary_failure_mode: true
+  no_new_large_model_training: true
+
+comparison_tracks:
+  author_native:
+    purpose: reproduce_author_pipeline_before_adaptation
+    direct_ranking_against_ours_allowed: false
+    reason: resolution_rate_side_information_and_dataset_contracts_differ
+  common_contract:
+    purpose: compare_methods_on_the_same_images_channel_and_metrics
+    direct_ranking_against_ours_allowed: true
+    require_total_rate_accounting: true
+    require_same_source_images: true
+    require_same_awgn_realizations: true
+
+common_contract:
+  dataset: COCO2017_train2017_frozen_scaleup_validation
+  source_manifest: outputs/EXP-S13-001/source_manifest.json
+  source_dir: outputs/eval/s13_coco_train2017_c8_scaleup_10k_1k/exports/original
+  split_role: integration_development_only
+  sample_name_start: 10000
+  sample_count_smoke: 8
+  sample_count_stage: 64
+  sample_count_full_development: 1000
+  image_size: 256
+  channel: AWGN
+  snrs_db: [1, 4, 7, 13, 19]
+  channel_seeds: [20260729, 20260730, 20260731]
+  cbr_denominator: 3x256x256_real_source_dimensions
+  real_dimensions_per_complex_channel_use: 2
+  cbr_definition: total_real_channel_coordinates_divided_by_2_then_divided_by_source_real_dimensions
+  target_cbr: 0.16666666666666666
+  target_total_real_symbols: 65536
+  official_imagenette_validation_forbidden: true
+  final_claim_requires_fresh_frozen_population: true
+
+metrics:
+  image_quality: [PSNR, MS_SSIM]
+  perceptual_quality: [LPIPS]
+  distribution_quality: [FID_or_KID_only_when_sample_count_is_valid]
+  semantic_reliability:
+    - T_cls_clean_correct_final_failure
+    - T_cls_new_error
+    - T_cls_repair
+    - image_cluster_one_sided_Clopper_Pearson_upper
+  systems:
+    - total_real_symbols
+    - side_information_real_symbols
+    - runtime_ms_per_image
+    - peak_gpu_memory_mib
+
+rate_accounting:
+  count_main_latent: true
+  count_edge_or_structure_branch: true
+  count_text_or_semantic_payload: true
+  count_pilots_and_csi_payload: true
+  free_oracle_side_information_forbidden_in_common_contract: true
+  unknown_rate_blocks_direct_ranking: true
+
+methods:
+  - id: SGD_JSCC_AUTHOR
+    priority: 1
+    reproduction_label: author_native_and_common_adapter_reported_separately
+    paper: https://arxiv.org/abs/2501.01138
+    source_repo: https://github.com/MauroZMJ/SGDJSCC
+    source_path: third_party/SGDJSCC
+    source_commit: 2188acc0dd2805355d3d0d2e478cbc27b46b4da5
+    source_license: absent_in_repository_audit
+    source_read_only: true
+    native_resolution: 128
+    native_main_latent_shape: [16, 16, 16]
+    native_main_real_symbols: 4096
+    native_main_real_dimension_ratio_excluding_semantic_side_information: 0.08333333333333333
+    native_main_complex_cbr_excluding_semantic_side_information: 0.041666666666666664
+    semantic_side_information:
+      text_caption:
+        transport_in_author_paper: assumed_perfect_and_cost_neglected
+        common_contract_status: explicit_fixed_utf8_crc16_bpsk_r21_smoke_passed
+      edge_map:
+        transport_in_author_code: separate_dynamic_awgn_jscc
+        configured_canny_cr: 0.2
+        common_contract_status: deterministic_active_mask_3328_real_coordinates_per_256_image_smoke_passed
+    checkpoint_inventory:
+      source: https://huggingface.co/murjun/SGDJSCC/tree/main
+      advertised_total_bytes: 2931000000
+      download_authorized: true
+      download_authorized_by_user: true
+      download_completed: true
+      files:
+        - {name: JSCC_model.pth, bytes: 571000000}
+        - {name: diffusion_backbone.pth, bytes: 938000000}
+        - {name: diffusion_controlnet.pth, bytes: 1130000000}
+        - {name: muge-epoch-19-checkpoint.pth, bytes: 292000000}
+      additional_runtime_assets:
+        - Salesforce/blip2-opt-2.7b-coco
+        - OpenAI_CLIP_ViT-L-14
+      runtime_large_weight_bytes_verified: 16428798541
+    common_adapter:
+      config: configs/external_sgdjscc_common_smoke.yaml
+      output: outputs/smoke/external_sgdjscc_common_snr1_seed20260729_20260715
+      patch_count_256x256: 4
+      main_real_symbols: 16384
+      active_edge_real_symbols: 3328
+      text_real_symbols: 45024
+      no_information_padding_real_symbols: 800
+      total_real_symbols: 65536
+      total_complex_channel_uses: 32768
+      rate_gate_status: passed_one_image_runtime_validation
+    current_status: author_native_and_common_contract_one_image_smokes_completed
+    direct_ranking_status: author_native_blocked_common_adapter_rate_gate_passed_stage_metrics_pending
+
+  - id: SING_ZERO_STYLE
+    priority: 2
+    reproduction_label: mechanism_level_not_exact_paper_reproduction
+    paper: https://arxiv.org/abs/2503.12484
+    source_repo: not_located_in_author_paper_or_primary_project_page_as_of_2026_07_14
+    implementation_basis: same_frozen_project_deepjscc_plus_inverse_problem_diffusion
+    reason_for_priority: closest_external_mechanism_to_received_latent_posterior_consistency
+    current_status: protocol_design_pending
+    direct_ranking_status: allowed_only_with_style_label_and_same_frozen_inputs
+
+  - id: DIFFJSCC_AUTHOR
+    priority: 3
+    reproduction_label: exact_author_code_deferred
+    paper: https://arxiv.org/abs/2404.17736
+    source_repo: https://github.com/mingyuyng/DiffJSCC
+    source_path: null
+    source_commit: null
+    source_license: absent_in_repository_metadata_audit
+    current_status: deferred_until_first_two_baselines_close
+    direct_ranking_status: blocked_until_source_checkpoint_and_rate_audit
+
+  - id: DIT_JSCC_AUTHOR
+    priority: 4
+    reproduction_label: unavailable_exact_code
+    paper: https://arxiv.org/abs/2601.03112
+    source_repo: https://github.com/semcomm/DiTJSCC
+    source_path: null
+    source_commit: null
+    source_license: absent_in_repository_metadata_audit
+    repository_state: readme_only_as_of_2026_07_14
+    current_status: watch_only_not_runnable
+    direct_ranking_status: blocked_no_released_implementation
+
+execution_gates:
+  before_any_model_download:
+    - record_source_size_and_license
+    - clear_all_http_https_all_proxy_variables
+    - name_destination_and_expected_disk_use
+    - preserve_existing_third_party_directory
+  before_smoke:
+    - pin_source_commit
+    - create_project_side_adapter_without_modifying_third_party
+    - instrument_main_and_side_channel_symbol_counts
+    - freeze_input_manifest_and_channel_seed
+  before_stage_result:
+    - run_eight_image_smoke
+    - run_sixty_four_image_development_stage
+    - report_native_and_common_contract_tables_separately
+    - report_semantic_new_errors_not_only_visual_metrics
+  before_direct_superiority_claim:
+    - total_rate_known_and_matched
+    - same_source_population
+    - same_channel_and_snr_grid
+    - semantic_tail_gate_passed
+    - fresh_frozen_population_audited
+
+schedule:
+  - order: 1
+    milestone: EXT0_source_and_contract_audit
+    status: completed
+    deliverable: pinned_SGD_JSCC_source_and_fairness_blockers
+  - order: 2
+    milestone: EXT1_SGD_JSCC_no_download_adapter
+    status: completed
+    deliverable: import_isolated_adapter_symbol_counter_and_eight_image_dry_smoke
+  - order: 3
+    milestone: EXT2_SGD_JSCC_native_smoke
+    status: completed
+    deliverable: author_native_outputs_without_direct_superiority_claim
+  - order: 4
+    milestone: EXT2B_SGD_JSCC_common_contract_one_image_smoke
+    status: completed
+    deliverable: four_patch_explicit_text_sparse_edge_exact_rate_runtime_validation
+  - order: 5
+    milestone: EXT3_SING_zero_style_common_contract
+    status: next
+    deliverable: same_DeepJSCC_same_rate_same_AWGN_mechanism_comparison
+  - order: 6
+    milestone: EXT4_common_contract_stage
+    status: pending
+    deliverable: sixty_four_image_three_seed_quality_semantic_and_system_table
+  - order: 7
+    milestone: EXT5_external_full_audit
+    status: pending_after_method_freeze
+    deliverable: fresh_population_full_comparison_without_reusing_official_outcomes
+
+outputs:
+  root: outputs/external_baselines/ANALYSIS-EXT-BASELINE-001
+  overwrite_forbidden: true
+  required_files:
+    - config_snapshot.yaml
+    - environment.json
+    - source_commits.json
+    - rate_accounting.json
+    - per_sample.csv
+    - summary.json
+    - REPORT.md

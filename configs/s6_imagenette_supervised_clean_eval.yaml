@@ -1,0 +1,179 @@
+phase: S6
+analysis_id: imagenette_supervised_clean_correct_20260710
+method: ScratchClassifierSupervisedCleanCorrectAudit
+dataset: Imagenette2-320
+seed: 20260710
+
+protocol:
+  preregistration: reports/imagenette_supervised_preregistration_2026-07-10.md
+  official_val_is_final_only: true
+  pretrained_imagenet_models_are_primary: false
+  note: ImageNet-pretrained classifiers may have seen exact Imagenette images and are not valid primary evidence.
+
+data:
+  archive: data/imagenette/imagenette2-320.tgz
+  archive_size_bytes: 341663724
+  archive_md5: 3df6f0d01a2c9592104656642f5e78a3
+  train_image_count: 9469
+  val_image_count: 3925
+  root: data/imagenette/imagenette2-320
+  train_dir: data/imagenette/imagenette2-320/train
+  val_dir: data/imagenette/imagenette2-320/val
+  image_size: 256
+  classes:
+    - n01440764
+    - n02102040
+    - n02979186
+    - n03000684
+    - n03028079
+    - n03394916
+    - n03417042
+    - n03425413
+    - n03445777
+    - n03888257
+
+split:
+  method: stratified_sha256_relative_path
+  seed: 20260710
+  ratios:
+    cls_train: 0.70
+    cls_cal: 0.10
+    policy_dev: 0.20
+  official_val_role: sealed_final_test
+  require_content_sha256: true
+  reject_exact_content_duplicates: true
+
+training:
+  epochs: 80
+  batch_size: 128
+  num_workers: 8
+  optimizer: sgd
+  lr: 0.10
+  momentum: 0.90
+  weight_decay: 0.0001
+  label_smoothing: 0.10
+  scheduler: cosine
+  warmup_epochs: 5
+  amp: true
+  grad_clip_norm: 5.0
+  train_crop_scale: [0.60, 1.00]
+  random_horizontal_flip: true
+  randaugment_num_ops: 2
+  randaugment_magnitude: 9
+  random_erasing_probability: 0.10
+  normalization_mean: [0.485, 0.456, 0.406]
+  normalization_std: [0.229, 0.224, 0.225]
+  checkpoint_selection: cls_cal_macro_top1
+  temperature_scaling_split: cls_cal
+  no_tta: true
+
+scratch_classifiers:
+  G_gate:
+    role: receiver_gate
+    architecture: mobilenet_v3_small
+    weights: null
+    seed: 271828
+    min_cal_macro_top1: 0.80
+    output_dir: outputs/analysis/imagenette_scratch_classifiers/G_gate
+  T_cls:
+    role: primary_independent_evaluator
+    architecture: resnet18
+    weights: null
+    seed: 314159
+    min_cal_macro_top1: 0.85
+    output_dir: outputs/analysis/imagenette_scratch_classifiers/T_cls
+
+inputs:
+  deepjscc_config: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/config.yaml
+  deepjscc_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/best.pt
+  forbidden_deepjscc_checkpoint: outputs/train/s2_deepjscc_coco256_awgn_snr7_cbr017/checkpoints/latest.pt
+  edge_config: outputs/EXP-S4-008/config.yaml
+  edge_checkpoint: outputs/EXP-S4-008/checkpoints/best.pt
+  no_edge_config: outputs/EXP-S4-009/config.yaml
+  no_edge_checkpoint: outputs/EXP-S4-009/checkpoints/best.pt
+  monotonic_schedule: outputs/analysis/exp_s4_008_edge_monotonic_residual_shrink_selection/selected_schedule.json
+  schedule_key: top1_fallback_alpha
+  gate_checkpoint: outputs/analysis/imagenette_scratch_classifiers/G_gate/checkpoints/best.pt
+  evaluator_checkpoint: outputs/analysis/imagenette_scratch_classifiers/T_cls/checkpoints/best.pt
+
+channel:
+  type: AWGN
+  snrs: [1, 4, 7, 13, 19]
+  policy_dev_seeds: [20260710]
+  final_seeds: [20260711, 20260712, 20260713]
+
+arms:
+  names:
+    - M0
+    - no_edge_scheduled
+    - M2_edge_scheduled
+    - M3_scratch_gate_fallback
+  candidate_formula: clamp(M0 + alpha_snr * (raw_refined - M0), 0, 1)
+  gate_accept_rule: G_gate(candidate).top1 == G_gate(M0).top1
+  quantize_png_stages: [M0, raw_refined, candidate, final]
+
+evaluation:
+  batch_size: 32
+  num_workers: 8
+  pin_memory: true
+  primary_clean_threshold: 0.50
+  clean_thresholds: [0.0, 0.5, 0.7]
+  primary_snrs: [1, 4, 7]
+  bootstrap_replicates: 10000
+  bootstrap_seed: 161803
+  bootstrap_cluster: image_id
+  quantize_png: true
+  lpips: true
+  lpips_net: alex
+  lpips_cache_dir: outputs/cache/torch
+  save_gallery_per_event: 12
+  full_test_quality_population: all_official_val_images
+  main_semantic_population: T_cls_clean_correct_at_primary_threshold
+
+success_criteria:
+  min_final_clean_count: 2500
+  min_final_clean_count_per_class: 150
+  min_t_cls_cal_macro_top1: 0.85
+  gate_efficacy_ci_upper_strictly_below_zero: true
+  safety_vs_m0_ci_upper_max_absolute: 0.005
+  accepted_new_error_rate_ci_upper_max_conditional_on_m0_correct: 0.005
+  safety_vs_m0_ci_upper_max_absolute_each_primary_snr: 0.005
+  max_worst_class_m3_minus_m0_failure_point_estimate: 0.02
+  m3_psnr_gain_ci_lower_strictly_above_zero: true
+  require_positive_m3_psnr_point_estimate_each_snr: true
+  min_fraction_m2_psnr_gain_retained: 0.50
+  require_negative_lpips_delta: true
+
+outputs:
+  classifier_root: outputs/analysis/imagenette_scratch_classifiers
+  split_manifest: outputs/analysis/imagenette_scratch_classifiers/split_manifest.json
+  policy_dev_dir: outputs/analysis/imagenette_supervised_policy_dev
+  final_dir: outputs/analysis/imagenette_supervised_final
+
+# This section is intentionally locked at preregistration time. It may only be
+# populated with immutable hashes after policy-dev passes, before the one-shot
+# official-val invocation. It must not change any method hyperparameter.
+final_lock:
+  unlocked: false
+  locked_at_utc: null
+  protocol_sha256: null
+  preregistration_sha256: null
+  evaluator_script_sha256: null
+  split_manifest_sha256: null
+  gate_checkpoint_sha256: null
+  evaluator_checkpoint_sha256: null
+  deepjscc_config_sha256: null
+  deepjscc_checkpoint_sha256: null
+  deepjscc_repo_head: null
+  deepjscc_model_py_sha256: null
+  deepjscc_channel_py_sha256: null
+  deepjscc_adapter_source_sha256: null
+  metrics_source_sha256: null
+  refiner_source_sha256: null
+  edge_config_sha256: null
+  edge_checkpoint_sha256: null
+  no_edge_config_sha256: null
+  no_edge_checkpoint_sha256: null
+  schedule_sha256: null
+  policy_dev_summary_sha256: null
+  policy_dev_metadata_sha256: null

@@ -1,0 +1,61 @@
+phase: S16-lowrate-M3
+export_id: EXPORT-S16-LOWRATE-M3-001
+method: Exact19712MaskedDeepJSCCWithInBudgetUInt2R4Reservation
+dataset: COCO2017
+image_size: 256
+seed: 20260713
+
+protocol:
+  status: preregistered_before_cache_output
+  preregistration: reports/lowrate_m3_minimal_closure_preregistration_2026-07-15.md
+  official_imagenette_accessed: false
+
+inputs:
+  source_root: data/coco/train2017
+  exclusion_root: data/coco/val2017
+  checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/best.pt
+  checkpoint_sha256: bca5b67a3bca93f17d23688cc5ec2d30ffe8790191e07fbf41926649cf1bb606
+  forbidden_checkpoint: outputs/train/external_author_rate_deepjscc_c3_mask19712_fullcoco_continue/checkpoints/latest.pt
+
+split:
+  train_count: 10000
+  validation_count: 1000
+
+channel:
+  type: AWGN
+  snrs: [1, 4, 7, 13, 19]
+
+rate:
+  exact_mask: true
+  inner_channel: 3
+  dense_real_symbols: 24576
+  active_real_symbols: 19712
+  source_real_dimensions: 196608
+  total_complex_uses: 9856
+  cbr: 0.050130208333333336
+  mask_rule: evenly_spaced_floor_indices
+
+reservation:
+  codec: digital_uint2_bpsk_r4
+  vector_dimensions: 10
+  bits_per_dimension: 2
+  repetitions: 4
+  payload_real_symbols: 80
+  image_active_real_symbols: 19632
+  cache_payload: deterministic_balanced_unit_power_surrogate
+  receiver_image_decoder: erase_reserved_coordinates_to_zero
+  label_or_classifier_accessed_during_cache_export: false
+
+baseline:
+  repo: third_party/Deep-JSCC-PyTorch
+  source_url: https://github.com/chunbaobao/Deep-JSCC-PyTorch
+  commit: 2665e0dc6d8bf216daf9442c5d6e5d69c5ad2f06
+
+evaluation:
+  batch_size: 32
+  num_workers: 8
+  quantize_png: true
+  sample_grid_count: 4
+
+outputs:
+  output_dir: outputs/eval/s16_lowrate_m3_exact19712_uint2r4_coco10k_1k

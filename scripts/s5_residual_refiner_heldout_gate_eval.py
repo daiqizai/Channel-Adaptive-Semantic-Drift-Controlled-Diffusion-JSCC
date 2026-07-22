@@ -23,20 +23,23 @@ from s5_residual_refiner_pilot import (  # noqa: E402
     build_model,
     classify_paths,
     compute_pair_metrics,
+    condition_source_name,
     gate_tensor,
     label_for,
     load_classifier,
     load_rgb_tensor,
+    load_semantic_sketch_store,
     project_relative,
     residual_gate,
     save_json,
+    semantic_sketch_batch_for_names,
     snr_name,
 )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run EXP-S4-006 residual refiner on held-out samples and check confidence-gain gate risk."
+        description="Run a residual refiner on held-out/test-like samples and check confidence-gain gate risk."
     )
     parser.add_argument("--config", default="configs/s5_residual_refiner_heldout_gate_exp_s4_006.yaml")
     parser.add_argument("--device", default="auto")
@@ -132,30 +135,52 @@ def validate_inputs(config: dict[str, Any], snrs: list[float]) -> dict[str, Any]
             raise FileNotFoundError(f"Required input not found: {path}")
     if checkpoint == forbidden_checkpoint:
         raise RuntimeError("Config points to forbidden latest.pt checkpoint.")
+    semantic_store = load_semantic_sketch_store(config)
 
     split = config["split"]
     names = sample_names(int(split["heldout_sample_start"]), int(split["heldout_sample_count"]))
-    source_split = config["source_exp_s4_006_split"]
+    source_split = config.get("source_refiner_split", config.get("source_exp_s4_006_split"))
+    if source_split is None:
+        raise KeyError("Config must define source_refiner_split or legacy source_exp_s4_006_split")
     source_train = sample_range(int(source_split["train_sample_start"]), int(source_split["train_sample_count"]))
     source_eval = sample_range(int(source_split["eval_sample_start"]), int(source_split["eval_sample_count"]))
     overlap_train = sorted(set(names) & source_train)
     overlap_eval = sorted(set(names) & source_eval)
     if overlap_train or overlap_eval:
+        source_experiment = str(config.get("source_experiment", "source refiner"))
         raise RuntimeError(
-            f"Held-out split overlaps EXP-S4-006 train/eval: train={overlap_train}, eval={overlap_eval}"
+            f"Held-out split overlaps {source_experiment} train/eval: train={overlap_train}, eval={overlap_eval}"
         )
 
     for name in names:
         if not (original_dir / name).exists():
             raise FileNotFoundError(f"Original sample missing: {original_dir / name}")
     for snr in snrs:
-        m0_dir = m0_export_dir / "exports" / snr_name(snr) / "reconstruction"
+        m0_subdir = str(config["inputs"].get("m0_reconstruction_subdir", "reconstruction"))
+        m0_dir = m0_export_dir / "exports" / snr_name(snr) / m0_subdir
         if not m0_dir.exists():
             raise FileNotFoundError(f"M0 reconstruction directory missing: {m0_dir}")
         for name in names:
             if not (m0_dir / name).exists():
                 raise FileNotFoundError(f"M0 sample missing: {m0_dir / name}")
+        if condition_source_name(config) == "decoded_structure_rgb":
+            structure_root = resolve_project_path(config["inputs"]["structure_export_dir"])
+            structure_subdir = str(
+                config["inputs"].get(
+                    "structure_reconstruction_subdir", "structure_reconstruction"
+                )
+            )
+            structure_dir = structure_root / "exports" / snr_name(snr) / structure_subdir
+            if not structure_dir.is_dir():
+                raise FileNotFoundError(f"Decoded structure directory missing: {structure_dir}")
+            for name in names:
+                if not (structure_dir / name).is_file():
+                    raise FileNotFoundError(f"Decoded structure sample missing: {structure_dir / name}")
         residual_gate(config, snr)
+    if semantic_store is not None:
+        missing = sorted(set(names) - set(semantic_store["names"]))
+        if missing:
+            raise RuntimeError(f"Semantic sketch coverage missing held-out samples: {missing[:3]}")
     return {
         "heldout_names": names,
         "num_images_per_snr": len(names),
@@ -167,6 +192,9 @@ def validate_inputs(config: dict[str, Any], snrs: list[float]) -> dict[str, Any]
             "checkpoint": project_relative(checkpoint),
             "forbidden_checkpoint": project_relative(forbidden_checkpoint),
             "classifier_weights": project_relative(classifier_weights),
+            "semantic_sketch_file": (
+                project_relative(semantic_store["path"]) if semantic_store is not None else None
+            ),
         },
     }
 
@@ -194,22 +222,56 @@ def refine_snr(
     device: torch.device,
 ) -> tuple[list[Path], float]:
     model.eval()
-    m0_dir = resolve_project_path(config["inputs"]["m0_export_dir"]) / "exports" / snr_name(snr) / "reconstruction"
+    m0_subdir = str(config["inputs"].get("m0_reconstruction_subdir", "reconstruction"))
+    m0_dir = (
+        resolve_project_path(config["inputs"]["m0_export_dir"])
+        / "exports"
+        / snr_name(snr)
+        / m0_subdir
+    )
     refined_dir = output_dir / "exports" / snr_name(snr) / "refined"
     refined_dir.mkdir(parents=True, exist_ok=True)
     refined_paths: list[Path] = []
     elapsed = 0.0
     batch_size = int(config["inference"]["batch_size"])
+    semantic_store = load_semantic_sketch_store(config)
     for start in range(0, len(names), batch_size):
         batch_names = names[start : start + batch_size]
         batch = torch.stack([load_rgb_tensor(m0_dir / name) for name in batch_names]).to(device)
+        condition_batch = None
+        if condition_source_name(config) == "decoded_structure_rgb":
+            structure_subdir = str(
+                config["inputs"].get(
+                    "structure_reconstruction_subdir", "structure_reconstruction"
+                )
+            )
+            structure_dir = (
+                resolve_project_path(config["inputs"]["structure_export_dir"])
+                / "exports"
+                / snr_name(snr)
+                / structure_subdir
+            )
+            condition_batch = torch.stack(
+                [load_rgb_tensor(structure_dir / name) for name in batch_names]
+            ).to(device)
         snr_db = torch.full((len(batch_names),), float(snr), dtype=torch.float32, device=device)
         snr_norm = snr_db / float(config["model"]["snr_norm_max"])
         gate = gate_tensor(config, snr_db, device)
+        semantic_batch = (
+            semantic_sketch_batch_for_names(config, semantic_store, batch_names, snr).to(device)
+            if semantic_store is not None
+            else None
+        )
         if device.type == "cuda":
             torch.cuda.synchronize(device)
         begin = time.perf_counter()
-        refined = model(batch, snr_norm, gate)
+        refined = model(
+            batch,
+            snr_norm,
+            gate,
+            condition_image=condition_batch,
+            semantic_sketch=semantic_batch,
+        )
         if device.type == "cuda":
             torch.cuda.synchronize(device)
         elapsed += time.perf_counter() - begin
@@ -233,7 +295,13 @@ def evaluate_snr(
     device: torch.device,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     original_dir = resolve_project_path(config["inputs"]["original_dir"])
-    m0_dir = resolve_project_path(config["inputs"]["m0_export_dir"]) / "exports" / snr_name(snr) / "reconstruction"
+    m0_subdir = str(config["inputs"].get("m0_reconstruction_subdir", "reconstruction"))
+    m0_dir = (
+        resolve_project_path(config["inputs"]["m0_export_dir"])
+        / "exports"
+        / snr_name(snr)
+        / m0_subdir
+    )
     refined_paths, refine_seconds = refine_snr(model, config, snr, names, output_dir, device)
 
     baseline_dir = output_dir / "exports" / snr_name(snr) / "top1_equal_final"
@@ -442,10 +510,12 @@ def make_case_grid(rows: list[dict[str, Any]], output_path: Path, max_cases: int
 
 def make_report(summary_rows: list[dict[str, Any]], config: dict[str, Any]) -> str:
     all_row = next(row for row in summary_rows if row["subset"] == "all")
+    source_experiment = str(config.get("source_experiment", "source refiner"))
+    split_name = str(config.get("split_name", "held-out"))
     lines = [
-        "# EXP-S4-006 Held-Out Confidence Gate Check",
+        f"# {source_experiment} {split_name} Confidence Gate Check",
         "",
-        "This derived check loads the trained EXP-S4-006 residual refiner and evaluates it on held-out samples that were not used in the EXP-S4-006 train/eval split.",
+        f"This derived check loads the trained {source_experiment} residual refiner and evaluates it on samples outside that refiner's train/eval split.",
         "",
         "Decision-time gate inputs remain receiver-side only: M0 and refined classifier top-1 predictions and confidence.",
         "",
@@ -495,7 +565,7 @@ def make_report(summary_rows: list[dict[str, Any]], config: dict[str, Any]) -> s
             "",
             "## Interpretation",
             "",
-            "- This is a held-out pseudo-label check, not a final clean-correct classification result.",
+            f"- This is a {split_name} pseudo-label check, not a final clean-correct classification result.",
             "- A candidate gate can only be promoted if it improves quality without increasing final failure or accepted new error on held-out data.",
         "- Accepted new errors remain the highest-priority cases for visual and auxiliary semantic review.",
         "",
@@ -632,7 +702,8 @@ def main() -> None:
         "seed": seed,
         "inputs": manifest["input_paths"],
         "split": config["split"],
-        "source_exp_s4_006_split": config["source_exp_s4_006_split"],
+        "source_experiment": config.get("source_experiment", ""),
+        "source_refiner_split": config.get("source_refiner_split", config.get("source_exp_s4_006_split")),
         "model": config["model"],
         "policy": config["policy"],
         "classifier": config["classifier"],
@@ -649,7 +720,7 @@ def main() -> None:
             "pytorch-msssim": md.version("pytorch-msssim"),
         },
         "proxy_environment_present": sorted(key for key in os.environ if "proxy" in key.lower()),
-        "download_note": "No model or data download is required; this held-out check loads the existing EXP-S4-006 refiner checkpoint.",
+        "download_note": "No model or data download is required; this check loads an existing local refiner checkpoint.",
         "key_sources": [
             "scripts/s5_residual_refiner_heldout_gate_eval.py",
             "scripts/s5_residual_refiner_pilot.py",

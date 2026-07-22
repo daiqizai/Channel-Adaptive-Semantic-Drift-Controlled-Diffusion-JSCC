@@ -1,0 +1,41 @@
+extends: configs/s21_b1_anchored_gated_fusion.yaml
+
+experiment_id: EXP-S21-B1AR-003
+selection_analysis_id: ANALYSIS-S21-B1AR-SELECTION-003
+holdout_analysis_id: ANALYSIS-S21-B1AR-HOLDOUT-003
+bootstrap_analysis_id: ANALYSIS-S21-B1AR-BOOTSTRAP-003
+method: B1AnchoredMatchedDiffusionAuxiliaryResidual
+seed: 20260759
+
+protocol:
+  status: failed_residual_saturation_after_epoch3_before_holdout
+  preregistration: reports/b1_anchored_auxiliary_residual_preregistration_2026-07-20.md
+  parent_failed_experiments: [EXP-S21-B1AGF-001, EXP-S21-B1AGF-002]
+  parent_failure_records:
+    - outputs/EXP-S21-B1AGF-001/failure.json
+    - outputs/EXP-S21-B1AGF-002/failure.json
+  only_method_change_from_s21_002: learned_sigmoid_spatial_gate_to_fixed_one
+  holdout_accessed_by_parents: false
+
+inputs:
+  control_checkpoint: outputs/EXP-S21-B1AR-003/checkpoints/control_best.pt
+  control_checkpoint_sha256: PENDING_TRAINING_FREEZE
+  fusion_checkpoint: outputs/EXP-S21-B1AR-003/checkpoints/fusion_best.pt
+  fusion_checkpoint_sha256: PENDING_TRAINING_FREEZE
+
+fusion_model:
+  name: b1_anchored_auxiliary_residual_adapter
+  spatial_gate_activation: fixed_one
+
+training:
+  seed: 20260759
+  spatial_gate_mean_weight: 0.0
+
+evaluation:
+  bootstrap_seed: 20260760
+
+outputs:
+  training_dir: outputs/EXP-S21-B1AR-003
+  selection_dir: outputs/analysis/ANALYSIS-S21-B1AR-SELECTION-003
+  holdout_dir: outputs/analysis/ANALYSIS-S21-B1AR-HOLDOUT-003
+  bootstrap_dir: outputs/analysis/ANALYSIS-S21-B1AR-BOOTSTRAP-003

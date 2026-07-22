@@ -1,0 +1,42 @@
+phase: S29-s28-contract-diagnostic
+analysis_id: ANALYSIS-S29-S28-B1-EXACT-BATCH-001
+created_at: "2026-07-21"
+
+protocol:
+  status: registered_after_s28_numeric_reproduction_failure_before_s29_output
+  preregistration: reports/s28_b1_exact_batch_audit_preregistration_2026-07-21.md
+  s20_and_s28_outcomes_known: true
+  diagnostic_only_not_independent_replication: true
+  reproduce_original_s20_batch_schedule: true
+  no_model_or_method_change: true
+  no_threshold_change: true
+  official_imagenette_validation_accessed: false
+
+inputs:
+  s20_config: configs/s20_sgd_b1_decision.yaml
+  s20_config_sha256: 4f7b510944fa0694a4ad980879155e2720335b7d05cebad3b7e43a340d35119f
+  s28_config: configs/s28_external_sgd_positioning.yaml
+  s28_config_sha256: 41a135785998178406afb0c243da159caf4a2a2ed3c8ea7be5ff4f994e0904d6
+  s28_summary: outputs/external_baselines/ANALYSIS-S28-CURRENT-VS-SGD-001/summary.json
+  s28_summary_sha256: bffa52eaac2dac4fee3e49bd70b8804ff93acb9bdaf960c0b6f730cc64aa9fbc
+  frozen_b1_csvs:
+    - path: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/baseline/b1/seed_20260748/per_sample.csv
+      sha256: 5ef4aea9cb58f27bd9a42fe6b877db55929242fde549520b18a345a58d1b59d8
+    - path: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/baseline/b1/seed_20260749/per_sample.csv
+      sha256: b841f2f8cfac9ea432e8d7df01c6887d1f73f61d5ac53614e14d5ab5cec7148c
+    - path: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/baseline/b1/seed_20260750/per_sample.csv
+      sha256: d43a1d4d4d5a312a84c27ff5f8e6263f63b03db17bcae0c09b9fbb167965499c
+
+audit:
+  batch_size: 64
+  expected_images: 64
+  expected_rows: 960
+  metric_abs_tolerance: 0.0001
+  prediction_mismatches_max: 0
+  failure_mismatches_max: 0
+  noise_sha_mismatches_max: 0
+  hypothesis: s28_difference_is_batch_shape_dependent_floating_point_arithmetic
+
+outputs:
+  directory: outputs/analysis/ANALYSIS-S29-S28-B1-EXACT-BATCH-001
+  overwrite_forbidden: true

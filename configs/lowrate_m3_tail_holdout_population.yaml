@@ -1,0 +1,35 @@
+phase: S16-lowrate-M3
+analysis_id: ANALYSIS-S16-LOWRATE-M3-TAIL-HOLDOUT-001
+status: preregistered_before_any_pilot_method_output
+created_at: "2026-07-15"
+official_val_accessed: false
+outcome_claims_allowed: false
+pilot_claim_scope: independent_policy_dev_holdout_only
+
+population:
+  dataset: Imagenette2_320_train_policy_dev
+  split_manifest: outputs/analysis/imagenette_scratch_classifiers/split_manifest.json
+  split_manifest_sha256: 0947c428a4ac03bd3907220c9305e5acceb564b95e91a6ffe0c658c132994a91
+  required_split: policy_dev
+  source_root: data/imagenette/imagenette2-320/train
+  frozen_clean_membership_source: outputs/analysis/pc_imagenette_sender_crossmodel_triplet_uint2_r4_resaware_b1_routing_seed20260728/per_sample.csv
+  frozen_clean_membership_source_sha256: 6d75b96db8911d61d2487380acdf9eaeea4cdcf7dc2a455ad380fceb800221da
+  selection_rule: sha256_external_stage_20260715_sample_id_rank_9_to_16_among_frozen_clean_correct
+  image_size: 256
+  samples:
+    - {sample_id: n03028079/n03028079_9386.JPEG, class_idx: 4, content_sha256: 488801725b2b4c99ad27914b7d4bd3ee2cbe647a68ac2e526fb4099a112877d4}
+    - {sample_id: n03394916/n03394916_34536.JPEG, class_idx: 5, content_sha256: e317c34acdda17e90b7e8733fe3f952c02fbda1cb280e4cab42c89c399bc301c}
+    - {sample_id: n03028079/n03028079_16853.JPEG, class_idx: 4, content_sha256: 4cc1d5c3723d5e9dc01c1bf22baa749a8c15d12afbe4c0860afed9c46c66faf7}
+    - {sample_id: n02102040/n02102040_2564.JPEG, class_idx: 1, content_sha256: 9e0c7cd5392e740a07033289d58a6752249e323b120302e0bac2870d89019fb0}
+    - {sample_id: n02979186/n02979186_26897.JPEG, class_idx: 2, content_sha256: b895f1e37fd500aa05d664608e67240b8aa12b4bbf7f87357fc0dea8144adc19}
+    - {sample_id: n02979186/n02979186_25977.JPEG, class_idx: 2, content_sha256: e3bde22a0b6eb24df0e0a6a75133869244562547a2d486cffc16971b1a3cb10d}
+    - {sample_id: n03000684/n03000684_23424.JPEG, class_idx: 3, content_sha256: 87335f069e8283b8dd61b99a656807b1c81ca5ad03e92304f31bc015e28b639d}
+    - {sample_id: n03417042/n03417042_27538.JPEG, class_idx: 6, content_sha256: 1545fad6946cca2ecfbc8c94c3b0511cfbdd8ebda8f189f07764e7ef96487118}
+
+evaluator:
+  checkpoint: outputs/analysis/imagenette_scratch_classifiers/T_cls/checkpoints/best.pt
+  checkpoint_sha256: b846c8d81dc3dd604f916c82cb2ca5584ecaf88191e1a3009da1b81e3f00924d
+  expected_role: T_cls
+  clean_confidence_threshold: 0.5
+  normalization_mean: [0.485, 0.456, 0.406]
+  normalization_std: [0.229, 0.224, 0.225]

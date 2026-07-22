@@ -1,0 +1,73 @@
+phase: S6
+analysis_id: imagenette_source_semantic_description_20260710
+method: SGDInspiredSourceSemanticDescriptionRouter
+dataset: Imagenette2-320
+seed: 20260710
+
+protocol:
+  base_config: configs/s6_imagenette_supervised_clean_eval.yaml
+  preregistration: reports/imagenette_source_semantic_description_preregistration_2026-07-10.md
+  input_policy_dev_dir: outputs/analysis/imagenette_supervised_policy_dev
+  input_per_sample_csv: outputs/analysis/imagenette_supervised_policy_dev/per_sample.csv
+  official_val_is_sealed: true
+
+description:
+  extractor: G_gate
+  source_image_available_only_at_sender: true
+  learned_top1_encoding_bits: 4
+  probability_encoding: per_class_uint8_then_renormalize
+  probability_vector_classes: 10
+  probability_vector_raw_bits: 80
+  channel_model: noiseless_diagnostic
+  cost_claim: raw_bits_only_no_cbr_equivalence_claim
+  warning: This is a diagnostic side channel; it is not a matched-CBR deployment result.
+
+nested_split:
+  source_split: policy_dev
+  method: per_class_sha256_rank_half
+  seed: 57721
+  selection_name: semantic_select
+  audit_name: semantic_audit
+  selection_fraction: 0.50
+
+scores:
+  fullprob_cross_entropy_risk:
+    thresholds: [-1.0, -0.5, -0.25, -0.1, -0.05, -0.025, 0.0, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0]
+  fullprob_js_risk:
+    thresholds: [-0.25, -0.1, -0.05, -0.025, -0.01, -0.005, 0.0, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25]
+  fullprob_cosine_risk:
+    thresholds: [-0.25, -0.1, -0.05, -0.025, -0.01, -0.005, 0.0, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25]
+  source_top1_logprob_risk:
+    thresholds: [-3.0, -2.0, -1.0, -0.5, -0.25, -0.1, -0.05, 0.0, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 3.0]
+
+selection:
+  eligible_families:
+    - fullprob_cross_entropy_risk
+    - fullprob_js_risk
+    - fullprob_cosine_risk
+    - source_top1_logprob_risk
+  primary_snrs: [1, 4, 7]
+  clean_threshold: 0.50
+  max_selection_accepted_new_error_image_clusters: 0
+  min_fraction_m2_psnr_gain_retained: 0.50
+  objective: lexicographic_min_final_failure_then_max_all_snr_psnr_gain
+  fallback_objective: lexicographic_min_event_clusters_then_final_failure_then_max_all_snr_psnr_gain
+
+evaluation:
+  batch_size: 32
+  num_workers: 8
+  bootstrap_replicates: 10000
+  bootstrap_seed: 141421
+  confidence: 0.95
+  compare_reconstructed_gate_outputs_abs_tol: 0.00001
+
+success_criteria:
+  gate_efficacy_ci_upper_strictly_below_zero: true
+  safety_vs_m0_ci_upper_max_absolute: 0.005
+  accepted_new_error_rate_ci_upper_max_conditional_on_m0_correct: 0.005
+  min_fraction_m2_psnr_gain_retained: 0.50
+  require_positive_psnr_ci_lower: true
+  require_negative_lpips_point_estimate: true
+
+outputs:
+  output_dir: outputs/analysis/imagenette_source_semantic_description_policy_dev

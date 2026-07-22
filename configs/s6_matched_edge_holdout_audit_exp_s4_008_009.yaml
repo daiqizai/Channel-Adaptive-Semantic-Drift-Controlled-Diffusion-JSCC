@@ -1,0 +1,82 @@
+phase: S6
+analysis_id: exp_s4_008_009_matched_edge_holdout_audit
+method: MatchedLargeEdgeCrossSplitPairedAudit
+dataset: COCO2017
+image_size: 256
+channel: AWGN
+snrs: [1, 4, 7, 13, 19]
+cbr: 0.17
+seed: 42
+repository_url: https://github.com/daiqizai/Channel-Adaptive-Semantic-Drift-Controlled-Diffusion-JSCC.git
+
+matched_arms:
+  no_edge:
+    experiment_id: EXP-S4-009
+    config: outputs/EXP-S4-009/config.yaml
+    checkpoint: outputs/EXP-S4-009/checkpoints/best.pt
+  edge:
+    experiment_id: EXP-S4-008
+    config: outputs/EXP-S4-008/config.yaml
+    checkpoint: outputs/EXP-S4-008/checkpoints/best.pt
+
+splits:
+  - name: validation
+    expected_sample_count: 64
+    no_edge:
+      config: outputs/EXP-S4-009/config.yaml
+      per_sample_csv: outputs/EXP-S4-009/per_sample.csv
+      summary_csv: outputs/EXP-S4-009/summary.csv
+    edge:
+      config: outputs/EXP-S4-008/config.yaml
+      per_sample_csv: outputs/EXP-S4-008/per_sample.csv
+      summary_csv: outputs/EXP-S4-008/summary.csv
+  - name: held-out
+    expected_sample_count: 32
+    no_edge:
+      config: outputs/analysis/exp_s4_009_capacity_matched_no_edge_heldout_gate_check/config.yaml
+      per_sample_csv: outputs/analysis/exp_s4_009_capacity_matched_no_edge_heldout_gate_check/per_sample.csv
+      summary_csv: outputs/analysis/exp_s4_009_capacity_matched_no_edge_heldout_gate_check/summary.csv
+    edge:
+      config: outputs/analysis/exp_s4_008_edge_heldout_gate_check/config.yaml
+      per_sample_csv: outputs/analysis/exp_s4_008_edge_heldout_gate_check/per_sample.csv
+      summary_csv: outputs/analysis/exp_s4_008_edge_heldout_gate_check/summary.csv
+  - name: test-like
+    expected_sample_count: 64
+    no_edge:
+      config: outputs/analysis/exp_s4_009_capacity_matched_no_edge_testlike_gate_check/config.yaml
+      per_sample_csv: outputs/analysis/exp_s4_009_capacity_matched_no_edge_testlike_gate_check/per_sample.csv
+      summary_csv: outputs/analysis/exp_s4_009_capacity_matched_no_edge_testlike_gate_check/summary.csv
+    edge:
+      config: outputs/analysis/exp_s4_008_edge_testlike_gate_check/config.yaml
+      per_sample_csv: outputs/analysis/exp_s4_008_edge_testlike_gate_check/per_sample.csv
+      summary_csv: outputs/analysis/exp_s4_008_edge_testlike_gate_check/summary.csv
+  - name: fresh-holdout
+    expected_sample_count: 64
+    no_edge:
+      config: outputs/analysis/exp_s4_009_capacity_matched_no_edge_fresh_holdout_gate_check/config.yaml
+      per_sample_csv: outputs/analysis/exp_s4_009_capacity_matched_no_edge_fresh_holdout_gate_check/per_sample.csv
+      summary_csv: outputs/analysis/exp_s4_009_capacity_matched_no_edge_fresh_holdout_gate_check/summary.csv
+    edge:
+      config: outputs/analysis/exp_s4_008_edge_fresh_holdout_gate_check/config.yaml
+      per_sample_csv: outputs/analysis/exp_s4_008_edge_fresh_holdout_gate_check/per_sample.csv
+      summary_csv: outputs/analysis/exp_s4_008_edge_fresh_holdout_gate_check/summary.csv
+
+bootstrap:
+  cluster: sample
+  preserve_all_snrs_per_cluster: true
+  replicates_per_split: 10000
+  seed: 42
+  confidence_level: 0.95
+  interval: percentile
+
+validation:
+  summary_psnr_tolerance_db: 0.00001
+  require_identical_sample_snr_keys: true
+  require_identical_original_and_m0_paths: true
+  require_identical_original_and_m0_alexnet_predictions: true
+
+runtime:
+  torch_num_threads: 1
+
+outputs:
+  output_dir: outputs/analysis/exp_s4_008_009_matched_edge_holdout_audit

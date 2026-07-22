@@ -1,0 +1,57 @@
+phase: S6-external-comparison
+study: project_working_point_sgd_rate_reallocation
+analysis_id: ANALYSIS-EXT-SGD-REALLOC-PILOT-001
+status: preregistered_before_any_reallocation_output
+created_at: "2026-07-15"
+official_val_accessed: false
+outcome_claims_allowed: false
+pilot_claim_scope: released_weight_rate_allocation_sensitivity_only
+
+population_reference_config: configs/external_common_comparison_pilot.yaml
+reference_sgd_output: outputs/external_baselines/ANALYSIS-EXT-COMMON-PILOT-001/sgd_jscc
+
+channel:
+  type: AWGN
+  snrs_db: [1, 4, 7, 13, 19]
+  base_seed: 20260729
+  standard_normal_generator: torch_cpu_float32
+  seed_derivation: sha256_external_common_v1_base_seed_sample_id_snr
+  noise_variance_convention: complex_awgn_per_real_half_variance
+  same_canonical_vector_as_common_pilot: true
+
+rate:
+  source_real_dimensions: 196608
+  total_real_symbols: 65536
+  total_complex_channel_uses: 32768
+  cbr: 0.16666666666666666
+  allocation:
+    main_base_real_symbols: 16384
+    main_repetition: 2
+    main_transmitted_real_symbols: 32768
+    active_edge_base_real_symbols: 3328
+    active_edge_repetition: 1
+    active_edge_transmitted_real_symbols: 3328
+    caption_packet_bits_per_patch: 536
+    captions_per_image: 4
+    caption_repetition: 13
+    text_real_symbols: 27872
+    no_information_padding_real_symbols: 1568
+  allocation_sum_check: 65536
+
+method:
+  label: SGD-JSCC-released-weights-main-R2-text-R13
+  reproduction: released_weight_rate_allocation_sensitivity_not_wide_latent_retraining
+  source_commit: 2188acc0dd2805355d3d0d2e478cbc27b46b4da5
+  base_config: configs/external_sgdjscc_common_complex_awgn_smoke.yaml
+  receiver_combining: arithmetic_mean_of_independent_main_repetitions
+  caption_crc_failure_action: erase_caption_to_empty_string
+
+success_criteria:
+  require_40_rows: true
+  require_exact_total_rate_each_row: true
+  require_same_canonical_noise_sha_as_common_pilot: true
+  require_semantic_metrics: true
+  forbid_claiming_increased_model_capacity: true
+
+output_dir: outputs/external_baselines/ANALYSIS-EXT-SGD-REALLOC-PILOT-001/sgd_jscc_main_r2_text_r13
+overwrite_forbidden: true

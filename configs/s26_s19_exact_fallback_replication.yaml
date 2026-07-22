@@ -1,0 +1,71 @@
+extends: configs/s19_diffusion_fusion_ablation.yaml
+
+phase: S26-s19-exact-fallback-cross-population-replication
+analysis_id: ANALYSIS-S26-S19-XF-REPLICATION-001
+method: FrozenS19LowSNRFusionWithExactB1HighSNRFallback
+seed: 20260769
+
+protocol:
+  status: complete_cross_population_replication_output_pass
+  preregistration: reports/s19_exact_fallback_replication_preregistration_2026-07-20.md
+  s19_selection_and_holdout_outcomes_known: true
+  s25_negative_outcome_known: true
+  target_population_b1_s23_outcomes_known: true
+  target_population_s19_checkpoint_outputs_unknown: true
+  frozen_s19_checkpoints_no_retraining: true
+  no_target_selection_or_tuning: true
+  one_shot_target_holdout_evaluation: true
+  official_imagenette_accessed: false
+
+inputs:
+  population_root: outputs/eval/s21_fresh_coco_b1_anchored_fusion_population
+  source_manifest: outputs/eval/s21_fresh_coco_b1_anchored_fusion_population/source_manifest.csv
+  source_manifest_sha256: 4f31ecb619531e61322e471de709adef4df6efdc787544d21b7d16cc0a1c7db5
+  cache_manifest: outputs/eval/s21_fresh_coco_b1_anchored_fusion_population/cache_manifest.csv
+  cache_manifest_sha256: dd79fe2f6771d1e25ab1b887ee31f460b67cf5c871e0952d63874ec499b84b87
+  control_checkpoint: outputs/EXP-S19-FUSION-001/checkpoints/control_best.pt
+  control_checkpoint_sha256: c9eab7648bd0120e5db2820b7a94edd13251ed8e1050cec6edb6f6187fbdbcf6
+  fusion_checkpoint: outputs/EXP-S19-FUSION-001/checkpoints/fusion_best.pt
+  fusion_checkpoint_sha256: e7577d59e9c2362e40feb72bb030c1c7b9302b707115d3e000c9c55bbb8942c5
+
+population:
+  rank_seed: 20260751
+  total_count: 5512
+  roles:
+    train: 5000
+    selection: 256
+    holdout: 256
+
+exact_fallback:
+  use_frozen_branch_snrs_db: [1, 4, 7]
+  use_exact_b1_snrs_db: [13, 19]
+  fusion_branch: frozen_s19_fusion
+  matched_control_branch: frozen_s19_control
+  fallback: frozen_b1
+  routing_inputs: [snr_db]
+  learned_parameters: 0
+  side_information_real_symbols: 0
+
+evaluation:
+  batch_size: 16
+  num_workers: 8
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260770
+  bootstrap_unit: source_image_cluster_across_five_snrs
+  pseudo_original_confidence_min: 0.20
+
+success_criteria:
+  high_snr_exact_b1_max_abs: 0.0000001
+  routed_fusion_minus_control_psnr_ci_low_min_db: 0.0
+  routed_fusion_minus_control_lpips_ci_high_max: 0.0
+  routed_fusion_minus_b1_psnr_mean_min_db: 0.05
+  routed_fusion_minus_b1_psnr_ci_low_min_db: 0.03
+  routed_fusion_minus_b1_lpips_ci_high_max: 0.0
+  routed_fusion_minus_b1_nonnegative_snr_count_min: 5
+  routed_fusion_majority_new_not_greater_than_repair: true
+  routed_fusion_majority_failure_not_greater_than_control: true
+
+outputs:
+  directory: outputs/analysis/ANALYSIS-S26-S19-XF-REPLICATION-001
+  summary_sha256: f104ea4a8c870817c2e99b3c0aeb97fb20fa8da4e6e34cf0054004a37f1a376c
+  per_sample_sha256: 0f29efc31922da8c3a002a8b3e3dee35da1d509dfe817c93b2a98aa0ab87dd0c

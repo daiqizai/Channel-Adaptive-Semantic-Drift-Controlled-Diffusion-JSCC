@@ -1,0 +1,32 @@
+phase: S11
+analysis_id: ANALYSIS-S11-001
+analysis_mode: p0_b1_c8_same_refiner_vs_b3_decoded_structure
+seed: 20260712
+
+rate:
+  denominator: 48
+  b0_b1_inner_channel: 8
+  b3_main_inner_channel: 6
+  b3_structure_inner_channel: 2
+  total_inner_channel: 8
+
+inputs:
+  original_b1_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384/exports/original
+  original_b3_dir: outputs/eval/s7_matched_rate_main_structure_pilot20k_export_384/exports/original
+  b0_export_dir: outputs/eval/s2_deepjscc_coco256_awgn_best_m0_export_384
+  b0_reconstruction_subdir: reconstruction
+  b1_output_dir: outputs/EXP-S11-001
+  b1_config: configs/s11_p0_c8_same_refiner_validation.yaml
+  b3_output_dir: outputs/EXP-S7-002
+  b3_config: configs/s7_matched_rate_decoded_structure_refiner_validation.yaml
+
+evaluation:
+  sample_start: 192
+  sample_count: 64
+  snrs: [1, 4, 7, 13, 19]
+  bootstrap_replicates: 10000
+  required_positive_snr_count: 4
+  require_b3_new_error_not_greater_than_b1: true
+
+outputs:
+  output_dir: outputs/analysis/s11_p0_b1_b3_paired_comparison
