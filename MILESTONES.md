@@ -1,6 +1,60 @@
 # 里程碑与收敛标准
 
-本文件用于防止课题无限扩张。CIFAR-10 只作为 JSCC sanity baseline；diffusion 主路线必须使用高分辨率自然图像数据。
+## 最终收敛：方法开发终止并冻结（2026-08-03）
+
+本项目已到达最终收敛点：**原始完整联合优势主张未建立，停止继续投入。** 决策类型为 `ENGINEERING_STOP`，详细证据和 H1–H5 分项结论见 `reports/METHOD_TERMINATION_REPORT_2026-08-03.md`，逐 claim 边界见 `audit/CLAIM_REGISTRY.csv`。
+
+本节 supersede 下方所有历史“主线修订”“下一阶段”“待执行”“待授权”“若未来重启”和解封计划。下方内容继续保留，用于说明当时预注册的门槛、实验顺序和历史收敛纪律，不再构成待办或运行许可。最终冻结约束如下：
+
+- 不启动 S35R-P1 smoke/训练，不训练新的 diffusion refiner；
+- 不继续 matched B1/M2/diffusion/envelope、semantic gate/controller/fusion 或 S34B 消融搜索；
+- 不训练 CVaR 模型，不启动 S34A extension、S34C 长版、A2 或 S36 official validation；
+- 不为挽救结论大量复跑旧实验，不覆盖历史输出、失败目录、`verdict.json` 或预注册；
+- S33、Rayleigh matched-mean baseline、评测/信道/码率/系统测量基础设施仅作为冻结资产保留。
+
+项目中的子假设必须继续区分局部支持、被反驳、尚未建立和工程停止；不得将当前项目停止泛化为所有相关科学方向均无效。
+
+---
+
+## 历史里程碑与收敛标准（已冻结）
+
+本文件原用于防止课题无限扩张。以下历史正文不再驱动新实验；CIFAR-10 只作为 JSCC sanity baseline，diffusion 历史主路线使用高分辨率自然图像数据。
+
+## 2026-07-23 paper idea1b benchmark 修订
+
+用户确认本篇论文的主画质 benchmark 从 Imagenette 切换为 Kodak + CLIC2020 test，但训练暂时保持冻结 COCO-S33 和 `256x256` crop；只有跨域结果暴露明显域差异才评估 DIV2K 重训。Imagenette 仍保留为监督 semantic reliability，official validation 继续封存。
+
+大图公平性不采用“一刀切的共同 tile”。每个方法允许使用结果前冻结的原生最佳可运行路径：DiffJSCC 优先整图官方入口，S33/Swin 可按固定输入 tile，SGD 保留作者原生128 patch；重叠、padding、sender-side side information 和重复发送全部按实际符号计费。receiver-side BLIP/VAE/diffusion 等只计计算、不计通信。只有 actual CBR 相同且 side information 全入账才可称 exact-rate；低于 S33 `1/24` 的方法只称预算上限内，高于预算或免费 sender caption 的方法不得进入严格排名。
+
+本修订新建 `paper_idea1b/` 作为本篇专属工作区，只通过路径引用根目录的 S33 checkpoint、canonical noise实现、S34D结果和其他带SHA资产；禁止移动或复制这些资产。Gate A0 已完成：Kodak/CLIC数据、source/processing/rate manifests和DISTS/FID/KID identity sanity均通过。
+
+2026-07-23用户放行的A1判别式部分已完成：S33、Swin official Base-SA、Swin capacity-matched CM-SA在同一A0 tile坐标、同一canonical noise和逐图相同actual CBR下完成Kodak 5 SNR×3 seeds及CLIC 5 SNR×1 seed。Kodak上S33对Base的PSNR为追平/非劣、对CM劣于；CLIC上对两臂五档均劣于，感知/结构/CLIP/FID/KID总体也弱。因此S33“强于Swin”的独立backbone claim未成立，后续不得继续沿用该措辞。S33只保留低代价判别式端点定位：最大2048²图延迟比两条Swin臂低约`2.32–2.45×`、峰值显存约一半，但质量明显更低。DiffJSCC/SGD/A2与official validation均未由A1触发。
+
+## 2026-07-23 S35R 主线修订：代价—质量—可靠性刻画 + 轻量接收端生成式精修
+
+用户已批准将下一阶段主线改为：以 S34D 的公平生成式推理代价测量为立论基础，在永久冻结的 S33 `16,384-real` strong backbone 后增加轻量、纯接收端、零额外符号的生成式精修头。论文主贡献锚定“代价—质量—可靠性”的公平刻画，refiner 是低代价载体，而不是把新模块本身包装成全部贡献。
+
+该修订取代原 S35“直接重启 matched B1/M2/diffusion/envelope”的默认执行顺序，但不删除历史结果。P0/P1 必须按以下顺序分阶段放行：
+
+1. **P0：SGD adaptive-cost 补测。** 只读/纯测量核对五档 SNR 的 step-matching 起点、实际 denoiser evaluation 数、端到端延迟和 BLIP2/MuGE 固定地板；SGD 仍是 non-ranking paper upper。
+2. **P1：轻量 receiver-side refiner probe。** S33 checkpoint SHA=`2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb` 永久冻结。refiner 只读取 S33 RGB 与归一化 SNR，部署参数目标2M–6M，额外通信符号与 side information 均为0。
+3. P1 正式训练前必须先做单 batch G/D smoke，报告 exact-rate、参数、finite backward、显存、step time 与 checkpoint round-trip；smoke 和训练分别需要用户放行。
+4. P1 checkpoint 只能用冻结 COCO val512 在 `PSNR delta > -0.10 dB` 约束下按 LPIPS选择；64图 policy-dev 只做 checkpoint 冻结后的 go/no-go，official Imagenette validation 继续封存。
+5. go/no-go 使用64图×3 seed×5 SNR和10,000次 source-cluster bootstrap：LPIPS差 CI 上界 `<0`、PSNR差 CI 下界 `>−0.10 dB`、semantic failure差 CI 下界 `≤0` 三项同时满足才 GO。否则保留负结果并回退分析型 letter，不升级复杂主方法。
+
+P0/P1 完整预注册分别见 `reports/s35r_p0_sgd_adaptive_cost_preregistration_2026-07-23.md` 与 `reports/s35r_p1_light_receiver_refiner_preregistration_2026-07-23.md`。P0 已完成：五档均执行50次 denoiser，端到端均值仅在 `2043.78–2045.41 ms` 间变化；BLIP2+MuGE 固定地板为 `1069.93 ms/图`。P1 仍仅预注册，smoke/训练均未获授权。
+
+## 2026-07-23 venue 对冲修订（S34C 长版暂停；Lite 已完成）
+
+在 S33 exact-rate gate 已通过、S34A equal-budget Swin 形成 Pareto 后，下一项曾计划回答“生成式 JSCC 的感知优势在真实总码率公平时是否仍存在”。原 S34C 长版拟用同 COCO task-adaptation 数据、同五档 SNR、同 canonical AWGN 和严格 `16,384 real` 总预算，公平重训可复现的 DiffJSCC，并做 SGD-JSCC released-component 的 rate-constrained 近似适配；该长版已由用户在执行前暂停。替代的 S34C-Lite 只读透明度分析现已完成，official Imagenette validation 继续封存。
+
+该修订不允许把近似 SGD 适配称为官方重训，也不把计划写成完成。长版预注册为 `reports/s34c_fair_generative_reproduction_preregistration_2026-07-23.md`；用户已在任何执行前将其暂停，状态为 `paused_by_user_before_any_execution`。S34C-Lite 已只读复用既有 960 行结果完成码率/side-info/外部先验透明表，没有训练、推理或下载；轻量结果不自动解锁长版。
+
+### S34D：生成式 JSCC 公平推理代价 gate
+
+状态（2026-07-23）：**完成。** 本 gate 没有训练或下载，在同一 RTX 4090D、batch=1、相同 256×256 主存入口和输出口径下测完 S33、DiffJSCC、SGD。稳态每图延迟排除模型加载、磁盘 I/O 和指标，包含所有方法内部 resize/patch、BLIP2、edge/text conditioning、实际 denoiser evaluations、VAE 编解码和 color correction。
+
+DiffJSCC `100/50/25/10/4` 步为 `5089.7/2676.2/1458.5/726.3/433.6 ms`。最低通过预注册相对 S33 LPIPS cluster-CI gate 的是 25 步；与同 PyTorch 2.1 runtime 的 S33 `8.833 ms` 相比仍慢 `165.1×`，profiled FLOPs 下界为 `26.877T vs 0.05693T=472×`。10 步 LPIPS CI 跨零，4 步显著更差；25 步 failure `14/320` 相对 S33 `4/320` 的差 CI 全正，故它只能叫“感知最低点”，不能叫语义安全点。100 步数字不得再写成固有代价。完整结果见 `reports/s34d_generative_inference_cost_result_2026-07-23.md`。
 
 ## 2026-07-21 主线修订（用户授权）
 
@@ -240,7 +294,7 @@ S30 外部复现证明旧 14 万参数、固定 7 dB、非原生低码率主干�
 
 ### S9A / S34A：SwinJSCC 严格等设定外部骨干对比（审稿 gate）
 
-状态（2026-07-22）：**smoke 已通过；Base-SA 已完整完成 5/12 epochs，并在一次前台会话退出后从 epoch5 checkpoint 通过 detached screen 恢复 epoch6；CM-SA 后续串行。epoch 9--12 只做收敛检查，extension 未授权。**
+状态（2026-07-22）：**equal-budget 双臂与冻结 policy-dev 评估已完成；extension 待用户决定。** Base-SA/CM-SA 均完成 12/12 epochs 且 epoch9--12 收敛 gate 均触发，但没有延训。S33−Base 聚合 PSNR=`+0.173947 dB`，95% CI=`[+0.078178,+0.265733]`，显著超过；决定性 CM-SA 上为 `−0.065902 dB`，CI=`[−0.168886,+0.025307]`，按冻结 `0.10 dB` 规则未证明非劣。CM 的 MS-SSIM/LPIPS 显著更好，S33 的观测 semantic failure 更低，总 verdict=`PARETO`。因此当前不能声称超过 SwinJSCC；完整结果见 `reports/swinjscc_equal_budget_stage_result_2026-07-22.md`。official validation 继续封存。
 
 S33 通过 author-JSCC exact-rate gate 后，在内部因果消融前补充官方 SwinJSCC Transformer 骨干。完整预注册见 `reports/swinjscc_equal_rate_comparison_preregistration_2026-07-22.md`，计划配置见 `configs/s34a_swinjscc_equal_rate_comparison.yaml`。必须满足：
 
@@ -252,6 +306,22 @@ S33 通过 author-JSCC exact-rate gate 后，在内部因果消融前补充官�
 - S33−Swin 的 PSNR CI 下界 `>0` 为显著超过，位于 `(-0.10,0]` 为非劣，`<-0.10` 为劣于；二级指标冲突降为 Pareto。13/19 dB 必须单列。
 - official Imagenette validation 继续封存；本轮 formal 输出只允许两个预注册 equal-budget 目录，每臂硬上限 12 epochs。
 - 12 epochs 不能预先视为 SwinJSCC 已收敛。双臂必须逐 epoch 保存同一固定 val512 曲线，并按 epoch 9--12 gate 报 `triggered/not_triggered`。即使触发也不得自动 extension；必须先报用户，再由用户决定是否延训和延到多少 epochs。此前讨论的 60-epoch 上限不构成本轮授权。
+
+### S9C / S34C：严格总码率公平的生成式 JSCC 复现（venue 决策 gate）
+
+状态（2026-07-23）：**长版已由用户在执行前暂停；S34C-Lite 已完成。** DiffJSCC 官方代码提供 JSCC+ControlNet 两阶段训练，可在 COCO/五档 SNR/`16,384 real` 下做官方代码基础重训；SGD-JSCC 只发布 inference/checkpoints，训练指南仍为 TODO，因此只能做 `SGD-inspired released-component rate-constrained adaptation`，禁止标成 official reproduction。考虑到工期、近似复现争议与 unequal compute，当前不得启动 14–29 天长训练。
+
+完成标准：
+
+- S33、DiffJSCC-fair 和 SGD-RC-fair 的总信道预算均精确为 `16,384 real`；SGD 的 main、edge、caption、padding 全部落账，caption 真实经过相同 AWGN，CRC 失败为空文本。
+- DiffJSCC 的 BLIP2 caption 是接收端从带噪初始重建本地生成，计 0 channel symbols；不得错误写成免费发送端 side information。
+- 任务适配训练数据统一为 COCO train2017，训练 SNR 统一为逐图离散 `[1,4,7,13,19] dB`，评估复用 canonical 16,384-D noise；外部 diffusion/BLIP/CLIP 预训练与 unequal compute 必须如实报告。
+- 配对主表为冻结 64 图×3 seed×5 SNR 的 PSNR/MS-SSIM/LPIPS/T_cls failure 与 source-cluster 95% CI；FID/KID 必须另用冻结的 COCO-2048 perception holdout，KID 为主要小样本分布指标，FID 必报。
+- 同时运行 paper-protocol non-ranking upper，以 raw gap 和 sign-aware CI 报告公平感知优势缩水；若 paper gap 不为正或 CI 跨零，百分比 shrinkage 记 undefined。
+- 只有 fair arm 相对 S33 的 LPIPS 与 KID 差值 CI 均显著有利、FID 同向且 semantic failure 不更高，才称公平条件下保留感知优势；否则写优势缩水/消失或 reliability tradeoff。
+- official Imagenette validation 继续封存；方法、训练停止规则和 COCO perception holdout 全部冻结前不得访问。
+
+若未来重启长版，执行仍必须分阶段授权：先做 exact-rate + forward/backward 单 batch smoke 并报告显存/step time，再决定是否放行长训练。已完成的 S34C-Lite 读取 S33/S30/S20/S28 既有 960 行，确认 S33/DiffJSCC 都是 `16,384 real`、无发送端 side-info 的 exact-rate fidelity–perception Pareto；SGD 为最低 `21,856 real`、完美 caption 的 non-ranking paper upper。没有统一 FID/KID，不能排全局冠军。结果见 `reports/s34c_lite_rate_transparency_result_2026-07-23.md` 与 `outputs/analysis/ANALYSIS-S34C-LITE-RATE-TRANSPARENCY-001/`。
 
 ### S9B / S34B：Strong Backbone 因果消融（必需）
 

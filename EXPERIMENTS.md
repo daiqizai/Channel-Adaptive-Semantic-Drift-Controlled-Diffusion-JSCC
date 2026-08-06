@@ -1,5 +1,163 @@
 # 实验记录
 
+## 方法终止与项目冻结（非实验记录）
+
+- 日期：2026-08-03
+- 类型：静态证据审计与项目决策；**不是新实验，不分配 EXP/ANALYSIS ID**
+- 最终状态：`ENGINEERING_STOP`
+- 最终判定：原始完整联合优势主张未建立，停止继续投入方法开发
+- 解释层：`reports/METHOD_TERMINATION_REPORT_2026-08-03.md`
+- 证据登记：`audit/CLAIM_REGISTRY.csv`
+- 本轮执行：没有训练、推理、评测、下载或 official validation 访问；没有新增或覆盖任何实验输出
+- 冻结项：S35R-P1、新 diffusion refiner、matched B1/M2/envelope、semantic gate/controller/fusion、CVaR 模型、Swin extension、S34B/S34C 长版、A2/S36 及大量旧实验复跑均不启动
+- 历史保护：下方实验、负结果、失败目录、机器 `verdict.json` 和预注册全部原样保留；其中旧“下一步/待授权”只表示当时时点，不再构成执行许可
+- 结论边界：各子假设分别为局部支持、被反驳、尚未建立或工程停止；不得将本项目终止写成所有相关方法已被普遍反驳
+
+## CVaR 候选方向二：Rayleigh matched mean-training 归因闭环（方向终结）
+
+### EXP-CVAR-P1-RAYLEIGH-MATCHED-MEAN-001 + ANALYSIS-CVAR-P1-MATCHED-TAIL-RISK-001/-002
+
+- 日期：2026-07-31 / 2026-08-01
+- 当前状态：完成；**判定 `END-CVAR`，候选方向二正式结束，未训练任何 CVaR 模型**
+- 授权：用户在 P0 `NO-GO` 后授权一次独立归因闭环——若消除尾部则彻底结束 CVaR，只有匹配均值训练后仍残留显著条件尾部才进入 CVaR
+- 预注册：`reports/cvar_p1_rayleigh_matched_preregistration_2026-07-31.md`（训练输出前冻结）
+- 结果报告：`reports/cvar_p1_rayleigh_matched_result_2026-07-31.md`
+- 目的：P0 无法区分「均值目标掩盖风险」与「train/test 信道错配」。本闭环去掉两重错配（模型没见过衰落、有效 SNR 跌出条件嵌入范围），只保留均值目标，再测残余尾部
+- **预注册把用户的两种结局补成三种**：额外增加能力门槛，防止退化模型（输出糊平均图）因尾部天然小被误读为「尾部已消除」；全部阈值提前数值化；并修正 P0 报告 §4 披露的归因口径缺陷（归因只在触发档评估，不再跨五档 `all(...)`）
+- 训练：初始化自冻结 S33B（SHA `2daad9e7…`，原文件未改）；block fading `h~CN(0,1)` 逐图 + ZF `ε=0`；encoder 条件 = **标称 SNR**（无反馈，发端不可能知道 `h`）；decoder 条件 = **真实有效 SNR 不 clamp**；纯 MSE；COCO train2017 全量 `256×256`；6 epoch = `22,182` steps；FP32；lr `5e-5` cosine
+- 训练结果：`92.5 min`，`246 ms/batch`，峰值 `12.34 GiB`；验证聚合逐 epoch `27.6263/27.5082/27.8484/27.9127/28.0181/28.1409 dB`，最后增量 `+0.12 dB` 已收敛；best SHA `4a52028480c7317c7084c7922af7d22e216b3798613036b278131122e44dbc20`
+- 评测：与 P0 **完全相同**的脚本与总体——同 200 图、同 64 realization、同 5 SNR、同 `base_seed=20260731`、同四配对 arm；主 arm 事前固定为 `rayleigh_effective_csi`（训练匹配的部署方式），不用 P0 的数据依赖规则
+- **能力门槛 PASS**：聚合 `28.4707 dB` vs 要求 `≥27.9585 dB` 为 `+0.5122 dB`；逐档 `+1.2154/+0.7581/+0.4713/+0.1164/−0.0003 dB`，最差退化 `+0.0003 dB` 即无退化。预注册 §5.2 担心的「过度保守变糊」未出现
+- **尾部大幅收缩但未消失**：同 arm 同图同 realization，mean PSNR `21.48/23.38/24.54/25.08/25.31 → 25.77/27.23/28.38/30.06/30.92 dB`；`median−p10` `7.98/7.33/5.14/2.72/2.73 → 4.18/3.99/3.66/2.34/0.95 dB`；`worst10-mean` `12.04/14.21/16.68/20.73/21.69 → 19.82/21.60/23.11/26.30/28.89 dB`；`outage(<24dB)` `0.631/0.488/0.401/0.368/0.343 → 0.292/0.173/0.110/0.041/0.021`；`CVaR-10 MSE` 降 `4.4~5.1×`
+- 失效模式质变：同图同 realization（`000000013004`, `r54`），worst-10%（`|h|²=0.0385`）从 P0 的 `16.25 dB` 彩色噪声变为 P1 的 `23.95 dB` **内容清晰可辨的模糊**；worst（`|h|²=0.0003`）`8.40 → 14.07 dB`
+- 幅度条款 PASS（1/4/7/13 dB 四档 `≥2.0 dB`），**归因条款 FAIL**——决定性一环：触发档信道方差占比 `0.546/0.500/0.445/0.286`（P0 低中三档为 `0.80/0.75/0.67`），即残余尾部里**图像内容难度已追平甚至超过信道随机性**。CVaR 立论基础是「同一图像在不同信道实现下的尾部」，逐图 CVaR 对图像间难度差异不敏感，故无从发力
+- **边缘性双重检验并如实披露**：4 dB 占比 `0.499945` 距门槛仅 `5.5e-5`；2,000 次 image-cluster bootstrap 得 `P(占比≥0.5)=0.542`、95% CI `[0.4525,0.5547]` 跨越门槛，确为掷硬币。但独立 seed `20260802`（全新 realization，另 256,000 行）复现同样判定 `END-CVAR`，占比 `0.540/0.493/0.430/0.267`；且即便 4 dB 判通过，7 dB `0.44` 与 13 dB `0.29` 仍明确失败，**结论不依赖该点**
+- 顺带产物：本模型是合格的 Rayleigh block-fading channel-adaptive JSCC 基线，即任务书 §7.1 的 `Repeated-fading mean control`。但按 `MILESTONES.md` Rayleigh 属 AWGN 最小闭环之后的扩展项，**不自动进入主线**，未做语义评估
+- 明确不做：不训练 CVaR-10/20/worst-one；不把匹配训练的 `+3.8~5.6 dB` 包装成方法贡献（只是修正信道错配，是应有对照）；不把残余 `4.18 dB` 尾部写成「CVaR 仍有机会」
+- 失败保留：外部 VLLM 进程占用 `20.8/24 GiB` 导致首次诊断在 32 行处 CUDA OOM，目录保留为 `ANALYSIS-CVAR-P1-MATCHED-TAIL-RISK-001_failed_oom_20260801`；重跑 `realization_chunk` 由 32 降为 8
+- **chunk 非逐比特不变**（实测 8 vs 2，按 `(arm,image,snr,realization)` 键比较）：`|h|²` 与 decoder SNR 逐比特相同，`max|ΔPSNR|=8.3e-4 dB`、`max|ΔMSE|=4.4e-7`、`max|ΔLPIPS|=1.7e-4`，为 GPU kernel 非确定性，比 `2.0 dB` 门槛低四个数量级；**行顺序随 chunk 改变**，跨运行比较一律按键而非按位置（P0 用 32、P1 用 8）
+- 局限：单一 recipe（continuation、单预算、单 lr）；深衰落 `|h|²≈1e-4` 时有效 SNR ≈ `nominal−40 dB` 信息论不可恢复，任何模型都有物理残余尾部下界；阈值 `0.5` 是判断值非理论推导值（`0.44`/`0.29` 距门槛足够远故不敏感，`0.4999` 敏感）；无语义指标；单 backbone/单码率 `1/24`/block fading/ZF `ε=0`
+- 新增代码：`scripts/cvar_p1_train_rayleigh_matched.py`、`scripts/cvar_p1_attribution_verdict.py`、`configs/cvar_p1_rayleigh_matched_mean_training.yaml`、`configs/cvar_p1_matched_tail_risk_diagnostic.yaml`、`configs/cvar_p1_matched_tail_risk_seed_replication.yaml`；`tail_risk.apply_block_fading_channel` 扩展为支持逐样本 SNR 张量（向后兼容，新增 2 项单测）
+- 验证：全仓 `142/142` unittest 通过，`py_compile` 通过，40 组最差案例全部通过重放校验
+
+## CVaR 候选方向二：条件信道尾部风险诊断
+
+### ANALYSIS-CVAR-P0-TAIL-RISK-001
+
+- 日期：2026-07-31
+- 当前状态：完成；只读诊断，无训练、无 checkpoint 选择、无下载、无 official validation 访问
+- 来源任务书：`候选二_CVaR尾部风险JSCC_Codex实验任务书.md`（P0 审计 → P1 dry-run → P2 诊断 → P3 判定）
+- 预注册：`reports/cvar_p0_tail_risk_preregistration_2026-07-31.md`（在任何正式统计前冻结）
+- 结果报告：`reports/cvar_p0_tail_risk_result_2026-07-31.md`
+- 目的：在投入 CVaR 训练前，先验证「均值训练模型对同一图像重复采样信道时，最差 10% 是否明显差于中位数」
+- checkpoint：冻结 S33B，SHA `2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb`，脚本内强制校验
+- 总体：COCO val2017 中与 S33 的 512 图 checkpoint-selection 子集**不相交**的 SHA 排序前 200 图，`Resize(256)+CenterCrop(256)`
+- 规模：200 图 × 64 realization × 5 SNR `[1,4,7,13,19]` × 4 arm = **256,000 行**，`576.1 s`，RTX 4090 D
+- 信道：block fading `y=hx+n`，`h~CN(0,1)` 逐图一个复系数，接收端已知 `h`，ZF 均衡 `ε=0`，发端无 `h`（无反馈）；沿用仓库 SNR 口径（每复信道使用 Es/N0，每实坐标方差 `P/(2γ)`）
+- **四 arm 设计（对任务书的关键补充）**：任务书只规定单一 Rayleigh arm，但本仓 backbone 是 SNR-conditioned 的，且 ZF 均衡后等价于有效 SNR `γ|h|²` 的 AWGN，故「喂 decoder 什么 SNR」是会完全改变结论的自由变量。四 arm 共享同一 encoder 前向与同一条标准正态噪声，逐 realization 严格配对：`awgn_control`（`h=1`）、`rayleigh_nominal_csi`、`rayleigh_effective_csi`、`rayleigh_effective_csi_clamped`（clamp 到训练范围 `[1,19]`）
+- 主 arm 选择为 **tail-blind** 规则：逐 SNR 取平均 PSNR 最高的 Rayleigh arm，对一切尾部统计量盲，避免 outcome-based selection；结果五档全部选出 `rayleigh_nominal_csi`
+- 实现校验：`awgn_control` 由 `h=1` 实现，单测 `test_unit_gain_reduces_to_the_existing_awgn_path` 证明与既有 `complex_awgn_from_standard_normal` 逐元素相等；`test_equalized_noise_variance_matches_effective_snr` 固定均衡后噪声方差等于 `P/(2γ|h|²)`
+- **发现 1：AWGN 下不存在条件尾部风险。** `median−p10` 五档仅 `0.11/0.09/0.07/0.04/0.02 dB`；信道方差占总方差 `0.001/0.001/0.000/0.000/0.000`；`CVaR-10 MSE/mean MSE ≤ 1.03×`。项目当前主线信道上 CVaR 无优化对象
+- **发现 2：Rayleigh 下尾部很大，但主因是分布外错配。** `rayleigh_nominal_csi` 的 `median−p10` 为 `10.06/8.05/5.76/2.79/1.01 dB`，`mean−worst10-mean` 为 `11.14/10.44/8.97/5.15/2.50 dB`，`outage(<24dB)` 为 `0.353/0.227/0.149/0.055/0.026`，`CVaR-10 MSE/mean` 为 `5.67/6.02/5.85/4.34/2.65×`；信道方差占比 `0.801/0.747/0.670/0.436/0.186`，Spearman(PSNR,`|h|²`) `0.748/0.685/0.620/0.385/0.187`
+- **接收端喂入真实有效 SNR 反而五档全面变差**：mean PSNR `nominal` vs `effective` 为 `24.56/21.48`、`26.47/23.38`、`27.91/24.54`、`29.94/25.08`、`30.92/25.31`；clamp 版介于两者之间。说明条件嵌入无法表示深衰落有效 SNR（`[1,19] dB` 训练，深衰落可达 `−20 dB` 量级）
+- 最差案例：40 组 `原图|median|worst-10%|worst` 全部通过重放校验（`|ΔPSNR|<0.01 dB`）。典型 `snr1dB_000000013004`：median（`|h|²=0.627`）`31.08 dB` 视觉良好，worst-10%（`|h|²=0.0385`）`16.25 dB` 已语义崩塌，worst（`|h|²=0.0003`）`8.40 dB` 纯噪声，同图跨度 `24.71 dB`
+- **判定：`NO-GO`。** 四项 GO 条件通过 3 项（`median−p10≥2dB` 的 SNR 点有 4 个、`mean−worst10≥1dB`、outage 不可忽略），归因项未通过
+- **预注册缺陷已主动披露**（结果报告 §4）：归因统计量在预注册中标为「必须报告，不作为 gate」，实现中却被写成 gate，阈值 `0.5` 未预先数值化，且用了跨五档 `all(...)` 而第 1 项 GO 条件只要求两个 SNR 点。读法 A（脚本字面）=`NO-GO`，读法 B（与第 1 项同口径，仅在 1/4/7/13 dB 评估）=`GO`。两种读法均如实报告，未改脚本取有利结果，`verdict.json` 保留原始输出；两种读法都不改变上述实质结论
+- 结论：**不以当前形式启动 P4/P5。** 任务书 §10 要求 CVaR 必须打败 `Repeated-fading mean control`，该对照不存在且很可能自己吸收大部分已测尾部。建议的下一个实验是更便宜的那个——在 Rayleigh 上用正确有效 SNR 条件训练均值基线，再用同一诊断脚本重测；仍有 `≥2 dB` 尾部才值得测 CVaR
+- 局限：S33B 从未在衰落上训练，无法完全分离「风险不敏感」与「信道错配」；无语义指标；单 backbone/单码率 `1/24`/单 block-fading/ZF `ε=0`；未做 bootstrap CI（go/no-go 阶段只报点估计）
+- 新增代码：`src/cadsd_jscc/tail_risk.py`、`scripts/cvar_p0_diagnose_tail_risk.py`、`scripts/cvar_p0_analyze_tail_risk.py`、`scripts/cvar_p0_export_worst_cases.py`、`configs/cvar_p0_tail_risk_diagnostic.yaml`、`tests/test_tail_risk.py`
+- 既有信道/训练/评测代码**零改动**；`external_common.py` 未修改（realization 噪声复用 `canonical_standard_normal(base_seed, f"{id}|r{k}", snr, 16384)`）
+- 验证：新增单测 18/18，全仓 `140/140` unittest 通过，`py_compile` 通过
+
+## RDD-P0 生成式重建分布偏移
+
+### ANALYSIS-RDD-P0-DISTRIBUTION-SHIFT-001
+
+- 日期：2026-07-30
+- 当前状态：完成；纯分析实验，无训练、无下载、无 official validation 访问
+- 目的：在借用 rate-distortion-deception (RDD, arXiv 2607.25997) 框架前，先验证现有生成式 JSCC 重建是否已存在"无意的、可识别的分布偏移"
+- 前提修正：原设计要求 CLIC2020 × S33/DiffJSCC/SGD 不可执行——`paper_idea1b/A1_DISCRIMINATIVE_RESULT.md:19` 记录"DiffJSCC、SGD 和 refiner 未加载"，CLIC 重建只有 S33+两条 Swin。三方法唯一共存总体为 64 图 Imagenette policy-dev @256²
+- 主总体：64 图 × 5 SNR `[1,4,7,13,19]` × 3 seeds `[20260748,20260749,20260750]`；每方法 960 行，每 (method,SNR) 单元 n=192
+- 四臂：`s33_strong`（无先验，冻结 checkpoint 精确重放）、`author_jscc`（无先验，S30 montage 面板1，免费获得的第二判别式对照）、`diffjscc`（SD 2.1，面板2）、`sgd_jscc`（MDTv2/DiT，S20 montage tile）
+- 参考集（10 组各 64 图）：`real`、`vae_sd21`、`vae_sgd`、`resample_512`、`blur_s{0.5,1,1.5,2}`、`jpeg_q{30,70}`
+- 指标：`cleanfid`；**KID 主、FID 必报**（n=192 下 2048 维协方差秩亏、FID 正偏，沿用 S34C 先例）；每 (arm,SNR,reference) 单独计算，不跨 SNR/方法混合
+- 验证门全部通过：S33 重放 max\|ΔPSNR\|=`0.0 dB` 且 960/960 noise SHA 校验；author-JSCC 面板=`5.46e-06 dB`；DiffJSCC 面板=`3.98e-06 dB`；SGD=`0.0385 dB`（median `0.0030`，属 S34C 已记录 uint8/float 口径差）
+- **SGD 源 tile 与 DiffJSCC 源面板逐字节相同：0 mismatch/64**，证明两链共享同一总体、跨方法比较合法
+- 测量链交叉验证：本轮 CLIC 管线在 7 个与 A1 重叠单元复现 A1 冻结值至 ΔFID<`0.008`、ΔKID<`3e-6`
+- ② 结果：116 个 (arm,SNR,ref) 命中，强② 仅 12 个且**全部是判别式臂→blur**；生成臂全部弱②。判别式臂偏向 blur_s1/s1p5/s2（`s33_strong` real 排名五档恒为 9–10/10；`author_jscc` 为 9,10,10,8,6），生成臂偏向 vae_sd21/vae_sgd（DiffJSCC real 排名恒 4/10、SGD 为 6,6,5,6,4）
+- ② 的方向性归因**不成立**：`sgd_jscc` 先验是 MDTv2/DiT 但最常偏向 `vae_sd21`；两 VAE 参考集彼此过近（FID `18.74` vs `19.12`）不可区分
+- ① 结果（GroupKFold(5) 按 source image 分组，bootstrap 10,000 次 source-cluster CI）：3 臂 logreg=`0.9059 [0.8715,0.9378]`（随机 0.3333）；4 臂=`0.8396 [0.7984,0.8776]`（随机 0.25）；CI 下界均远超随机
+- 逐臂 recall（C0 logreg）：`0.821/0.760/0.970/0.807`；DiffJSCC 几乎完全可分（仅 28/960 错分）；混淆主要在两判别式臂之间
+- 最有区分力特征：`dct_hi_cv`、`rps_b09`、`rps_b11`、`hp_mad`、`grad_mean` → **区分信息集中在高频**；C2 降到 128² 后准确率 `0.840→0.710`(logreg)/`0.619`(hgb)
+- **C3 关键否证**：两个均无生成先验的判别式臂之间，轻量频域统计即达 `0.8693 [0.8214,0.9120]`（随机 0.5）。故可识别指纹**不是生成先验特有**，按预注册事前声明削弱"先验导致偏移"的解释
+- CLIC-428 补充（n=428、原生分辨率、仅判别式臂）：17 个②命中全部指向 JPEG，**无一指向 blur**；Swin 两臂在 7–19 dB real 排名 `1/8`（最接近 real）；`s33_strong` 五档 best 均为 `2/8`，未把 real 排第一。因此 256² 的"偏向 blur"强②**不可外推**到高分辨率高功效设置
+- 预注册判据渲染：①②同时成立 → **"存在可识别偏移"**，但必须同载三条限定（①非先验特有、②非先验定向、强②不稳健）
+- 失败并保留：首轮 `vae_sgd` 用未归一化 latent 直接 decode，往返 PSNR 仅 `12.55 dB`、FID vs real=`273.79`、肉眼色彩崩坏。根因是 SGD 解码器始终接收功率归一化 latent（`inference_config.py:151`）。修正后 `30.773 dB`/FID `18.74`。失败产物保留于 `outputs/analysis/ANALYSIS-RDD-P0-DISTRIBUTION-SHIFT-001/failed/`，未删除未覆盖。该 bug 若未发现会静默污染整个 (b) 参考集
+- 工程：VAE 阶段改用既有 `.venv-sgdjscc`（主环境缺 `pytorch_lightning`），未新增安装；DiffJSCC ckpt 内嵌 Lightning 对象无法 `weights_only=True`，改为先校验 SHA `ae1e6df0…dec579`（与 S30 契约一致）再加载；SGD ckpt SHA=`455cb603…1915fe`；两 VAE 均 missing_critical=0/unexpected=0；cleanfid Inception 使用 A0 冻结本地副本（`95,607,719` bytes，与 A0 `expected_bytes` 精确一致）软链接注入，未联网
+- 边界：SGD 全程 non-ranking paper upper，只做分布分析不做质量胜负；不改变 A1 已冻结的 S33-vs-Swin 结论；不训练任何生成模型；official Imagenette validation 继续封存
+- 预注册：`reports/rdd_p0_distribution_shift_preregistration_2026-07-30.md`
+- 配置：`configs/rdd_p0_distribution_shift.yaml`
+- 结果：`reports/rdd_p0_distribution_shift_result_2026-07-30.md`
+- 产物：`outputs/analysis/ANALYSIS-RDD-P0-DISTRIBUTION-SHIFT-001/`
+
+## paper idea1b A1 判别式主表
+
+### SMOKE-IDEA1B-A1-DISCRIMINATIVE-001 / ANALYSIS-IDEA1B-A1-DISCRIMINATIVE-001
+
+- 日期：2026-07-23
+- 当前状态：完成；Kodak1080行、CLIC6420行、全指标7500行与15组FID/KID均闭合；保守 verdict 为S33劣于Swin
+- 方法：冻结S33、Swin official Base-SA、Swin capacity-matched CM-SA
+- 数据：smoke为Kodak一张+最大2048×2048 CLIC一张；正式Kodak 24×5SNR×3seed，CLIC428×5SNR×1seed
+- 码率：共同256 tile、共同padding与noise，每tile exact `16,384 real`；逐图actual CBR严格相同
+- 指标：PSNR/MS-SSIM/LPIPS/DISTS、OpenCLIP image cosine；CLIC FID/KID；source-cluster 10,000次bootstrap CI
+- 禁止：DiffJSCC、SGD、refiner、official Imagenette validation
+- 预注册：`paper_idea1b/A1_DISCRIMINATIVE_PREREGISTRATION.md`
+- 配置：`paper_idea1b/configs/a1_discriminative_benchmark.yaml`
+- smoke结果：Kodak三臂wall=`42.6/42.6/44.0 ms`；最大2048² CLIC=`189.7/439.5/464.4 ms`；peak reserved=`1.21/2.20/2.21 GiB`；最大功率误差=`2.38e-7`
+- 码率结果：Kodak actual CBR=`1/24`；CLIC范围=`0.041667–0.063210`、均值=`0.045472`；三臂逐图actual-rate/noise PASS
+- Kodak aggregate：S33−Base PSNR=`+0.0477 dB [−0.0537,+0.1612]`，追平/非劣但LPIPS/DISTS显著更差；S33−CM=`−0.2003 [−0.3116,−0.0846]`，劣于
+- CLIC aggregate：S33−Base=`−0.2631 dB [−0.3211,−0.2074]`；S33−CM=`−0.4909 [−0.5513,−0.4352]`；五档均劣于，LPIPS/DISTS/CLIP/FID/KID总体也弱
+- 指标smoke：attempt1因PyTorch2.6/OpenCLIP TorchScript `weights_only`兼容性失败并保留；attempt2通过，最大图DISTS约`795 ms`、peak reserved=`6.37 GiB`
+- 中断记录：全量指标在6210/7500处遭外部终止；断点续跑后越过原位置并完成，无缺失或覆盖
+- 语义边界：Kodak/CLIC只报告原图—重建CLIP连续相似度，不报告事后阈值化的监督失败率；official validation未访问
+- 结果：`paper_idea1b/A1_DISCRIMINATIVE_RESULT.md`、`paper_idea1b/outputs/ANALYSIS-IDEA1B-A1-DISCRIMINATIVE-001/summary.json`
+
+## paper idea1b Gate A0
+
+### GATE-A0-BENCHMARK-SETUP-001
+
+- 日期：2026-07-23
+- 状态：完成；基础设施/identity实验，不作任何方法质量排名；A1未授权
+- 数据：Kodak 24 + CLIC2020 test 428，共452张RGB，无内容重复
+- 下载：显式清空proxy、服务器直连；CLIC Mobile/Professional官方包SHA=`2025f07a...aa732 / 857df244...52884`；Kodak mirror archive SHA=`44e2569b...00223`并逐文件通过官方字节数表
+- 冻结引用：S33 checkpoint `2daad9e7...5bfb`、canonical noise `01978a77...6d22`、S34D aggregate `7fdeb1ff...f931`，均原地复核、不搬移/复制
+- manifests：source=`452`、method-rate=`2,260`、S33/Swin tiles=`20,018`、SGD released patches=`882,675`
+- 公平合同：方法使用原生冻结处理；S33/Swin可tile，DiffJSCC whole-frame，SGD author patch；padding/overlap/sender-side信息实际计费；receiver-only先验只计计算
+- 码率预检：Kodak S33/Swin=`98,304 real/图, CBR=1/24`；DiffJSCC native whole-frame公式=`CBR 1/96`，是under-budget且待A1 runtime instrumentation，不能称exact-rate；SGD caption未计费、non-ranking
+- identity结果：PSNR=`120 dB`、MS-SSIM=`1`、LPIPS=`0`、DISTS=`5.96e-8–1.19e-7`；CLIC self-FID=`−4.5057e-5`、self-KID=`−0.00205318`
+- 失败记录：attempt1错误要求PSNR=∞且设`|FID|≤1e-5`，已保留；按共享PSNR 120 dB clamp和clean-fid浮点残差修订判据后通过
+- 训练/方法推理/official Imagenette validation：均未执行
+- 输出：`paper_idea1b/outputs/GATE-A0-BENCHMARK-SETUP-001/`
+
+## S35R 新主线预注册
+
+### ANALYSIS-S35R-P0-SGD-ADAPTIVE-COST-001 / EXP-S35R-P1-LIGHT-RECEIVER-REFINER-001
+
+- 日期：2026-07-23
+- P0 状态：完成；不训练、不下载、official validation 不访问
+- P1 状态：只预注册；one-batch smoke 与正式训练均未获授权
+- P0 输入：S34D SGD 80条逐图计时，RTX 4090D、PyTorch 2.1、batch=1、五档各16张相同图
+- P0 核心审计：`alpha_bar_channel=2γ/(2γ+1)` 只决定 continuous trajectory endpoint；actual evaluation count 以作者 sampler 的点数、循环和 final prediction逐项核算
+- P1 backbone：冻结 S33 `16,384 real`，checkpoint SHA=`2daad9e7...5bfb`；refiner额外通信符号=0
+- P1 generator：三尺度48/96/192 residual U-Net，SNR-FiLM，零初始化输出，部署参数目标2M–6M；训练期 conditional PatchGAN 不计部署参数
+- P1 loss：`1.0 LPIPS + 5.0 MSE + 0.01 hinge GAN + 0.5 L1(refined,S33 anchor)`
+- P1 selection：冻结 COCO val512，PSNR差 `>−0.10 dB` 的候选中选 LPIPS最低；policy-dev不选点
+- P1 go/no-go：冻结64图×3 seed×5 SNR，10,000次 source-cluster bootstrap；LPIPS显著改善、PSNR非劣、semantic failure不显著上升三项同时满足才继续
+- 预注册：`reports/s35r_p0_sgd_adaptive_cost_preregistration_2026-07-23.md`、`reports/s35r_p1_light_receiver_refiner_preregistration_2026-07-23.md`
+- P0 结果：五档均为50次 denoiser evaluation；端到端均值=`2044.877/2043.783/2044.802/2044.636/2045.410 ms`
+- P0 fixed floor：BLIP2+MuGE=`1069.933 ms/图`，约占总延迟 `52.33%`；五档合计均值范围仅 `0.440 ms`
+- P0 解释：`alpha_bar_channel`/learned CSI 改 continuous trajectory endpoint，不改变 released `diffusion_step=50` 的调用数；完整结果见 `reports/s35r_p0_sgd_adaptive_cost_result_2026-07-23.md`
+
 ## ID 规则
 
 每个实验必须有唯一 ID。
@@ -18,7 +176,15 @@
 
 | ID | 日期 | 项目版本 | 方法 | 数据集 | 信道 | SNR | CBR | 指标 | 状态 | 输出路径 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| EXP-S34A-SWINJSCC-BASE/CM-EQUAL-BUDGET-001 | 2026-07-22 | config SHA `a209af08...676d`；initial train script SHA `9e30dd10...71ca`；resume RNG-device patch SHA 见 resume event；official source `a6d0e6d...90f` | official Base-SA 28.18M + capacity-matched CM-SA 31.35M，FP32 4+8ep equal-budget | COCO train2017 full / 与 S33 相同固定 val2017 512 | canonical paired-real AWGN | per-image discrete `[1,4,7,13,19]` dB | exact 16,384 real（8,192 complex；CBR 1/24） | train MSE；逐 epoch 五档 PSNR/MS-SSIM；epoch 9--12 收敛 gate；冻结后 policy-dev PSNR/LPIPS/MS-SSIM/failure+CI | 执行中（Base 5/12 完成，epoch5=`28.2061 dB`；会话中断后的 partial epoch6 丢弃并从 epoch5 detached 恢复；CM排队；extension未授权） | `outputs/train/EXP-S34A-SWINJSCC-BASE-SA-EQUAL-BUDGET-001/`、`outputs/train/EXP-S34A-SWINJSCC-CM-SA-EQUAL-BUDGET-001/` |
+| GATE-A0-BENCHMARK-SETUP-001 | 2026-07-23 | config SHA `37ffc8c7...f6bd`；旧资产只读SHA复核 | method-native processing/rate manifest + metric identity sanity；无方法推理 | Kodak 24 + CLIC2020 test 428 | 无信道推理 | N/A | 逐图actual ledger；S33 Kodak=`1/24`；Diff native formula=`1/96`；SGD caption unpriced | PSNR/MS-SSIM/LPIPS/DISTS identity；CLIC self-FID/KID | 完成（452张RGB无重复；全部identity checks PASS；attempt1过严判据失败保留；A1未授权；official val sealed） | `paper_idea1b/outputs/GATE-A0-BENCHMARK-SETUP-001/` |
+| ANALYSIS-S34D-GENERATIVE-INFERENCE-COST-001 | 2026-07-23 | frozen S33/DiffJSCC/SGD checkpoints；measurement-only | same-entry batch1 receiver latency decomposition + DiffJSCC 100/50/25/10/4-step curve | frozen policy-dev；latency 16×5；quality 64×1seed×5 | canonical AWGN | `[1,4,7,13,19]` dB | historical contracts retained；S33/Diff 16,384 real；SGD ≥21,856 real | wall/core component ms、LPIPS/PSNR/MS-SSIM/failure、unique params、profiled FLOPs lower bound | 完成（Diff 25-step 最低过 LPIPS gate=`1458.5ms`；同 Torch S33=`8.833ms`，慢165×；25-step failure显著增加；无训练/下载；official val sealed） | `outputs/analysis/ANALYSIS-S34D-GENERATIVE-INFERENCE-COST-001/` |
+| ANALYSIS-S34C-LITE-RATE-TRANSPARENCY-001 | 2026-07-23 | config input snapshot SHA `a3b5cb8f...8bb6`；script SHA `87d1ad4a...5c6a`；existing S33/S30/S20/S28 frozen artifacts only | read-only unified rate/side-info/prior/metric ledger；no global ranking | frozen 64 images×3 seeds×5 SNR，960 rows/method | reuse existing canonical AWGN results | `[1,4,7,13,19]` dB | S33/DiffJSCC 16,384 real；SGD minimum 21,856 real（+33.40%） | PSNR/MS-SSIM/LPIPS/T_cls failure、per-SNR、source-cluster 95% CI；FID/KID unavailable | 完成（audit PASS；S33/Diff exact-rate fidelity–perception Pareto；SGD non-ranking paper upper；无训练/推理/下载；official val sealed） | `outputs/analysis/ANALYSIS-S34C-LITE-RATE-TRANSPARENCY-001/` |
+| PLAN-S34C-FAIR-GENERATIVE-REPRODUCTION-001 | 2026-07-23 | DiffJSCC `13aeb624...`；SGDJSCC `2188acc0...`；S33 checkpoint `2daad9e7...5bfb` | official-code DiffJSCC COCO/five-SNR retrain + approximate SGD released-component exact-total-rate adaptation | train COCO train2017；paired audit frozen 64×3×5；planned sealed COCO val 2048 perception holdout | canonical paired-real AWGN | `[1,4,7,13,19]` dB | strict total `16,384 real` / `8,192 complex` / `1/24` | planned PSNR/MS-SSIM/LPIPS/FID/KID/T_cls failure + source-cluster 95% CI | **用户在任何执行前暂停**；未 smoke/训练/创建输出；等待轻量版后再决定 | 尚未创建；保留合同 `configs/s34c_fair_generative_reproduction_preregistration.yaml` |
+| ANALYSIS-LOW-SNR-SEMANTIC-DRIFT-AUDIT-003 | 2026-07-23 | config SHA `b71d5c09...dcba2`；script SHA `b78391bc...183f`；S33 checkpoint `2daad9e7...5bfb` | 1 dB LPIPS 可接受域内按 T_cls / AlexNet / ResNet18 / MobileNetV3 / CLIP 异常分层选 15 source；S33 exact replay + SGD 既有重建 + 人工三分类 | frozen policy-dev 64 图×3 seeds 的 1 dB 共 192 键；official val sealed | canonical AWGN；S33 历史同噪声重放 | 1 dB | 沿用历史各自合同；SGD 仅 paper upper，不作公平排名 | LPIPS、PSNR、T_cls、跨模型 top-1、CLIP cosine、人工 faithful/重建失败/clear-wrong | 完成（候选 84；S33 replay PSNR max error `0.0 dB`；S33=`8/7/0`，SGD=`15/0/0`；无训练） | `outputs/analysis/ANALYSIS-LOW-SNR-SEMANTIC-DRIFT-AUDIT-003/` |
+| ANALYSIS-LOW-SNR-OUT-OF-RANGE-STRESS-001 | 2026-07-23 | config SHA `09dc7fe8...3393`；script SHA `5216cb4a...adf3`；S33 checkpoint `2daad9e7...5bfb` | 固定上述 15 source、不按压力结果回选；S33 与 SGD paper-upper 在共同 seed 下 −3/−5 dB 推理重放并人工审阅 | 同一 15 张低 SNR 异常候选 source；official val sealed | canonical AWGN / SGD official step matching | −3、−5 dB（明确 out-of-range stress） | S33 16,384 real；SGD main+edge 19,712 real 且 captions 免费，不作排名 | PSNR、LPIPS、T_cls failure、人工 faithful/重建失败/clear-wrong | 完成（−3 dB S33=`1/14/0`、SGD=`15/0/0`；−5 dB S33=`0/15/0`、SGD=`15/0/0`；无训练） | `outputs/analysis/ANALYSIS-LOW-SNR-OUT-OF-RANGE-STRESS-001/` |
+| ANALYSIS-TOP-LPIPS-SEMANTIC-VISUAL-AUDIT-004 | 2026-07-23 | config SHA `3286cbcf...e643`；script SHA `83c72f99...7dbf`；S33 checkpoint `2daad9e7...5bfb` | SGD formal montage crop + frozen S33 canonical-noise inference replay；各方法 LPIPS 升序、source 去重 top-15 | frozen S20 Imagenette policy-dev 64×3 seeds×5 SNR 的既有逐样本记录 | canonical AWGN（只重放 S33 已选键） | SGD: 14×19dB+1×7dB；S33: 14×19dB+1×13dB | 沿用各自历史合同；不作公平排名 | LPIPS 排序、历史 PSNR replay、T_cls failure、人工 subject/object/scene fidelity | 完成（无训练；S33 replay PSNR max error `0.0 dB`；SGD/S33 semantic mismatch 均 `0/15`；minor change=`1/3`；official val 未访问） | `outputs/analysis/ANALYSIS-TOP-LPIPS-SEMANTIC-VISUAL-AUDIT-004/` |
+| EXP-S34A-SWINJSCC-BASE/CM-EQUAL-BUDGET-001 | 2026-07-22 | config SHA `a209af08...676d`；initial train script SHA `9e30dd10...71ca`；resume RNG-device patch SHA 见 resume event；official source `a6d0e6d...90f` | official Base-SA 28.18M + capacity-matched CM-SA 31.35M，FP32 4+8ep equal-budget | COCO train2017 full / 与 S33 相同固定 val2017 512 | canonical paired-real AWGN | per-image discrete `[1,4,7,13,19]` dB | exact 16,384 real（8,192 complex；CBR 1/24） | train MSE；逐 epoch五档 PSNR/MS-SSIM；epoch 9--12 收敛 gate | 完成（双臂 12/12，best 均 epoch12；Base=`29.100812 dB`，CM=`29.322195 dB`；两臂均触发 extension gate，但未授权/未执行） | `outputs/train/EXP-S34A-SWINJSCC-BASE-SA-EQUAL-BUDGET-001/`、`outputs/train/EXP-S34A-SWINJSCC-CM-SA-EQUAL-BUDGET-001/` |
+| ANALYSIS-S34A-SWINJSCC-EQUAL-BUDGET-COMPARISON-001 | 2026-07-22 | config SHA `af7a01e5...133a`；final evaluator SHA `c6223cec...3b4`；checkpoint SHA Base=`d645e156...f75`、CM=`751ef505...160` | frozen S33 vs official Base-SA / capacity-matched CM-SA | frozen S20 Imagenette policy-dev 64×3 seeds×5 SNR | canonical paired-real AWGN，共用 16,384-D noise prefix | `[1,4,7,13,19]` dB | exact 16,384 real（8,192 complex；CBR 1/24） | PSNR/MS-SSIM/LPIPS/T_cls failure、new/repair、source-cluster 95% CI、0.10 dB gate | 完成（PASS 1,920/1,920；S33−Base `+0.173947 dB [0.078178,0.265733]` 显著；S33−CM `−0.065902 [−0.168886,0.025307]` 未过非劣 gate；总 verdict PARETO；official val 未访问） | `outputs/external_baselines/ANALYSIS-S34A-SWINJSCC-EQUAL-BUDGET-COMPARISON-001/` |
 | SMOKE-S34A-SWINJSCC-CALIBRATION-001 | 2026-07-22 | config snapshot SHA `9c05d62d...cae4`；script SHA `19eca7bc...ce8`；official source `a6d0e6d...90f` | official-source SwinJSCC Base-SA 28.18M + capacity-matched SA 31.35M project adapter | COCO train2017 first real microbatch（8 images/arm） | canonical paired-real AWGN adapter | per-image `[1,4,7,13,19]` dB cycling | exact 16,384 real（8,192 complex；CBR 1/24） | finite forward/backward, exact symbols, per-image power, checkpoint round-trip, time, VRAM | 完成（双臂 PASS；peak reserved `9.75/10.40 GiB`；systems-only，不作质量或收敛结论） | `outputs/smoke/EXP-S34A-SWINJSCC-CALIBRATION-001/` |
 | EXP-S31-STRONG-JSCC-001 | 2026-07-21 | config SHA `a880490e...`；原 script SHA `f215f97b...` | clean-room 31.12M native-rate SNR-conditioned strong JSCC | COCO train2017 full / val2017 frozen 512 | AWGN | train/eval [1, 4, 7, 13, 19] dB | exact 19,712 real（9,856 complex；0.05013） | MSE, PSNR, MS-SSIM, normalized-power error | 失败并保留（epoch4 batch418 AMP gradient overflow；此前 best epoch3 `28.0448 dB/0.958405`，SHA `8e8f3b7b...`） | `outputs/train/EXP-S31-STRONG-JSCC-001/` |
 | EXP-S31B-STRONG-JSCC-FP32-001 | 2026-07-21 | local changes；config/script snapshot SHA 见 metadata | frozen S31 epoch3 model-only init + FP32 continuation | COCO full；错误 seed 会改变 frozen val512 | AWGN | [1, 4, 7, 13, 19] dB | exact 19,712 real | pre-validation contract audit | 配置合同失败并主动中止（0 history/validation rows；错误在结果前发现） | `outputs/train/EXP-S31B-STRONG-JSCC-FP32-001/` |

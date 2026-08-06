@@ -34,6 +34,25 @@
 - 是否区分“视觉更真实”和“语义更可靠”。
 - 是否提供 failure case 分析。
 
+### Rate-distortion-deception (RDD) 与重建分布匹配
+
+记录把"重建分布匹配到某个非源目标分布"作为一等公民的理论工作。
+
+关注点：
+
+- deception 的形式化定义与约束形式（分布散度、约束还是惩罚项）。
+- 是否含信道（无噪信源编码 vs joint source-channel）。
+- 是否可迁移到有噪信道与生成式重建。
+- 与本项目 semantic drift 口径的关系：drift 是逐样本语义错误，deception 是分布层面偏移，二者不可互相替代。
+
+#### RDD 首轮评估与本项目实证边界：2026-07-30
+
+- 对象：rate-distortion-deception，arXiv `2607.25997`（Ulukus/Yener）。**纯无噪信源编码**设定，deception 定义为 `D_KL(P_X̂‖P_Y) ≤ P`，即重建分布需匹配到某个非源目标分布 `P_Y`。
+- 与本项目的结构性差距必须显式记录：该框架无信道项，本项目全部工作在 AWGN 复信道 `P/(2γ)` 口径下；因此不能直接把其 rate-distortion-deception 区域套用到 JSCC，最多借用"目标分布匹配"这一建模视角。
+- 借用前已完成前置实证 `ANALYSIS-RDD-P0-DISTRIBUTION-SHIFT-001`（详见 `reports/rdd_p0_distribution_shift_result_2026-07-30.md`）。结论是重建分布确实可测地偏离源分布、方向非随机，故 deception 视角有实证立足点，但**不支持"现有方法已因生成先验而无意实现 deception"**。
+- 关键否证必须一并记录，避免后续误用：其一，指纹可识别性并非生成先验特有——两个均无生成先验的判别式臂之间用轻量频域统计即可达 `0.8693`（随机 `0.5`）；其二，DiT 先验的 SGD 最常偏向 SD 先验代理，两个 VAE 往返参考集彼此过近（FID `18.74` vs `19.12`）不可区分；其三，256² 上"判别式偏向平滑分布"的强结论在 CLIC-428 原生分辨率下消失。
+- 因此若后续要在本项目内使用 RDD 语言，必须先解决"先验代理不可区分"和"实现痕迹 vs 先验痕迹混淆"两个测量问题，否则任何 deception claim 都可被平凡机制解释（有损压缩必然偏离源分布、不同实现留不同高频指纹、低分辨率域放大平滑差异）。
+
 ## 本项目创新边界
 
 本项目不声称首次使用 diffusion 做 JSCC。
@@ -76,6 +95,26 @@
 - 后续可补充 Kodak 作为视觉展示集。
 - 若需要 classification consistency，建议补 Imagenette/ImageNet subset，而不是把 CIFAR-10 作为 diffusion 主实验。
 
+### 领域 benchmark 对齐补充：2026-07-23
+
+此前“COCO 训练 + Imagenette 评测”适合 semantic reliability 开发，但不应继续承担压缩/JSCC 的主画质 benchmark。SwinJSCC 的代表性协议是在 DIV2K 上随机裁 `256x256` patch 训练，并在 Kodak 与 CLIC 高分辨率测试集上评测；DiffJSCC 等生成式 JSCC 也使用 Kodak。这支持把主表调整为：
+
+- Kodak 24 张原生 `768x512 / 512x768` 图：PSNR、MS-SSIM、LPIPS、DISTS 和定性样例，不算 FID/KID；
+- CLIC2020 test 428 张图：上述全参考指标外，再计算 FID/KID；428 对 FID 仍偏小，因此 KID 为主要分布指标、FID 带小样本提示；
+- Imagenette policy-dev / official validation：只承担有监督 semantic reliability，official validation 继续封存；
+- 若未来在 DIV2K train 重训，则优先用 CLIC test 作主大集，避免 DIV2K val 同时参与 checkpoint selection 和最终测试。
+
+第一阶段建议保留冻结 COCO-S33，只补 Kodak/CLIC 跨数据集评测；第二阶段是否开 DIV2K 重训由第一阶段结果决定。完整迁移与重跑依赖见 `reports/dataset_benchmark_alignment_plan_2026-07-23.md`。
+
+来源：
+
+- Kodak 官方测试图：https://r0k.us/graphics/kodak/
+- DIV2K 官方数据页：https://data.vision.ee.ethz.ch/cvl/DIV2K/
+- CLIC2020 split 说明：https://www.tensorflow.org/datasets/catalog/clic
+- SwinJSCC：https://arxiv.org/abs/2308.09361
+- DISTS 官方实现：https://github.com/dingkeyan93/DISTS
+- clean-fid 官方实现：https://github.com/GaParmar/clean-fid
+
 ### 第一轮扫描结论：2026-06-29
 
 初步结论：
@@ -114,6 +153,17 @@ SGD-JSCC 的核心启发不是“直接把 Stable Diffusion 接到 JSCC 后面�
 | DeepJSCC-l++ | 2023 | Swin Transformer backbone，单模型适应多个 bandwidth ratio 和 SNR，代码公开 | channel-adaptive JSCC 重要撞车线；可作为后续对照或方法参照 | https://arxiv.org/abs/2305.13161 ; https://github.com/aprilbian/deepjscc-lplusplus |
 | SwinJSCC | 2023/2024 | 四级 Swin Transformer JSCC；Channel ModNet / Rate ModNet 分别适应 SNR 与码率，官方代码和权重入口公开 | S33 strong backbone 的关键外部审稿基线；必须在同 COCO、exact rate、SNR 和训练预算下重训，不能直接引用其 DIV2K/CLIC checkpoint 排名 | https://arxiv.org/abs/2308.09361 ; https://github.com/semcomm/SwinJSCC |
 | PJSCC | 2024 | Channel State Prompt 生成 learnable prompt，融合 SNR 和信道分布信息，实现跨信道自适应 | prompt-based/channel-adaptive JSCC 撞车线；本项目可借鉴 condition 设计，但要落在 diffusion strength / semantic guidance | https://arxiv.org/abs/2411.10178 |
+| HDA-DeepSC | 2024 | 数字基础层 + 模拟 residual 的 hybrid digital-analog 图像传输，并以按接收 SNR 动态起步的 DiffSDNet 做信号域去噪 | 对 HDA 分层、数字 cliff/模拟 graceful degradation 和信道自适应计算有参考价值；不是 semantic drift control，也不能重启冻结主线 | https://arxiv.org/abs/2405.12580 |
+
+#### HDA-DeepSC 合同审计与项目边界：2026-08-06
+
+- 对象：H. Xie, Z. Qin, Z. Han, K. B. Letaief, *Hybrid Digital-Analog Semantic Communications*，arXiv `2405.12580`（当前检索到 v2 元数据；技术合同按可访问的论文全文核对）。论文面向图像重建：Swin semantic codec 产生 latent，hyper encoder 提取并量化/算术编码数字基础层，模拟支路发送相对该数字重建的 residual，接收端将两者相加融合。总信道符号按 `L=L_A+L_D`、`η=L/(3HW)` 计，论文还在固定总符号数下扫描 digital-analog ratio。
+- 数字链不是抽象标签：推理算法写明 entropy coding、channel coding、modulation/demodulation；实验使用 AMC，以及 802.11ad 的 672-bit、`1/2`/`3/4` LDPC 配合 BPSK/QPSK/16QAM。需要保留的关键训练—部署差异是：hybrid transceiver 训练阶段将量化数字特征按 **error-free** 路径送到接收端以避免梯度问题，正式推理才换回不可微数字链。
+- 论文确实包含 diffusion，但 DiffSDNet 作用于 LS 均衡后的**信道符号检测**，不是 Stable Diffusion 式图像生成或 RGB post-refinement。其 schedule 有 50 个 noise level，并根据接收噪声/SNR 选择 reverse process 起点、确定性运行到 0；因此实际 denoiser evaluation 数理论上随信道变化。这一点可作为 S35R-P0“SGD 虽改轨迹 endpoint 但五档固定 50 次”之外的独立自适应计算参照，不能据此恢复 S35R-P1。
+- 数值合同：系统模型列出 AWGN、Rayleigh 和 Rician block fading；正式比较只报告 AWGN 与 `r=1` Rician，所有方法假设 perfect CSI，coherence time 为一张图的传输时间。原文把训练集写作 `DIK2K`、称含 1,000 张图，测试为 Kodak；该名称是否是 `DIV2K` 笔误仍需代码或作者材料确认。基线包括 BPG + LDPC/容量达成码 + AMC、pure analog DeepSC、DeepJSCC-Q，以及 DnCNN/DDPM 去噪对照；质量指标只有 PSNR 和 MS-SSIM。定向检索未发现可确认的官方代码或 checkpoint，故当前只能做论文级设计参照，不能直接列为可运行外部基线。
+- 直接价值：对 H2 有中高相关性，因为 S33 可视为连续 latent 的 analog 端点，而 HDA 提供“数字 coarse/base + 模拟 enhancement/residual”的替代系统结构；对 H5 有中高相关性，因为数字 cliff 与 fading robustness 是自然问题；对 H3 也有中高相关性，因为 DiffSDNet 明确把信道状态映射到采样起点/计算量。它不能证明 HDA 会补齐 S33 在 Kodak/CLIC 对 SwinJSCC 的质量差距，也不能把论文自己的 Kodak 数字与本仓 exact `16,384 real` 合同直接排名。
+- 核心缺口：没有冻结分类器上的 semantic drift/failure、LPIPS/DISTS/FID/KID 或 failure-case 统计；所谓“essential semantic information”主要由重建/rate loss 间接定义，不能等同于语义可靠性。论文也未给出 CRC/熵码错误传播、数字包失败后的 concealment/fallback、深衰落 outage/CVaR、imperfect CSI，以及 pilot/header/CSI signaling、padding、加密和逐图变长码流的完整统一账本。因此“低 SNR 更稳健”不能外推为“Rayleigh 尾部或 semantic failure 更低”，数字支路在深衰落时仍可能制造 cliff-edge。
+- 项目处理：只登记为新 related work，不改变 `2026-08-03 ENGINEERING_STOP`。若未来获得独立新课题授权，较有辨识度的问题不是简单复现 HDA-DeepSC，而是 **exact-total-budget HDA JSCC under fading with explicit digital failure, imperfect CSI, outage/tail risk, semantic reliability and compute accounting**；必须使用新问题定义、预算、预注册和 experiment/analysis ID，不能写成已终止 diffusion + semantic control 主线的自然延续。
 
 ### SwinJSCC 官方资产与 S33 公平对比边界：2026-07-22
 
@@ -179,6 +229,10 @@ S8 的 rate-accounted 实现进一步收紧了这个判断：仅占 `c=2` latent
 把该 sketch 进一步接回主线 M3 alpha controller 后，独立 `T_cls` 审计显示它能把 hybrid-raw new-error image clusters 从 23 降到 18，并保留约 75% raw PSNR gain；但总 failure 改善不显著且绝对 new-error 上界仍超标。这支持 SGD-JSCC 式 semantic description 应作为 restoration 内部条件与风险控制共同使用，而不是只做路由；同时也说明随机投影 checksum 仍弱于显式 class/caption/spatial token grounding。
 
 来源：arXiv `https://arxiv.org/abs/2501.01138v2`。
+
+2026-07-23 进一步按论文正文与作者仓库核验训练合同：论文明确说明第一阶段 JSCC encoder/decoder 在 ImageNet、固定 AWGN `SNR=10 dB` 下端到端训练并随后冻结；这与本项目 S33/S34 的 COCO、逐图离散 `[1,4,7,13,19] dB` 训练合同不同。作者 inference 代码虽然能在多个测试 SNR 上改变信道和 step matching，但这只说明推理自适应，不能把现成 checkpoint 解释为已按本项目五档重训。作者仓库仍未发布 preprocessing 和 diffusion/controlnet fine-tuning training guideline，README 将其列为 TODO。
+
+因此 S20/S28 只能标 `released-weight paper-protocol upper bound`：main=`16,384 real`、active edge=`3,328 real`，二者已为 `19,712 real`；四个 captions 在正式运行中免费且完美，最低未保护 BPSK 计费还需 `2,144 real`。相对 S33/Swin 的严格 `16,384 real` 总预算，最低合计 `21,856 real`，超 `33.40%`。S20/S28 没有计算 FID，仅有 PSNR/MS-SSIM/LPIPS/语义 failure；不能与 COCO 重训、严格等码率的 SwinJSCC 形成直接胜负结论。完整核验见 `reports/sgd_swin_fairness_clarification_2026-07-23.md`。
 
 ### OpenCode 调研残留材料复核：2026-07-12
 

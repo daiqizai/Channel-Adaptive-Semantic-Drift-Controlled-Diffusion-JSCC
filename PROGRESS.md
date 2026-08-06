@@ -1,20 +1,218 @@
 # 当前进度
 
+## HDA 启发的独立候选 idea：fail-soft semantic HDA（2026-08-06，构思状态）
+
+本节只记录用户提出的新方向构思，**不是方法授权、预注册或实验启动**，不改变 `2026-08-03 ENGINEERING_STOP`。当前没有新训练、推理、下载、配置或 experiment/analysis ID；若后续继续，必须另立项目问题、预算和 ID，不能并回冻结的 diffusion + semantic control 主线。
+
+核心反问题来自 HDA-DeepSC 的分层方式：它把基础/essential 信息放入数字支路，把相对数字重建的 residual 放入模拟支路。该结构在数字块正确时合理，但在深衰落导致 LDPC/entropy bitstream 失败时，模拟 residual 未必能独立解码出语义正确的图像，可能把传统数字 cliff 放大为 **semantic cliff**。因此更有辨识度的新问题不是“能否再做一个 HDA”，而是：**在严格相同总符号预算下，怎样使 HDA 在数字支路失败时仍保持可用且语义正确的模拟重建？**
+
+候选结构为 `analog semantic safety base + digital enhancement`：模拟支路承担可独立解码的主体、布局和低频结构，数字支路承担纹理/高频 refinement，并真实计入 quantization、entropy coding、FEC、modulation、CRC、padding/header/pilot/CSI signaling；接收端用 CRC、decoder LLR 或校准后的 block-success probability 做 reliability-gated fusion，数字失败时明确丢弃 enhancement，退回 analog-safe 输出。更强但更复杂的备选是两支路均可独立解码的 multiple-description HDA；首版不把 DiffSDNet 或生成式 diffusion 作为必要贡献。
+
+可证伪假设应围绕失败条件而非平均 PSNR：`H-new-1` 在 matched mean quality 或明确的 mean-quality margin 下，fail-soft HDA 相对 pure analog、pure digital 和 digital-base/analog-residual HDA 降低 Rayleigh 的 p10/outage 与 semantic failure；`H-new-2` 在数字 CRC fail 子总体上，analog-safe fallback 显著优于继续盲融合；`H-new-3` 基于可获得 CSI/LLR 的分配或融合优于固定 DA ratio，且收益在 imperfect CSI 下仍存在。若只提高平均 PSNR、却不改善数字失败条件下的 semantic outage，该 idea 判为不成立。
+
+最小比较合同应固定 total complex uses、总平均功率、模型/训练预算和发送端 side information，至少包含 pure analog、pure digital、HDA-DeepSC-style digital-base + analog-residual、候选 analog-base + digital-enhancement 四臂；先做 AWGN sanity，再做 matched block Rayleigh 的重复 realization 与 imperfect-CSI stress。指标同时报告 mean PSNR/MS-SSIM/LPIPS、p10/CVaR/outage、数字 BLER/CRC-fail 条件质量，以及冻结语义模型上的 semantic failure。现有 S33、exact-rate ledger、Rayleigh tail-risk 和 semantic-failure 基础设施可在新授权下复用，但现有结果不能冒充新方法证据。
+
+该方向有潜力，但“analog base + digital enhancement”“CRC/LLR-gated fusion”和 multiple-description HDA 是否已被既有 HDA/scalable JSCC/UEP 文献覆盖，尚需独立 novelty scan；在完成该扫描前，不声称方法新颖或可投稿。当前建议只保留为首选候选题，不开始训练。
+
+## HDA-DeepSC 文献合同审计（2026-08-06）
+
+本轮只评估新文献 *Hybrid Digital-Analog Semantic Communications*（HDA-DeepSC，arXiv `2405.12580`），没有运行实验、训练、推理或下载模型/数据，没有访问 official Imagenette validation，也没有创建实验输出。本记录不改变 `2026-08-03 ENGINEERING_STOP`：S35R-P1、新 diffusion refiner、semantic gate/controller/fusion、CVaR、Swin extension、A2/S36 等冻结项仍不启动。
+
+原文核对显示，HDA-DeepSC 用 hyper codec 将图像 latent 拆成量化/算术编码的数字基础层与模拟 residual，在固定总符号数下改变 digital-analog ratio；实验数字链包含 AMC、802.11ad LDPC 和 BPSK/QPSK/16QAM。论文也确实使用 diffusion，但 DiffSDNet 是 LS 均衡后的**信号域检测器**：50-level schedule 根据接收噪声/SNR 选择 reverse 起点并确定性去噪，不是图像生成式 decoder/refiner。系统模型含 AWGN/Rayleigh/Rician，数值比较仅 AWGN 与 Rician、全部 perfect CSI；训练阶段数字特征按 error-free 路径传输，推理才换回实际数字链。论文原文写 `DIK2K` 1,000 图训练、Kodak 测试，指标仅 PSNR/MS-SSIM；定向检索未找到可确认的官方代码/checkpoint。
+
+结论是：该工作对 H2 的 HDA 分层、H5 的 fading/cliff-edge 问题和 H3 的信道自适应 diffusion 计算具有中高参考价值，但对 H1 semantic drift control 与 H4 RDD 只有低相关性。它没有报告 semantic drift/failure、数字包/熵码错误后的 CRC 与 fallback、imperfect CSI、Rayleigh outage/tail risk，也没有给出本仓可直接复算的 pilot/header/CSI signaling/加密等完整 exact-total-budget 账本；因此不能证明 HDA 会补齐 S33 对 SwinJSCC 的质量差距，不能证明数字支路降低深衰落尾部，也不能用其结果重启冻结主线。详细合同与边界已登记到 `LITERATURE.md`。
+
+若未来另获新课题授权，可考虑 `exact-total-budget HDA JSCC under fading with explicit digital failure, imperfect CSI, outage/tail risk, semantic reliability and compute accounting`；它必须使用新的问题定义、预算、预注册和 ID，不能表述为当前项目的自然继续。
+
+## 方法终止、收尾与冻结（2026-08-03）
+
+已完成 `channel-adaptive diffusion + semantic control JSCC` 的静态收尾。最终决定为：**原始完整联合优势主张未建立，项目停止继续投入**；停止类型为 `ENGINEERING_STOP`，不是“原始 idea 在所有设定下被严格证明失败”，也不是对所有 channel-adaptive diffusion、semantic control、生成式 JSCC、RDD 或 CVaR 方向的普遍反证。
+
+新建最终解释层 `reports/METHOD_TERMINATION_REPORT_2026-08-03.md`，按 H1–H5 分开记录：H1 旧 backbone 的 matched-diffusion 局部机制受支持但 strong-backbone 联合优势未建立；H2 内部 author-JSCC 局部优势成立而“强于 SwinJSCC”被外部协议反驳；H3 当前 S33/DiffJSCC fidelity–perception Pareto 与实现代价成立但普遍结构性冲突未建立；H4 输出指纹成立而生成先验特有因果解释被反驳；H5 AWGN/Rayleigh 测量与 matched-mean 定量下降成立，但 `END-CVAR` 只是工程停止且仓库未训练 CVaR 模型。逐 claim 证据、grade、layer、scope 及允许/禁止措辞见 `audit/CLAIM_REGISTRY.csv`。
+
+方法开发已冻结：不启动 S35R-P1，不训练新的 diffusion refiner，不继续 semantic gate/controller/fusion、matched B1/M2/envelope、CVaR、Swin extension、S34B/S34C 长版、A2 或 S36，不大量复跑旧实验。历史正式报告、失败目录、`verdict.json`、预注册、checkpoint 和输出均不修改、不删除、不覆盖；旧报告中的“下一步/待授权”由终止报告 supersede，但历史正文原样保留。
+
+本轮没有运行实验、训练、推理或下载，没有访问 official Imagenette validation，没有创建实验输出，也没有发现新文献，因此不更新 `LITERATURE.md`。运行方式只新增了“禁止将历史命令视为当前授权”的冻结说明；S33、canonical noise、信道/码率合同、外部 adapter、指标与 bootstrap、系统测量、manifest 和审计资产继续作为可复用基础设施保留。
+
+静态验收已完成：11 个终止报告关键引用路径全部存在；tracked 文件与新终止报告均无空白错误；受保护的历史正式报告、`verdict.json` 和预注册没有 tracked diff；`outputs/` 没有新增 Git 状态；过强失败/普遍无效措辞只作为明确禁止的推论或被限定的历史命题出现。当前工作区仍含预检时已经存在的大量未提交历史工作，本轮没有覆盖或清理它们。
+
+## Claim registry 全局审计与分层修订（2026-08-03）
+
+完成 `audit/CLAIM_REGISTRY.csv` 的静态证据审计。本轮没有运行实验、训练或推理，没有修改代码、配置、运行方式或既有实验输出，也没有访问 official Imagenette validation；因此不更新 `EXPERIMENTS.md`、`LITERATURE.md` 或 `README.md`。
+
+注册表由原 C01--C20 扩展为 38 条唯一 claim，并为每条增加 `evidence_grade`（`A/B/C/D/E/F`）和 `claim_layer`（`MEASUREMENT/LOCAL_CONCLUSION/MECHANISM/CAUSAL/GENERALIZATION/PROJECT_DECISION`）。证据等级评价的是**当前 evidence 对该行 verdict 的支持强度**，不把 `REFUTED` 自动记为低等级；直接反证可以是 A。C11 拆为最低已测 LPIPS PASS 点、运行代价和代理可靠性三条；C15 拆为 AWGN 阴性测量、失配 Rayleigh 阳性测量和 P0 归因限制三条；C16 拆为四条定量测量与一条项目决策。
+
+C16 现在固定比较同一 `rayleigh_effective_csi` arm，并明确报告 1/4/7/13/19 dB 的 P0→P1 序列：`median−p10` 为 `7.975/7.325/5.143/2.719/2.729→4.175/3.993/3.660/2.336/0.952 dB`；`CVaR-10/mean MSE` 为 `4.527/4.939/4.747/2.917/2.225→3.513/3.487/3.294/2.655/1.839`；`outage(<24dB)` 为 `0.631/0.488/0.401/0.368/0.343→0.292/0.173/0.110/0.041/0.021`；channel variance fraction 为 `0.841/0.790/0.717/0.601/0.575→0.546/0.500/0.445/0.286/0.115`。四组指标均为五档全部下降，注册表不再用模糊多数措辞；同时明确这些是 matched pure-MSE 消除错配的结果，不是 CVaR 方法贡献。
+
+新增 G01--G05 五条全局 claim 和 `H1-SUMMARY`--`H5-SUMMARY` 分项结论。状态语义明确分开：`REFUTED` 表示给定 scope 内科学命题有直接反证；`NOT_ESTABLISHED` 表示当前项目证据不足或相应实验未执行，不能偷换成反驳；`ENGINEERING_STOP` 表示因预算、归因和预期边际收益停止路线，不等于科学命题无效。具体而言，blind diffusion 的“改善感知但增加语义失败”在 `EXP-S2-002` 中因 LPIPS 反而恶化 `+0.3877` 而被反驳；生成式 JSCC 的普遍结构性计算—可靠性冲突与原始完整联合优势当前均未建立；`END-CVAR` 仅是工程停止，仓库未训练任何 CVaR 模型。
+
+静态校验已确认：CSV 共 38 行、38 个唯一 ID；新字段与全部 grade/layer 枚举合法；旧复合 ID `C11/C15/C16` 不再存在；拆分 ID、G01--G05、H1--H5 和 `REFUTED/NOT_ESTABLISHED/ENGINEERING_STOP` 三类状态均齐全。最终空白与 diff 校验见本次任务结束记录。
+
+## CVaR 候选方向二正式结束：matched mean-training 归因闭环判定 END-CVAR（2026-07-31）
+
+用户在 P0 `NO-GO` 后授权一次独立的 Rayleigh matched mean-training 归因闭环：若消除尾部则彻底结束 CVaR，只有匹配均值训练后仍残留显著条件尾部才进入 CVaR。闭环已完成，**判定 `END-CVAR`，候选方向二到此结束，未训练任何 CVaR 模型。**
+
+预注册 `reports/cvar_p1_rayleigh_matched_preregistration_2026-07-31.md` 在训练输出前冻结，把用户描述的两种结局补成三种——额外增加**能力门槛**，防止一个退化模型（输出糊平均图）因尾部天然小而被误读成「尾部已消除」；全部阈值提前数值化，并修正 P0 报告 §4 披露的归因口径缺陷（归因只在触发档评估，不再跨五档 `all(...)`）。结果 `reports/cvar_p1_rayleigh_matched_result_2026-07-31.md`。
+
+训练 `EXP-CVAR-P1-RAYLEIGH-MATCHED-MEAN-001`：block fading + ZF 均衡，encoder 条件为标称 SNR（无反馈，发端不可能知道 `h`），decoder 条件为**真实有效 SNR 不 clamp**，纯 MSE，6 epoch = `22,182` steps，`92.5 min`，峰值 `12.34 GiB`，best SHA `4a520284…dbc20`，验证聚合 `28.1409 dB`，最后一 epoch 增量 `+0.12 dB` 已收敛。
+
+**能力门槛 PASS**：主 arm `rayleigh_effective_csi` 聚合 `28.4707 dB` 对 P0 最强 Rayleigh arm `27.9585 dB` 为 `+0.5122 dB`，最差逐档退化 `+0.0003 dB`（即无退化），1 dB 处 `+1.2154 dB`。预注册 §5.2 担心的「过度保守变糊」未出现。
+
+**尾部大幅收缩但未消失**：同 arm 同图同 realization，平均 PSNR `+3.8~5.6 dB`，`median−p10` 五档 `7.98/7.33/5.14/2.72/2.73 → 4.18/3.99/3.66/2.34/0.95 dB`，`outage(<24dB)` 降 `2.4~16×`，`CVaR-10 MSE` 降 `4.4~5.1×`。失效模式质变：同一深衰落样本（`|h|²=0.0385`）worst-10% 从 `16.25 dB` 彩色噪声变为 `23.95 dB` 内容清晰可辨的模糊。
+
+**决定性一环是归因 FAIL**：触发档（1/4/7/13 dB）的信道方差占比从 P0 的 `0.80/0.75/0.67` 降到 `0.546/0.500/0.445/0.286`，即残余尾部里图像内容难度已追平甚至超过信道随机性。CVaR 的立论基础是「同一图像在不同信道实现下的尾部」，逐图 CVaR 对图像间难度差异不敏感，故无从发力。
+
+边缘性已双重检验并如实披露：4 dB 占比 `0.499945` 距门槛仅差 `5.5e-5`，2,000 次 image-cluster bootstrap 显示 `P(占比≥0.5)=0.542`、CI `[0.4525,0.5547]` 跨越门槛，确为掷硬币；但独立 seed `20260802` 全新 realization 复现同样判定 `END-CVAR`，且即便 4 dB 判通过，7 dB `0.44` 与 13 dB `0.29` 仍明确失败，结论不依赖该点。
+
+顺带产物：`EXP-CVAR-P1-RAYLEIGH-MATCHED-MEAN-001` 是一个合格的 Rayleigh block-fading channel-adaptive JSCC 基线，即任务书 §7.1 的 `Repeated-fading mean control`。但按 `MILESTONES.md`，Rayleigh 仍属 AWGN 最小闭环之后的扩展项，**该模型不自动进入主线**，也未做语义评估，是否保留由用户决定。明确不把匹配训练的 `+3.8~5.6 dB` 包装成方法贡献——它只是修正 train/test 信道错配，是应有对照。
+
+一次 CUDA OOM 失败已保留（外部 VLLM 进程占用 `20.8/24 GiB`），目录 `ANALYSIS-CVAR-P1-MATCHED-TAIL-RISK-001_failed_oom_20260801`；重跑将 `realization_chunk` 由 32 降为 8。实测 chunk 非逐比特不变：`|h|²` 与 decoder SNR 逐比特相同，但 `max|ΔPSNR|=8.3e-4 dB`（GPU kernel 非确定性），比 `2.0 dB` 门槛低四个数量级；**行顺序会随 chunk 改变**，跨运行比较一律按键而非按位置。全仓 142/142 unittest 通过，S35R 主线未受影响。
+
+## CVaR 候选方向二尾部风险诊断完成，判定 NO-GO（2026-07-31）
+
+按 `候选二_CVaR尾部风险JSCC_Codex实验任务书.md` 完成 P0 仓库审计、P1 dry-run、P2 正式诊断与 P3 判定，只读诊断，无训练、无下载，official validation 未访问。预注册 `reports/cvar_p0_tail_risk_preregistration_2026-07-31.md` 在结果前冻结，结果 `reports/cvar_p0_tail_risk_result_2026-07-31.md`，输出 `outputs/analysis/ANALYSIS-CVAR-P0-TAIL-RISK-001/`。
+
+新增 `src/cadsd_jscc/tail_risk.py`（经验 CVaR + block-fading Rayleigh + ZF 均衡）、三个 `cvar_p0_*` 脚本与 18 项单测；既有信道/训练/评测代码零改动，全仓 140/140 unittest 通过。规模为 200 图 × 64 realization × 5 SNR × 4 arm = 256,000 行，用时 `576.1 s`。
+
+任务书只规定了单一 Rayleigh arm，但本仓 backbone 是 SNR-conditioned 的，且 ZF 均衡后信道等价于有效 SNR `γ|h|²` 的 AWGN，故「喂给 decoder 什么 SNR」是会完全改变结论的自由变量。因此改为四个共享同一 encoder 前向与同一噪声、逐 realization 严格配对的 arm：`awgn_control`（`h=1`，按单测与既有 AWGN 路径逐元素相等）、`rayleigh_nominal_csi`、`rayleigh_effective_csi`、`rayleigh_effective_csi_clamped`。主 arm 按 tail-blind 规则（只看平均 PSNR）逐 SNR 选出。
+
+两项实质发现：**（1）AWGN 下不存在条件尾部风险**——`median−p10` 五档仅 `0.11/0.09/0.07/0.04/0.02 dB`，信道方差占总方差 `≤0.001`，`CVaR-10 MSE/mean MSE ≤1.03×`，即项目当前主线信道上 CVaR 无优化对象。**（2）Rayleigh 下尾部很大但主因是分布外错配**——1 dB 处 `median−p10=10.06 dB`、`CVaR-10 MSE` 为均值 `5.67×`、`outage(<24dB)=35.3%`，低中 SNR 信道方差占比 `0.80/0.75/0.67`；但接收端明明有完美 CSI，喂入真实有效 SNR 后五档**全面变差**（1 dB 处 `24.56→21.48 dB`），说明条件嵌入无法表示深衰落的有效 SNR（`[1,19] dB` 训练、深衰落可达 `−20 dB` 量级）。故尾部主要来自「纯 AWGN 训练模型 + 从未见过的衰落」与条件 OOD，而非均值目标掩盖风险。
+
+判定为 `NO-GO`：四项 GO 条件通过 3 项，归因项未通过。结果报告 §4 主动披露一处预注册缺陷——归因统计量在预注册中被标为「必须报告，不作为 gate」，但实现中被写成 gate 且阈值 `0.5` 未预先数值化，且对归因用了跨五档 `all(...)` 而第 1 项 GO 条件只要求两个 SNR 点；两种读法（A 字面=NO-GO，B 同口径=GO）均如实报告，未改脚本取有利结果，`verdict.json` 保留原始输出。两种读法都不改变上述实质结论。
+
+下一步建议：**不以当前形式启动 P4/P5 CVaR 训练。** 任务书 §10 要求 CVaR 必须打败 `Repeated-fading mean control`，该对照目前不存在且很可能自己吸收掉大部分已测尾部。正确的下一个实验是更便宜的那个——在 Rayleigh 上用正确有效 SNR 条件训练均值基线，再用同一诊断脚本重测；仍有 `≥2 dB` 尾部才值得测 CVaR。该扩展仍受 `MILESTONES.md`「Rayleigh 属 AWGN 最小闭环之后」约束，需单独放行。S35R 主线未受影响，P1 仍只预注册。
+
+## S 编号术语对照补齐（2026-07-31）
+
+已在 `reports/group_meeting_progress_2026-07-31.md` 的 2.4 节补充完整 Stage 对照表，解释 `S` 是研究阶段编号而非模型版本，并区分 `EXP/ANALYSIS/EXPORT/SMOKE`。对照覆盖 S1--S36，特别澄清三处容易误读的历史问题：早期 `EXP-S4-*` 多数在粗粒度里程碑上属于 S5 adaptive-control；`S15` 是已落盘历史标签、实际仍属 S5 validation；`MILESTONES.md` 的 `S8/S33`、`S9A/S34A` 是旧粗粒度里程碑与实际执行阶段双编号，不是两个模型。当前组会与论文统一建议使用实际执行编号 S33、S34A--D、S35R。
+
+## 7 月 17 日至今组会汇报已整理（2026-07-31）
+
+已只读汇总 2026-07-17 至当前最新冻结记录的全部主进展，形成中文组会稿 `reports/group_meeting_progress_2026-07-31.md`。报告按“旧 B1/diffusion 机制闭环 → S30 暴露 backbone 瓶颈 → S33 严格等码率强基座 → Swin/Kodak/CLIC 外部结论收缩 → 生成式代价刻画 → RDD-P0 有限结果”组织，明确区分已成立、仅 policy-dev 成立、外部 benchmark 失败、暂停/未执行四类状态，没有重跑用户刚完成的 RDD 实验。
+
+配套新增 7 张可复现汇报图与一份关键数字 CSV，位于 `reports/group_meeting_progress_2026-07-31/assets/`；生成脚本为 `scripts/build_group_meeting_progress_2026_07_31.py`。汇报中特别保留 S21 gate collapse、S23/S25 效应量不足、S31 AMP 失败恢复、A1 S33 未战胜 Swin、RDD VAE 代理 bug 与“无法归因于生成先验”等负结果。当前方向判断未改变：S33 是严格等码率的低代价判别式端点，不是已证明的 Swin-level SOTA；P1 轻量 receiver refiner 仍只预注册、未 smoke/训练；A2、Swin convergence extension 与 official validation 均未执行。
+
+## RDD-P0 重建分布偏移验证完成（2026-07-30）：有可识别偏移，但不支持"生成先验定向导致"
+
+在考虑借用 rate-distortion-deception (RDD, arXiv 2607.25997, Ulukus/Yener) 框架前，先做纯分析实验验证前置事实：现有生成式 JSCC 重建是否已存在"无意的、可识别的分布偏移"。全程无训练、无下载、未访问 official validation；SGD 仍为 non-ranking paper upper，只做分布分析不做质量胜负；A1 已冻结的 S33-vs-Swin 结论不变。
+
+**必须先记录的前提修正**：用户原设计为"CLIC2020 test 428 图 × S33/DiffJSCC/SGD"，该设计在现有输出上不可执行。`paper_idea1b/A1_DISCRIMINATIVE_RESULT.md:19` 明确记录"DiffJSCC、SGD 和 refiner 未加载"，CLIC 重建目录只有 S33 与两条 Swin 臂，全仓 `external_baselines/` 无任何 CLIC 引用。三方法唯一共存总体是 64 图 Imagenette policy-dev @256²（5 SNR × 3 seeds，每方法 960 行，每 (method,SNR) 单元 n=192）。经用户确认改为：主实验用该共享总体并新增 `author_jscc` 第四臂，另加 CLIC-428 判别式补充；未授权新的 CLIC 生成式推理，A2 仍未授权。
+
+四臂全部从既有输出无损恢复，验证门全过：S33 精确重放 max\|ΔPSNR\|=`0.0 dB` 且 960/960 canonical noise SHA 校验通过；author-JSCC/DiffJSCC montage 面板=`5.46e-06`/`3.98e-06 dB`；SGD tile=`0.0385 dB`（median `0.0030`，属 S34C 已记录 uint8/float 口径差）。**SGD 源 tile 与 DiffJSCC 源面板逐字节相同（0 mismatch/64）**，证明两条链共享同一总体、跨方法分布比较合法。本轮 CLIC 管线另在 7 个与 A1 重叠单元复现 A1 冻结 FID/KID 至 ΔFID<`0.008`、ΔKID<`3e-6`，测量链独立可信。因 n=192 下 2048 维协方差秩亏，**KID 为主判据、FID 必报**（沿用 S34C"KID 主、FID 必报"先例）。
+
+预注册判据渲染为 **①②同时成立 → "存在可识别偏移"**。① 指纹分类：3 臂 logreg=`0.9059 [0.8715,0.9378]`（随机 `0.3333`）、4 臂=`0.8396 [0.7984,0.8776]`（随机 `0.25`），CI 下界远超随机；GroupKFold 按 source image 分组以防认图作弊。② 共 116 个 (arm,SNR,reference) 命中。判别式臂偏向 blur 且 real 排名很差（`s33_strong` 五档恒为 9–10/10），生成臂偏向 VAE 往返分布且 real 排名较好（DiffJSCC 恒 4/10、SGD 4–6/10）——即生成先验在 256² 上实际**减小**了与源分布的距离。
+
+**但三条限定必须与结论同载，否则会被严重误读**：其一，`sgd_jscc` 先验是 MDTv2/DiT 却最常偏向 `vae_sd21`，且两个 VAE 参考集彼此过近（FID `18.74` vs `19.12`）不可区分，故②只能说"偏向某种 VAE-latent 往返痕迹"，**不能说"偏向各自先验"**。其二，预注册的 C3 对照给出关键否证：两个均无生成先验的判别式臂之间，仅用 31 维手工频域统计即达 `0.8693 [0.8214,0.9120]`（随机 `0.5`），说明可识别指纹**不是生成先验特有**，而是任何 JSCC 实现都会留下；区分信息集中在高频（`dct_hi_cv`/`rps_b09`/`rps_b11`/`hp_mad`），C2 降到 128² 后准确率从 `0.840` 掉到 `0.710`。其三，12 个强②全部是 256² 判别式臂→blur，而 CLIC-428 高分辨率高功效补充下该方向**消失**：17 个②命中全部指向 JPEG、无一指向 blur，Swin 两臂在 7–19 dB 的 real 排名为 `1/8`（最接近 real）。因此"判别式 JSCC 普遍偏向平滑分布"不可外推。
+
+对方向的判断：重建分布确实可测地偏离源分布且方向非随机，与 RDD 把"匹配到非源目标 P_Y"作为一等公民相容，故 deception 项在本项目有实证立足点，但**比预期弱**。本轮**没有**证据表明存在"由生成先验定向导致的无意 deception"——观测到的偏移大多可由平凡机制解释（有损压缩必然偏离源分布、不同实现留不同高频指纹、低分辨率域评测放大平滑差异）。若继续，最小必要条件是：让两个先验代理真正可区分（改用各自完整生成链采样而非 VAE 往返）、在原生分辨率与足够 n 上重做生成臂（需授权 A2 或等价推理）、指纹检验加入"同先验不同实现/同实现不同先验"对照以分离先验痕迹与实现痕迹。
+
+失败已保留：首轮 `vae_sgd` 参考集用未归一化 latent 直接 decode，往返 PSNR 仅 `12.55 dB`、FID vs real=`273.79`、肉眼色彩崩坏。根因是 SGD 解码器在训练与推理中始终接收功率归一化 latent（`third_party/SGDJSCC/inference_config.py:151` 为 `decode(normalize(...))`）；修正后 `30.773 dB`、FID `18.74`。失败产物保留于 `outputs/analysis/ANALYSIS-RDD-P0-DISTRIBUTION-SHIFT-001/failed/`。该 bug 若未发现会静默污染整个先验代理参考集并使 SGD 的②结论完全错误。完整中文结果见 `reports/rdd_p0_distribution_shift_result_2026-07-30.md`，预注册见 `reports/rdd_p0_distribution_shift_preregistration_2026-07-30.md`。
+
+## paper idea1b A1 判别式主表完成（2026-07-23）：S33 未战胜 Swin，高分辨率结论收缩
+
+用户确认高分辨率主表采用分层口径：只有逐图actual CBR相同的臂做严格胜负；不同码率方法只做rate-quality Pareto；SGD永久non-ranking。A1当前只允许冻结S33、Swin official Base-SA与capacity-matched CM-SA。Kodak合同为24张×5 SNR×3 seeds，CLIC为428张×5 SNR×1 seed；official Imagenette validation继续封存。
+
+A1预注册与正式运行均已完成。三臂共享A0的256 tile坐标、边界padding、逐图canonical noise和每tile `16,384 real`；Kodak actual CBR=`1/24`，CLIC actual CBR范围=`0.041667–0.063210`、均值=`0.045472`，三臂逐图严格同码率。preflight与两图重建smoke均PASS：Kodak三臂wall=`42.6/42.6/44.0 ms`，最大2048² CLIC=`189.7/439.5/464.4 ms`，peak reserved VRAM=`1.21/2.20/2.21 GiB`。
+
+Kodak `1080/1080`、CLIC `6420/6420`重建与7500行PSNR/MS-SSIM/LPIPS/DISTS/CLIP均已闭合；CLIC另完成15组FID/KID。Kodak上S33−Base PSNR=`+0.0477 dB [−0.0537,+0.1612]`，追平/非劣但LPIPS/DISTS更差；S33−CM=`−0.2003 dB [−0.3116,−0.0846]`，劣于。CLIC上S33−Base=`−0.2631 dB [−0.3211,−0.2074]`、S33−CM=`−0.4909 dB [−0.5513,−0.4352]`，五档PSNR均劣于；感知、结构、CLIP和FID/KID总体也由Swin占优。
+
+因此按“两条Swin臂取对S33更不利者”的预注册规则，本轮总 verdict 是 **S33 劣于 SwinJSCC**。之前在Imagenette policy-dev上“胜Base、与CM接近”的结论没有泛化成Kodak/CLIC上的强backbone claim。S33仍有最大CLIC图约`2.32–2.45×`延迟优势和约一半峰值显存，只能作为低代价判别式端点；后续refiner若继续，目标应是以小增量代价缩小Swin质量差距，而不是继续声称S33本身最强。Kodak/CLIC无监督标签，本轮CLIP是连续语义相似度，不事后阈值化为失败率；official validation继续封存。
+
+首次整图指标smoke因PyTorch 2.6拒绝`weights_only=true`加载SHA冻结TorchScript CLIP权重而失败并保留；第二次修正可信本地权重加载方式后通过，最大图DISTS峰值reserved=`6.37 GiB`。全量指标在6210/7500处遭外部进程终止，按键断点续跑后完成，无缺失或覆盖。完整中文结果见`paper_idea1b/A1_DISCRIMINATIVE_RESULT.md`。
+
+DiffJSCC码率只读审计已完成：官方OpenImage C16 checkpoint是原生`CBR=1/96`；要到`1/24`必须把`C_channel=16→64`，会改变JSCC encoder/decoder权重形状。作者未发布C64 checkpoint，因此现成权重不能在推理时拨档为真等码率；技术上只能新训练C64 JSCC，并至少对生成阶段做matched-distribution适配。补零、四次重复发送或强制256 tile均不算作者原生真等码率。完整证据见`paper_idea1b/DIFFJSCC_RATE_ADJUSTABILITY.md`。A2仍未授权。
+
+## paper idea1b Gate A0 完成（2026-07-23）：Kodak/CLIC、原生处理码率账本与指标链就绪
+
+用户已确认方案 A：训练继续使用冻结 COCO-S33 和 `256x256` crop；主画质 benchmark 改为 Kodak 24张 + CLIC2020 test 428张；Imagenette仅保留监督 semantic reliability，official validation继续封存。大图不采用共同tile，各方法保留结果前冻结的原生路径，只在实际发送符号及sender-side side information上严格计费。专属工作区 `paper_idea1b/` 已建立，只引用而不搬动/复制根目录S33、canonical noise、S34D等旧资产。
+
+Gate A0 `GATE-A0-BENCHMARK-SETUP-001` 已完成且 `a1_authorized=false`。Kodak与CLIC共452张、全部RGB、内容SHA无重复。CLIC Mobile/Professional官方包精确大小与SHA分别为 `721,789,976 / 2025f07a...aa732` 和 `891,643,809 / 857df244...52884`；Kodak官方CDN对服务器返回403，故使用公开mirror，但24个成员逐个通过官方字节数表核验，archive SHA=`44e2569b...00223`。所有大文件均清空代理、服务器直连下载。
+
+已生成452条source、2,260条method-rate、20,018条S33/Swin tile和882,675条SGD released patch记录。Kodak上S33/Swin为6 tile、`98,304 real`、CBR=`1/24`；DiffJSCC官方整图路径的原生公式账本为CBR=`1/96`，只能称低于预算，不能称与S33 exact-rate，且A1必须用runtime instrumentation复核。CLIC边界padding使S33/Swin actual CBR=`0.041667–0.063210`；SGD sender caption未定价，始终non-ranking。
+
+DISTS/FID/KID链已通过identity sanity：Kodak恒等输入PSNR=`120 dB`、MS-SSIM=`1`、LPIPS=`0`、DISTS=`5.96e-8–1.19e-7`；完整428张CLIC自比FID=`−4.5057e-5`、KID=`−0.00205318`。首次过严判据把共享PSNR的120 dB clamp误要求为∞，并把clean-fid浮点残差阈值设为`1e-5`，该失败已保留；修正为PSNR≥119.999 dB、`|FID|≤1e-4`后重跑通过。没有训练、方法推理或official validation访问。完整计划与完成事实见 `reports/dataset_benchmark_alignment_plan_2026-07-23.md`、`paper_idea1b/GATE_A0_RESULT.md` 和 `paper_idea1b/PROGRESS.md`；下一步等待用户决定是否授权A1。
+
+## S35R 新主线 P0 完成 / P1 预注册（2026-07-23）：SGD 五档固定50步，P1 等待 smoke 放行
+
+用户批准把下一阶段改为“代价—质量—可靠性公平刻画 + 冻结 S33 上的轻量接收端生成式精修”。S33 checkpoint SHA=`2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb` 永久冻结；refiner 只读取 S33 RGB 与归一化 SNR，额外通信符号和 side information 都是0。论文主贡献不写成简单加模块，而是用该低代价 refiner 作为对照现有大生成链的载体。
+
+P0 `ANALYSIS-S35R-P0-SGD-ADAPTIVE-COST-001` 已完成。复用 S34D 同卡、batch=1、同入口的80条逐图计时，并对作者源码 hash 与调用次数做 fail-closed 审计。结果是 `[1,4,7,13,19] dB` 全部构造50个 continuous schedule points、执行49次循环 prediction+1次 final prediction，共50次 denoiser evaluation；`alpha_bar_channel=2γ/(2γ+1)` 只改变理想轨迹 endpoint，不减少数值求解次数。released 配置实际 `use_gt_csi=false`、用 learned predictor 估 endpoint，但调用数仍固定50。
+
+五档端到端均值=`2044.877/2043.783/2044.802/2044.636/2045.410 ms`，最大差仅 `1.627 ms`。BLIP2=`220.45–220.73 ms`、MuGE=`849.18–849.48 ms`，二者固定地板合计 `1069.933 ms/图`，占总延迟约 `52.33%`，五档均值范围只有 `0.440 ms`。因此 SGD 是“轨迹起点自适应”而非“计算步数自适应”。完整结果：`reports/s35r_p0_sgd_adaptive_cost_result_2026-07-23.md`。
+
+P1 已预注册但未获 smoke/训练授权。generator 为2M–6M目标的三尺度、FiLM-SNR residual U-Net，训练期使用小 conditional PatchGAN；loss 为 `1.0 LPIPS + 5.0 MSE + 0.01 GAN + 0.5 anchor-L1`。COCO train2017、离散五档、paired-real AWGN；checkpoint 只在 COCO val512 上按“PSNR不低于 S33 0.10 dB margin内的最低 LPIPS”选。冻结960键 go/no-go 要求 LPIPS CI显著有利、PSNR非劣、failure不显著上升三项同时通过。下一动作等待用户确认 P1 合同；获准后也只先做1-batch smoke并报显存/step time，不能直接训练。
+
+## S34D 生成式 JSCC 推理代价完成（2026-07-23）：最低保感知点仍慢 165×
+
+用户要求把“生成式 JSCC 推理代价”作为方向立论前先核干净。本轮纯测量实验 `ANALYSIS-S34D-GENERATIVE-INFERENCE-COST-001` 已完成：只用冻结 S33、official DiffJSCC 和 SGD paper-upper 现成 checkpoint，不训练、不下载、不访问 official validation。三种方法统一 batch=1，主延迟从“256×256 RGB 已在主存”到“256×256 重建回到主存”，排除模型/checkpoint 加载、磁盘 I/O 和指标计算；包含方法内部 resize/patch、H2D/D2H、JSCC、BLIP2、text/edge conditioning、全部 denoiser evaluation、全部 VAE 编解码和 color fix。
+
+DiffJSCC `100/50/25/10/4` 步 wall time=`5089.7/2676.2/1458.5/726.3/433.6 ms`。预注册 LPIPS gate 的最低通过点为 25 步：LPIPS=`0.101952`，相对 S33 差=`−0.017950`、95% CI=`[−0.027709,−0.008826]`；10 步 CI 跨零，4 步显著更差。为排除 runtime 偏差，S33 在与生成方法相同 PyTorch 2.1 下重测 `8.833 ms`，故 25 步仍慢 **165.1×**；S33 原生 PyTorch 2.11 为 `5.788 ms`，对应 sensitivity=`252.0×`。100 步的 `576×/879×` 不能再写成固有代价。
+
+25 步 semantic failure=`14/320`，S33=`4/320`，差=`+3.125 pp`、post-hoc cluster CI=`[+0.625,+6.563] pp`；50 步为 `10/320` 且差 CI 跨零。因此“感知最低成本”是 25 步，但当前更稳妥的语义观测点是 50 步=`2.676s/303×`，尚未正式证明语义非劣。SGD 50-step=`2044.7 ms/231.5×`，主要由 BLIP caption `220.6 ms`、MuGE edge `849.4 ms`、diffusion `908.0 ms` 构成；其重复且返回值被丢弃的 VAE decode 仅 `16.1 ms/0.79%`，删除也不改变数量级。
+
+去重参数为 S33/DiffJSCC/SGD=`31.03M/5.479B/4.597B`。profiler 支持算子的 FLOPs 下界为 S33=`0.05693T`、DiffJSCC-25=`26.877T`（472×）、SGD=`36.389T`（639×）。DiffJSCC 当前约为 `232 ms fixed + N×49 ms`；BLIP、OpenCLIP、512内部分辨率和模型规模是方法特有而非 diffusion 普遍固有，denoiser evaluations + VAE decode 才是当前 latent diffusion 路径的结构性成本。完整中文结果：`reports/s34d_generative_inference_cost_result_2026-07-23.md`。
+
+## S34C-Lite 码率透明度分析完成（2026-07-23）：exact-rate Pareto，SGD 仅 paper upper
+
+用户已在任何 smoke/训练前暂停原 `14–29 天` 的公平重训：DiffJSCC 本就严格 `16,384 real` 且 caption 为接收端本地生成，码率不公平论点只适用于 SGD；SGD 又没有官方 trainer，只能 approximate；生成系统与 S33 的容量/算力不等；长周期与尽快投稿冲突。`configs/s34c_fair_generative_reproduction_preregistration.yaml` 已改为 `paused_by_user_before_any_execution`，不得启动或创建正式输出。
+
+替代方案 S34C-Lite 已完成：只读复用 S33、S30 DiffJSCC、S20/S28 SGD paper-upper 的同一 64 图×3 seed×5 SNR、每方法 960 行结果，制作“通信码率 + 发送端 side-info + 接收端/外部先验 + 训练/算力 + 现有指标”的统一透明表。三方 960 个 `sample/seed/SNR` 键、类别/WNID 和 canonical noise provenance 全部一致；S33 内嵌 DiffJSCC 指标与 S30 正式文件最大误差为 0。全程没有训练、模型推理、下载或 official validation 访问。
+
+核心结果：S33 与 DiffJSCC 都是 `16,384 real` 且无发送端 side information。S33−DiffJSCC PSNR=`+2.867666 dB`，95% CI=`[+2.747309,+2.988418]`，MS-SSIM=`+0.028909 [0.025125,0.032930]`；但 LPIPS=`+0.019762 [0.008057,0.032420]`，即 DiffJSCC 感知更好；failure-rate 差=`−1.458 pp`，CI=`[−3.854,+0.208] pp` 跨零。因此正式结论是 exact-rate fidelity–perception Pareto，不能用码率白嫖解释 DiffJSCC。
+
+SGD 的已执行 main+edge 为 `19,712 real`，加入最低未保护 caption 成本后为 `≥21,856 real`，比 `16,384` 多 `5,472/+33.40%`，且 captions 完美；其 PSNR/MS-SSIM/LPIPS/failure=`27.74037/0.952973/0.072101/25` 只能作 non-ranking paper upper。现有共同表没有 FID/KID，且 S33/DiffJSCC 使用 uint8 截断主指标、SGD 使用 float 张量指标，所有含 SGD 差值只作跨合同描述。完整报告：`reports/s34c_lite_rate_transparency_result_2026-07-23.md`；输出：`outputs/analysis/ANALYSIS-S34C-LITE-RATE-TRANSPARENCY-001/`。14–29 天长版复现仍暂停。
+
+## S34C 公平生成式复现预注册（2026-07-23）：DiffJSCC 可裁决，SGD 只能近似适配；尚未运行
+
+用户曾授权规划 venue 对冲路线：在严格 `16,384 real` 总预算、同 COCO task-adaptation、同离散五档 SNR 与 canonical AWGN 下检验生成式 JSCC 感知优势，再决定 ICASSP 或 WCL。完整合同已写入 `reports/s34c_fair_generative_reproduction_preregistration_2026-07-23.md` 和 `configs/s34c_fair_generative_reproduction_preregistration.yaml`；该长版现已由上节用户决策暂停，没有创建正式输出、没有 smoke/训练、official Imagenette validation 继续封存。
+
+静态源码结论分层明确。DiffJSCC 官方 `13aeb624...` 提供 DeepJSCC 与 ControlNet 两阶段训练代码，可将数据、SNR 和信道适配为项目合同；其 C16 在作者 512 网格原生发送 `16,384 real`，BLIP2 caption 是接收端从带噪初始重建本地生成，信道码率为 0，因此主要公平修正是 COCO/五档 SNR 重训，而不是扣 caption 预算。SGD-JSCC 官方 `2188acc0...` 只发布 inference/checkpoints，训练指南仍在 TODO；缺少损失、冻结阶段、预处理和 step-matching trainer，故不能做可审计的 official retraining。本轮只允许标成 `SGD-inspired released-component rate-constrained adaptation`。
+
+SGD-RC 主码率账本预注册为 `12,288 main + 2,048 edge + 1,744 coded caption + 304 padding = 16,384 real`：四 patch 的 main latent 用 learned `16→12→16` 投影，edge=`cr8`，caption 为冻结 CLIP-BPE 最多 12 token/patch + CRC + rate-1/2 convolutional code，真实经过同一 AWGN，CRC 失败为空文本。必须另报 no-text、oracle-clean-caption 与 released paper upper 三个非对称诊断，禁止把 paper upper 放入公平排名。
+
+指标分两层：冻结 64 图×3 seed×5 SNR 报 PSNR/MS-SSIM/LPIPS/T_cls failure 和 source-cluster 95% CI；另在方法冻结后一次性解封 SHA-ranked COCO-2048 perception holdout 报 FID/KID（KID 主、FID 必报）及 bootstrap CI。单张 RTX 4090D 顺序总工期初估 `14–29 天`，其中 DiffJSCC 约 `6–12 天`、SGD 近似适配约 `5–11 天`、评估 `2–4 天`；长训练前必须先单 batch smoke 校准。待用户确认三项：接受 SGD approximate 标签、接受保留论文所需外部生成预训练但只对齐 COCO task adaptation、接受 FP32 OOM 时用 BF16/gradient checkpoint/batch1+accumulation并如实报告 unequal compute。
+
+## 低 SNR 语义漂移定向审计（2026-07-23）：S33 显式崩坏，未观察到 SGD“清晰但错”
+
+已修正此前 top-LPIPS 样本几乎全来自 19 dB 的选择偏差：本轮只在冻结 policy-dev 的 192 个 `1 dB` 键中，以“LPIPS 尚可 + T_cls/三个跨模型分类器/CLIP 至少一种异常”为召回信号，分层选出 15 个 source 去重样本，逐张审阅 `[原图 | S33 pure JSCC | SGD diffusion]`。S33 使用冻结 checkpoint 和历史 canonical noise 重放，PSNR 最大复现误差 `0.0 dB`；没有训练、调参或 official validation 访问。
+
+1 dB 人工结果为：S33 `8 faithful / 7 重建失败 / 0 清晰但语义错`，SGD `15 / 0 / 0`。随后固定同一 15 张图、不按压力结果回选，在共同 seed `20260748` 下做范围外 −3/−5 dB 重放：S33 分别为 `1/14/0` 与 `0/15/0`，SGD 均为 `15/0/0`。因此当前可见失败模式是 S33 随 SNR 降低出现涂抹、重影、假色并最终崩成色块；本轮没有找到 diffusion 输出“画面清晰可信但主体/物体/场景被改写”的红色案例。SGD 的少量 patch 接缝和局部纹理变化没有改变场景意义，归为可见伪影而非语义漂移；部分 T_cls/跨模型/CLIP 告警经人工核查为 false positive。
+
+边界必须保留：这只是 15 张异常定向样本，不估计总体发生率；−3/−5 dB 是训练范围外压力，不作 in-distribution claim；SGD 仍是作者权重、额外 edge 码率和免费完美 captions 的 paper upper bound，与 S33 不作胜负。完整中文报告和三张审阅图见 `reports/low_snr_semantic_drift_visual_audit_2026-07-23.md`；有效输出为 `ANALYSIS-LOW-SNR-SEMANTIC-DRIFT-AUDIT-003` 与 `ANALYSIS-LOW-SNR-OUT-OF-RANGE-STRESS-001`，失败/草稿输出均保留。
+
+## Top-LPIPS 重建语义人工核查（2026-07-23）：未见“真实但语义错位”
+
+已从 SGD-JSCC 与 S33 strong 各自冻结的 960 条 policy-dev 记录中，按 LPIPS 升序且每个 source image 只保留一次，分别选出 15 张并生成 `[原图 | 重建]` 对照图。SGD 图像直接裁自 S20 已有正式 montage；S33 因历史只保存每档前 4 张，使用冻结 checkpoint、相同 canonical noise 和历史 batch 合同做纯推理重放，15 张历史 PSNR 最大误差为 `0.0 dB`。没有新训练、调参或 official val 访问。
+
+人工审阅结果：SGD `14 faithful + 1 minor structure/text change + 0 semantic mismatch`；S33 `12 faithful + 3 minor structure/text change + 0 semantic mismatch`。橙色变化仅涉及加油机数字/文字、远处降落伞或烟迹的小轮廓，未改变主体、物体或场景意义；30 张的冻结 T_cls failure 也全为 false。必须保留选择偏差：两种方法均有 `14/15` 张来自 19 dB，因此这只说明“各自 top-LPIPS 的容易样本没有观察到语义错位”，不能外推为低 SNR/全分布无 hallucination，也不改变 SGD 非等训练/码率合同的 external-upper-bound 定位。中文报告与大图：`reports/top_lpips_semantic_visual_audit_2026-07-23.md`；有效输出：`outputs/analysis/ANALYSIS-TOP-LPIPS-SEMANTIC-VISUAL-AUDIT-004/`。
+
+## SGD-JSCC / SwinJSCC 公平性澄清（2026-07-23）：禁止跨合同排名
+
+只读复核确认，S20/S28 的 SGD-JSCC 是作者发布权重的 `paper_free_text_upper_bound`，没有在本项目 COCO、`16,384 real` 总码率和逐图离散 `[1,4,7,13,19] dB` 训练合同下重训。论文第一阶段 JSCC backbone 使用 ImageNet、固定 AWGN `10 dB` 训练；项目只把测试信道切到五档，并未对齐训练分布。作者 main=`16,384 real`，active edge 另占 `3,328 real`，二者已达 `19,712 real`；四 patch captions 在 S20/S28 中仍按论文假设免费、完美传输，最低未保护计费还需 `2,144 real`。相对 S33/Swin 的 `16,384 real` 严格总预算，SGD 最低总计 `21,856 real`，超出 `5,472 real/+33.40%`。
+
+S20/S28 实际指标只有 PSNR/MS-SSIM/LPIPS/冻结 T_cls failure 与系统账本，没有 FID。相同 64 图×3 seed×5 测试点上的观测值为：SGD paper upper=`27.74037 dB/0.952973/0.072101 LPIPS/25 failures`；Swin Base=`30.29212/0.969685/0.117921/25`；CM=`30.53197/0.970981/0.111465/22`。这些数值显示 SGD 的 LPIPS 很强，但因训练数据、训练 SNR、总码率和文本成本均未对齐，只能并排作 external positioning，不能称“SGD 不如 Swin”或反向排名。完整中文核验：`reports/sgd_swin_fairness_clarification_2026-07-23.md`。仓库检索未发现既有文档声称 SGD 被 Swin 战胜；后续任何论文表格必须把两套合同分开。
+
 ## 当前方法说明书（2026-07-22）：S33 主链与旧命名关系已厘清
 
 新增 `METHOD_CURRENT.md`，只描述截至 S33 真正活着的论文主方法，不复述历史实验流水账。核心边界已经明确：当前 inference 是 `256x256 RGB → 四级 SNR-conditioned residual encoder → 原生 64x16x16=16,384 real → 逐图单位功率 + paired-real AWGN → 四级 SNR-conditioned decoder → 256x256 RGB`；decoder 输出就是最终输出，没有 B1、M2、diffusion、envelope 或分类器 gate。S31 是同架构 `77x16x16=19,712 real` 的较宽工作点，S33 是严格与 author-JSCC 等码率的主版本；两者均无 mask/prefix/padding/side information。
 
 名词状态也已冻结：B0 是“纯 JSCC 输出”的角色，因此 S33 可称 new strong-B0；旧 B1 是围绕旧弱 B0 训练的 deterministic residual refiner，不等于 M2；M2 是 SNR-aware diffusion 方法组，D 是其 diffusion 候选输出，envelope 是控制 diffusion correction 的 SNR 强度/恒等规则。旧 B1/M2/D/envelope 的具体 checkpoint 均不在当前主链，不能直接迁移到 strong 分布；diffusion 研究方向只是暂挂，只有将来从 strong-B0 分布合法重训并通过 gate 后才可能作为第二方向恢复。文档同时解释了完整模块维度、`16,384/19,712 real` 的原生 exact-rate 计算、canonical-noise prefix 与 latent 裁剪的区别，以及当前论文可写/不可写的 claim。
 
-## S34A SwinJSCC equal-budget 已获分阶段授权（2026-07-22）：只跑双臂 12 epochs，extension 禁跑
+## S34A SwinJSCC equal-budget 已完成（2026-07-22）：CM-SA 未过非劣 gate，extension 待用户决定
 
 用户已接受 official Base-SA `28,182,512` 参数与 capacity-matched CM-SA `31,348,752` 参数双臂、S33 FP32 4+8 epoch/equal-step 合同，以及总 verdict 取对 S33 更不利一臂。本轮授权边界已进一步收紧为：只执行两臂各 12 epochs，并检查 epoch 9--12 的固定 COCO val512 曲线；若最佳点在 epoch 11/12、OLS slope `>=0.01 dB/epoch` 且 epoch12−epoch9 `>=0.03 dB`，只报告 extension trigger，**不得自动延训**。此前讨论的 60-epoch 上限不构成当前权限；extension 是否执行及其 epoch 数必须等用户查看 equal-budget 结果后另行决定。
 
-正式训练运行中。运行配置 SHA=`a209af08...676d`；Base-SA 已完整完成 epochs 1--5，aggregate val PSNR=`26.9447→27.2621→27.9832→28.1977→28.2061 dB`，epoch5 MS-SSIM=`0.960111`，五档 PSNR=`26.1814/27.5046/28.4294/29.3187/29.5963 dB`。原前台会话在 epoch6 的 6,000/14,786 microbatches 处退出；该 partial epoch 没有写入 history/checkpoint，现从完整 epoch5 checkpoint 恢复，所以不会把半轮结果混入曲线。
+正式训练运行中。运行配置 SHA=`a209af08...676d`。Base-SA 已完整完成 12/12 epochs，best epoch=12，固定 val512 五档 aggregate PSNR/MS-SSIM=`29.100812 dB/0.966690`，分 SNR PSNR=`27.0309/28.3518/29.2836/30.2623/30.5755 dB`；best checkpoint SHA=`d645e1567...79f75`。Base 的 epoch 9--12 收敛检查触发 extension gate：PSNR=`28.8960→29.0219→29.0816→29.1008 dB`，OLS slope=`0.0674 dB/epoch`，epoch12−epoch9=`+0.2048 dB`；解释为 `extension_triggered_but_not_authorized`，因此没有、也不得自动延训。
 
-首次恢复预检发现 `torch.load(map_location=cuda)` 会把 checkpoint 的 CPU RNG byte state 一并搬到 CUDA，导致 `torch.set_rng_state` 拒绝；这发生在任何新 optimizer step 前，checkpoint 未损坏。恢复脚本已做窄修复：只把 CPU/default、SNR 和 shuffle generator state 显式搬回 CPU，不改变模型、optimizer 或训练数学，并写入 `resume_event_before_epoch_06.json` 记录新旧脚本 SHA。精确恢复测试 PASS。任务现运行在 detached GNU screen `s34a_equal_budget`（screen PID parent=`1`），不再依赖对话会话；2026-07-22 09:27 CST GPU 利用率=`99%`、显存约 `10.95/24.56 GiB`，Base 正在重跑 epoch6。CM-SA 仍只会在 Base 恰好完成 12 epochs 后启动，extension 无入口。
+原前台会话曾在 Base epoch6 的 6,000/14,786 microbatches 处退出；该 partial epoch 没有写入 history/checkpoint，已从完整 epoch5 checkpoint 恢复。首次恢复预检发现 `torch.load(map_location=cuda)` 会把 checkpoint 的 CPU RNG byte state 一并搬到 CUDA，导致 `torch.set_rng_state` 拒绝；这发生在任何新 optimizer step 前，checkpoint 未损坏。恢复脚本已做窄修复：只把 CPU/default、SNR 和 shuffle generator state 显式搬回 CPU，不改变模型、optimizer 或训练数学，并写入 `resume_event_before_epoch_06.json` 记录新旧脚本 SHA。精确恢复测试 PASS。
 
-双臂完成后的评估也已按独立配置 `configs/s34a_swinjscc_equal_budget_evaluation.yaml` 排队，但在 checkpoint 冻结前不会访问 policy-dev。评估入口只接受两个训练 `summary.json` 选出的 continuation-best 及其落盘 SHA，拒绝任何 epoch>12/extension checkpoint；随后复用 S33 的 960 keys、完整 19,712-D canonical noise SHA 和相同前 16,384-D prefix，输出两臂 aggregate/per-SNR PSNR、LPIPS、MS-SSIM、failure/new-error/repair、source-image cluster 95% CI 与 `0.10 dB` margin 保守 verdict。official validation 始终封存。
+2026-07-22 23:43 CST：Base-SA 与 CM-SA 的 equal-budget 训练及冻结 policy-dev 评估均已完成。两臂都到达 `12/12 epochs` 且 best 均为 epoch12；Base 固定 val512=`29.100812 dB/0.966690 MS-SSIM`，CM=`29.322195/0.968148`。两臂 epoch9--12 都触发未明确收敛 gate：Base slope=`0.0674 dB/epoch`、epoch12−epoch9=`+0.2048 dB`；CM slope=`0.0440`、增量=`+0.1344 dB`。extension 均未执行。
+
+最终相同 64 图×3 seed×5 SNR policy-dev 共 `1,920/1,920` 行。S33−Base 聚合 PSNR=`+0.173947 dB`，95% CI=`[+0.078178,+0.265733]`，S33 显著超过官方默认 Base-SA。决定性 CM-SA 上，S33−CM PSNR=`−0.065902 dB`，CI=`[−0.168886,+0.025307]`；因下界 `<−0.10 dB`，按预注册标签为劣于/未证明非劣。CM 同时在 MS-SSIM（差=`−0.001272`，CI 全负）和 LPIPS（差=`+0.008520`，CI 全正）显著更好；S33 failure=`0.9375%` 低于 CM=`2.2917%`，差 CI=`[−3.0208,0] pp`。保守总 verdict 为 `PARETO`，不能声称超过 SwinJSCC。完整中文结果：`reports/swinjscc_equal_budget_stage_result_2026-07-22.md`。
+
+统一评估曾在正式逐样本推理前 fail-closed 两次：其一是训练 checkpoint 没有顶层 `arm` 而评估器误设为必填；其二是参数账本在 `requires_grad_(False)` 后计数而误得 0。两项均作窄修复，分别由冻结 summary/path/SHA+strict architecture load 和先计数后冻结保证审计；失败时没有产生 per-sample CSV。最终 `per_sample.csv` SHA=`2441908f...712`，`summary.json` SHA=`d92a1490...32`。official validation 未访问。
+
+下一步停在用户决策点：是否为两个均触发 gate 的 SwinJSCC 臂授权分阶段 extension，以及延到多少 epochs。充分训练口径未完成前，S34A 不冻结；S34B 消融、S35 diffusion 与 official validation 不启动。
 
 官方源码已从 `semcomm/SwinJSCC@a6d0e6da53548976acbe9317839a077ef31f190f` 的 GitHub codeload tarball 经服务器直连取得；tarball `17,887 bytes`、SHA-256=`3f837eef...21688`，本地逐文件 hash 与此前缓存静态审计完全一致，没有下载或使用官方 checkpoint。项目侧新增 adapter，仅把官方 SA-only Swin/Channel ModNet 拓扑接到逐图 SNR、逐图单位功率和 canonical paired-real AWGN；第三方算法源码没有改动。
 
@@ -714,3 +912,12 @@ S19 完成了“diffusion 是否提供 B1 之外信息”的等容量因果消�
 - B1 仍比 selected 高 `+0.830617 dB`（95% CI `[+0.791172,+0.869723]`），所以整体最强 anchor 未变。本阶段成功的是 **diffusion 支路的全 SNR identity-safe strength control**，不是超过 B1。
 - 预注册 10/10 checks 全过，最终 verdict=`PASS`。下一步不再扫描 envelope；应训练接收 `B0 + identity-controlled diffusion decode` 的同容量融合器，并与只接收 B0 的同预算 B1 做因果对照。
 - 中文报告：`reports/snr_identity_envelope_stage_result_2026-07-15.md`；全程本地离线，未访问 official Imagenette validation。全仓 `112/112` unittest 通过。
+## 项目状态只读审阅（2026-08-03，历史记录已被最终终止层收敛）
+
+本轮按仓库规则交叉审阅项目边界、里程碑、进展、实验、文献与运行说明；未运行实验、未改代码、未访问 official validation。该时点曾把 S35R-P1 视为可能经用户授权的最后 probe，但同日后续形成的 `reports/METHOD_TERMINATION_REPORT_2026-08-03.md` 已将其 supersede：当前不得启动 S35R-P1 smoke/训练，也不得把“证据链明显失败”外推成原始 idea 的普遍科学反证。CVaR 已 `END-CVAR`，RDD-P0 不支持生成先验因果归因；未来任何方法工作只能作为具有新问题、预算、预注册和 ID 的独立课题，不能恢复冻结主线。
+
+## Git 持续同步约定（2026-08-06）
+
+用户明确要求后续每次任务有文件改动时都提交并 push。该约定已写入 `AGENTS.md`：完成验证后只暂存本任务相关且已审计的路径，普通 push 当前分支；若远端冲突、权限、hook 或测试失败则不 force、不跳过验证，保留本地状态并报告。本次同步前发现工作区积累了多阶段未提交资产，已先修复冻结解释冲突和 RDD 输出防覆盖 blocker，不能为了“全部上传”而跳过审计。
+
+提交前验证：未限定路径的 `pytest` 会收集 `.gitignore` 下的 `third_party/open_clip_2_24/tests`，因该第三方包未安装而在 collection 阶段报 8 个 `ModuleNotFoundError`；改为项目自身范围 `tests paper_idea1b/tests` 后为 `152 passed, 2 subtests passed`。RDD 8 个脚本 AST 解析通过，共享 overwrite guard 的“首次允许、目标存在后拒绝”smoke 通过，`git diff --check HEAD` 通过。包含 Kodak 原图的本地组会合成图因再分发许可未确认而加入 `.gitignore`，不推送。

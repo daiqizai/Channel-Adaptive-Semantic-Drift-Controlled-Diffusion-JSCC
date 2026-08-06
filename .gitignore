@@ -9,5 +9,8 @@ data/*
 outputs/*
 !outputs/README.md
 
+# Local-only composite containing source imagery with unverified redistribution rights.
+reports/group_meeting_progress_2026-07-31/assets/07_kodak_1db_visual_example.png
+
 third_party/*
 !third_party/README.md

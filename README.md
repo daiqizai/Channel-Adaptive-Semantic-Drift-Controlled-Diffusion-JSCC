@@ -1,17 +1,199 @@
 # Channel-Adaptive Semantic-Drift Controlled Diffusion-JSCC
 
-本仓库研究：在不同信道条件下，用 diffusion 增强 DeepJSCC 图像恢复，同时把 semantic drift 作为核心评估目标。
+## 项目状态：方法开发已终止并冻结（2026-08-03）
+
+本仓库曾研究在不同信道条件下用 diffusion 增强 DeepJSCC 图像恢复，并把 semantic drift 作为核心评估目标。基于现有证据，**原始完整联合优势主张未建立，项目停止继续投入**；停止类型为 `ENGINEERING_STOP`，不等同于对所有相关科学方向的普遍反证。
+
+最终解释层为 [`reports/METHOD_TERMINATION_REPORT_2026-08-03.md`](reports/METHOD_TERMINATION_REPORT_2026-08-03.md)，逐 claim 证据与允许/禁止措辞见 [`audit/CLAIM_REGISTRY.csv`](audit/CLAIM_REGISTRY.csv)。本文件下方保留历史实验、环境和复现命令；其中“当前主线”“下一步”“待授权”“继续训练”等旧时态均已被终止报告 supersede，只能用于理解历史，**不构成新的运行授权**。禁止启动 S35R-P1、新 diffusion refiner、semantic gate/controller/fusion 搜索、CVaR 模型训练、Swin extension、A2/S36 或大量旧实验复跑；既有正式输出不得覆盖。
+
+基础设施仍可复用：冻结 checkpoint、canonical noise、信道与 exact-rate 合同、rate/side-information ledger、外部 baseline adapter、指标与 bootstrap、系统代价测量、manifest 和审计注册表均予保留。复用必须作为独立新任务重新定义 scope、预算、预注册和 ID，不能表述为本方法项目自然继续。
 
 ## 文档
 
+- `reports/METHOD_TERMINATION_REPORT_2026-08-03.md`：最终终止决策、H1–H5 分项结论、禁推论和可复用资产。
+- `audit/CLAIM_REGISTRY.csv`：逐 claim verdict、证据等级、有效范围及允许/禁止措辞。
 - `PROJECT.md`：项目定义、核心问题、假设和方法边界。
-- `METHOD_CURRENT.md`：截至 S33 当前论文方法的数据流、模块维度、名词关系和 exact-rate 说明。
-- `MILESTONES.md`：最小论文闭环、指标定义、阶段门槛和成功/失败判据。
+- `METHOD_CURRENT.md`：S33 历史技术快照及 2026-08-03 冻结入口。
+- `MILESTONES.md`：历史里程碑、阶段门槛及顶部终止覆盖说明。
 - `AGENTS.md`：AI agent 和贡献者的协作规则。
-- `PROGRESS.md`：当前阶段、已完成内容、下一步和开放决策。
-- `EXPERIMENTS.md`：实验记录和结果索引。
+- `PROGRESS.md`：当前冻结状态和历史进度。
+- `EXPERIMENTS.md`：实验记录、结果索引及终止记录。
 - `LITERATURE.md`：相关工作、撞车风险和检索关键词。
-- `README.md`：环境安装、运行命令和代码结构。
+- `README.md`：冻结状态、环境安装、历史运行命令和代码结构。
+
+## CVaR 候选方向二：条件信道尾部风险诊断（2026-07-31 完成，判定 NO-GO）
+
+只读诊断，回答"均值训练模型对同一图像重复采样信道时，最差 10% 是否明显差于中位数"。不训练、不下载、不访问 official validation。完整结论见 `reports/cvar_p0_tail_risk_result_2026-07-31.md`，预注册见 `reports/cvar_p0_tail_risk_preregistration_2026-07-31.md`。
+
+结论摘要：**AWGN 下不存在条件尾部风险**（`median−p10 ≤ 0.11 dB`，信道方差占比 `≤0.001`）；Rayleigh block fading 下尾部很大（1 dB 处 `median−p10 = 10.06 dB`）但主因是"纯 AWGN 训练模型 + 从未见过的衰落"与有效 SNR 跌出条件嵌入训练范围，而非均值目标掩盖风险。判定 `NO-GO`，未启动 CVaR 训练。
+
+代码：`src/cadsd_jscc/tail_risk.py`（经验 CVaR + block-fading Rayleigh + ZF 均衡）、三个 `scripts/cvar_p0_*.py`、`configs/cvar_p0_tail_risk_diagnostic.yaml`、`tests/test_tail_risk.py`。既有信道/训练/评测代码零改动。
+
+```bash
+# 环境检查
+python3 -c "import torch; print(torch.__version__); print(torch.cuda.get_device_name())"
+
+# 单元测试（新增 18 项 / 全仓 140 项）
+PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_tail_risk.py' -v
+PYTHONPATH=src python3 -m unittest discover -s tests
+
+# dry-run：4 图 × 4 realization × 2 SNR × 4 arm = 128 行
+python3 scripts/cvar_p0_diagnose_tail_risk.py --dry-run
+
+# 正式诊断：200 图 × 64 realization × 5 SNR × 4 arm = 256,000 行，约 10 分钟（RTX 4090 D）
+python3 scripts/cvar_p0_diagnose_tail_risk.py
+
+# 尾部统计、7 张图与 GO/NO-GO 判定
+python3 scripts/cvar_p0_analyze_tail_risk.py
+
+# 40 组最差重建案例（含重放校验）
+python3 scripts/cvar_p0_export_worst_cases.py
+```
+
+输出目录 `outputs/analysis/ANALYSIS-CVAR-P0-TAIL-RISK-001/`：`diagnostic_samples.csv`（逐样本）、`diagnostic_summary.csv`（逐 arm×SNR）、`per_image_tail_stats.csv`（逐图条件尾部）、`variance_decomposition.csv`、`verdict.json`、`plots/`、`worst_examples/`。默认 `overwrite_forbidden: true`，重跑前需先移走旧目录。
+
+## CVaR 候选方向二（2026-07-31 正式结束，判定 END-CVAR）
+
+两阶段完成后方向终结。**P0 诊断判定 `NO-GO`**，**P1 matched mean-training 归因闭环判定 `END-CVAR`**，未训练任何 CVaR 模型。报告：[P0 预注册](reports/cvar_p0_tail_risk_preregistration_2026-07-31.md) / [P0 结果](reports/cvar_p0_tail_risk_result_2026-07-31.md) / [P1 预注册](reports/cvar_p1_rayleigh_matched_preregistration_2026-07-31.md) / [P1 结果](reports/cvar_p1_rayleigh_matched_result_2026-07-31.md)。
+
+结论链：**AWGN 下不存在条件尾部风险**（`median−p10 ≤ 0.11 dB`，信道方差占比 `≤0.001`）→ Rayleigh 下尾部很大但 S33B 存在两重分布外（没见过衰落、有效 SNR 跌出条件嵌入范围）→ **匹配均值训练后平均 `+3.8~5.6 dB`、尾部差最多缩小 `3.80 dB`、outage 降 `2.4~16×`，且残余尾部的信道方差占比降到 `0.55/0.50/0.44/0.29`，图像内容难度已追平信道随机性** → 逐图 CVaR 无从发力，方向结束。两个独立 seed 一致。
+
+副产物 `EXP-CVAR-P1-RAYLEIGH-MATCHED-MEAN-001`（聚合 `28.47 dB`，SHA `4a520284…`）是合格的 Rayleigh block-fading 基线，即任务书要求的 `Repeated-fading mean control`；但 Rayleigh 按 `MILESTONES.md` 仍属 AWGN 最小闭环之后的扩展项，**不自动进入主线**，未做语义评估。
+
+代码：`src/cadsd_jscc/tail_risk.py`（经验 CVaR + block-fading Rayleigh + ZF 均衡，支持逐样本 SNR）、`scripts/cvar_p0_*.py`、`scripts/cvar_p1_*.py`、`configs/cvar_p0_*.yaml`、`configs/cvar_p1_*.yaml`、`tests/test_tail_risk.py`。既有信道/训练/评测代码零改动。
+
+```bash
+# 环境检查
+python3 -c "import torch; print(torch.__version__); print(torch.cuda.get_device_name())"
+
+# 单元测试（tail_risk 20 项 / 全仓 142 项）
+PYTHONPATH=src python3 -m unittest discover -s tests
+
+# --- P0：冻结 S33B 上的条件尾部诊断 ---
+python3 scripts/cvar_p0_diagnose_tail_risk.py --dry-run        # 128 行
+python3 scripts/cvar_p0_diagnose_tail_risk.py                  # 256,000 行，约 10 分钟
+python3 scripts/cvar_p0_analyze_tail_risk.py                   # 统计 + 7 图 + verdict
+python3 scripts/cvar_p0_export_worst_cases.py                  # 40 组最差案例
+
+# --- P1：Rayleigh matched mean-training 归因闭环 ---
+python3 scripts/cvar_p1_train_rayleigh_matched.py --dry-run    # FakeData smoke
+python3 scripts/cvar_p1_train_rayleigh_matched.py              # 6 epoch，约 92 分钟
+python3 scripts/cvar_p0_diagnose_tail_risk.py --config configs/cvar_p1_matched_tail_risk_diagnostic.yaml
+python3 scripts/cvar_p0_analyze_tail_risk.py  --config configs/cvar_p1_matched_tail_risk_diagnostic.yaml
+python3 scripts/cvar_p1_attribution_verdict.py                 # INCONCLUSIVE / END-CVAR / ENTER-CVAR
+
+# 独立 seed 复现
+python3 scripts/cvar_p0_diagnose_tail_risk.py --config configs/cvar_p1_matched_tail_risk_seed_replication.yaml
+python3 scripts/cvar_p0_analyze_tail_risk.py  --config configs/cvar_p1_matched_tail_risk_seed_replication.yaml
+python3 scripts/cvar_p1_attribution_verdict.py \
+  --matched-directory outputs/analysis/ANALYSIS-CVAR-P1-MATCHED-TAIL-RISK-002-SEED20260802
+```
+
+输出目录：`outputs/analysis/ANALYSIS-CVAR-P0-TAIL-RISK-001/`、`ANALYSIS-CVAR-P1-MATCHED-TAIL-RISK-001/`、`-002-SEED20260802/`，各含 `diagnostic_samples.csv`、`diagnostic_summary.csv`、`per_image_tail_stats.csv`、`variance_decomposition.csv`、`verdict.json`、`plots/`、`worst_examples/`；训练输出 `outputs/train/EXP-CVAR-P1-RAYLEIGH-MATCHED-MEAN-001/`。默认 `overwrite_forbidden: true`。
+
+注意两点复现细节：诊断的 `realization_chunk` 影响**行顺序**且带 `~1e-3 dB` 的 GPU kernel 非确定性（P0 用 32、P1 用 8），跨运行比较必须按 `(arm, image_id, snr_db, realization_id)` 键而非按行位置；显存紧张时下调 `realization_chunk` 是安全的。
+
+## RDD-P0：重建分布偏移分析（2026-07-30 完成）
+
+纯分析实验，回答"现有方法的重建分布是否可识别地偏离源分布、并偏向各自的生成先验"。不训练、不下载、不访问 official validation；SGD 只做分布分析，不做质量胜负。
+
+分五个阶段顺序执行，`outputs/analysis/ANALYSIS-RDD-P0-DISTRIBUTION-SHIFT-001/` 为唯一输出目录（stage 1 对非空目录 fail-closed，不覆盖既有实验）：
+
+```bash
+# 1. 从既有 montage 无损裁出 author_jscc / diffjscc / sgd_jscc 三臂 + 共享源图（带 PSNR 验证门）
+python3 scripts/rdd_p0_build_arms.py
+
+# 1b. 冻结 S33 精确重放（复用既有 canonical-noise 契约，逐图核对历史 PSNR，误差>1e-5 即中止）
+python3 scripts/rdd_p0_replay_s33.py
+
+# 2. 参考分布：blur 四档 / resample_512 / jpeg 两档
+python3 scripts/rdd_p0_build_references.py
+
+# 2b. 生成先验代理（SD 2.1 与 SGD 各自 VAE 往返）。主环境缺 pytorch_lightning，必须用 .venv-sgdjscc
+.venv-sgdjscc/bin/python scripts/rdd_p0_build_vae_references.py
+
+# 3. FID/KID 矩阵（4 臂 × 5 SNR × 10 参考）+ 参考三角 + criterion-2 命中
+python3 scripts/rdd_p0_distribution_metrics.py
+
+# 4. 指纹分类器 + C1/C2/C3 伪影控制 + 频段归因
+python3 scripts/rdd_p0_fingerprint.py
+
+# 5. CLIC-428 判别式补充（高功效 criterion-2 检验）
+python3 scripts/rdd_p0_clic_complement.py
+```
+
+注意事项：
+
+- `cleanfid` 会尝试联网下载 Inception 权重。本项目使用 A0 已冻结的本地副本，需软链接到 cleanfid 查找路径（Linux 下为 `/tmp`）：
+  `ln -sf paper_idea1b/data/metric_weights/inception-2015-12-05.pt /tmp/inception-2015-12-05.pt`
+- KID 为主指标、FID 必报：共享总体每 (method,SNR) 单元 n=192，2048 维协方差秩亏使 FID 正偏。
+- 预注册：`reports/rdd_p0_distribution_shift_preregistration_2026-07-30.md`；配置：`configs/rdd_p0_distribution_shift.yaml`；结果：`reports/rdd_p0_distribution_shift_result_2026-07-30.md`。
+
+## paper_idea1b：Kodak / CLIC 主 benchmark 工作区
+
+本篇论文的新数据、配置、脚本和输出统一放在 `paper_idea1b/`。它通过 `PYTHONPATH=src` 复用共享实现，并按原路径引用冻结 S33 checkpoint、canonical noise、S34D结果；这些旧资产没有被移动或复制。
+
+Gate A0 与 A1 判别式主表均已完成：Kodak 24张×5 SNR×3 seeds、CLIC2020 test 428张×5 SNR×1 seed，以及PSNR/MS-SSIM/LPIPS/DISTS/CLIP/FID/KID均已闭合。S33/Swin使用相同固定tile、逐图actual CBR和canonical noise；Kodak为`1/24`，CLIC因共同padding为`0.041667–0.063210`。A1结论是S33没有战胜Swin：Kodak仅对Base-SA的PSNR追平/非劣，对CM-SA劣于；CLIC对两条Swin臂五档均劣于。完整结果见`paper_idea1b/A1_DISCRIMINATIVE_RESULT.md`。
+
+大图不强制跨方法共同tile：尚未执行的DiffJSCC A2仍应保持官方整图入口，SGD保持作者patch入口；公平性由实际发送符号、padding/overlap和sender-side side information账本约束。下列为已完成A0的历史命令：
+
+```bash
+# 历史A0下载命令；已完成，下载器显式清空proxy并走服务器直连。
+bash paper_idea1b/scripts/download_gate_a0_data.sh
+
+PYTHONPATH=src python3 paper_idea1b/scripts/prepare_gate_a0.py \
+  --config paper_idea1b/configs/gate_a0_benchmark_setup.yaml
+
+PYTHONPATH=src python3 paper_idea1b/scripts/metric_identity_sanity.py \
+  --config paper_idea1b/configs/gate_a0_benchmark_setup.yaml --device cuda:0
+```
+
+完成事实和失败判据修订记录见 `paper_idea1b/PROGRESS.md`；A0/A1正式输出分别见 `paper_idea1b/outputs/GATE-A0-BENCHMARK-SETUP-001/` 与 `paper_idea1b/outputs/ANALYSIS-IDEA1B-A1-DISCRIMINATIVE-001/`。已完成输出不可覆盖；A2、refiner训练与official validation仍需另行授权。
+
+## S35R 新主线：轻量 receiver-side generative refiner
+
+下一阶段主线已改为“代价—质量—可靠性公平刻画 + 轻量接收端生成式精修”。永久冻结 S33 `16,384-real` backbone，在 decoder RGB 后增加一个只读取重建图与归一化 SNR 的几百万参数 residual U-Net；它不发送额外符号，不使用文本或外部生成大模型。训练采用 LPIPS、轻 MSE、小 PatchGAN 和 S33-anchor L1，是否继续由冻结960键上的 LPIPS/PSNR/semantic-failure 三重 gate决定。
+
+P0 SGD adaptive-cost 已完成：五档 SNR 都执行50次 denoiser，端到端约 `2.044–2.045 s/图`，没有随好信道下降；BLIP2+MuGE 是当前 released pipeline 约 `1.070 s/图` 的固定地板。`alpha_bar_channel` 改的是 continuous trajectory endpoint，而不是 solver evaluation 数。结果见 `reports/s35r_p0_sgd_adaptive_cost_result_2026-07-23.md`。
+
+P1 目前只完成预注册，smoke 与训练都不得启动。合同见 `configs/s35r_p1_light_receiver_refiner_probe.yaml` 与 `reports/s35r_p1_light_receiver_refiner_preregistration_2026-07-23.md`。official Imagenette validation 继续封存。
+
+P0 派生测量命令（正式输出已经存在，禁止覆盖）：
+
+```bash
+python3 scripts/s35r_p0_sgd_adaptive_cost.py
+```
+
+原 S34C 严格总码率公平生成式重训已由用户在任何执行前暂停：DiffJSCC 用官方两阶段代码重训技术上可行，SGD 因官方未发布 trainer 只能 approximate，但 14–29 天工期、unequal compute 与尽快投稿冲突。保留合同见 `configs/s34c_fair_generative_reproduction_preregistration.yaml`。
+
+S34C-Lite 已完成：只读复用 S33/S30/S20/S28 各 960 行，制作真实码率、发送端 side-info、接收端外部先验、训练/算力和 PSNR/MS-SSIM/LPIPS/failure 的透明表。结论为 S33 与 DiffJSCC 在相同 `16,384 real` 下构成 fidelity–perception Pareto；SGD 最低总量 `21,856 real`（+33.40%）且使用完美 captions，只作 non-ranking paper upper。现有共同结果没有 FID/KID，必须显式写为证据缺口；official Imagenette validation 继续封存。完整结果见 `reports/s34c_lite_rate_transparency_result_2026-07-23.md`，正式输出见 `outputs/analysis/ANALYSIS-S34C-LITE-RATE-TRANSPARENCY-001/`。
+
+历史执行命令如下；正式输出已经存在，禁止覆盖：
+
+```bash
+python3 scripts/s34c_lite_rate_transparency.py
+```
+
+## S34D 生成式 JSCC 推理代价
+
+同一 RTX 4090D、batch=1、同一 256×256 主存入口的纯测量已完成。模型加载、磁盘 I/O 和指标不计入 steady-state；方法内部 resize/patch、BLIP2、edge/text conditioning、全部 denoiser evaluations、VAE 编解码、color fix 与数据传回均计入。DiffJSCC `100/50/25/10/4` 步延迟为 `5089.7/2676.2/1458.5/726.3/433.6 ms`；最低仍显著保持相对 S33 LPIPS 优势的是 25 步。为排除框架版本偏差，S33 在共同 PyTorch 2.1 runtime 下为 `8.833 ms`，故公平保守 slowdown=`165.1×`；profiler 支持算子的 FLOPs 下界为 `472×`。
+
+25 步的 semantic failure `14/320` 显著高于 S33 的 `4/320`，所以这是感知最低点，不是语义安全点。50 步=`2.676s/303×` 的 failure 差 CI 跨零，但没有预注册非劣 margin。SGD 50-step paper upper=`2.045s/231.5×`，仍不参与质量排名。完整组件、参数与“固有/可优化”边界见 `reports/s34d_generative_inference_cost_result_2026-07-23.md`。
+
+历史执行命令如下；输出均已存在，禁止覆盖：
+
+```bash
+python3 scripts/s34d_measure_s33_cost.py
+.venv-sgdjscc/bin/python scripts/s34d_measure_diffjscc_cost_quality.py --preflight
+.venv-sgdjscc/bin/python scripts/s34d_measure_diffjscc_cost_quality.py
+.venv-sgdjscc/bin/python scripts/s34d_measure_sgd_cost.py --preflight
+.venv-sgdjscc/bin/python scripts/s34d_measure_sgd_cost.py
+.venv-sgdjscc/bin/python scripts/s34d_measure_s33_cost.py \
+  --output-dir outputs/analysis/ANALYSIS-S34D-GENERATIVE-INFERENCE-COST-001/s33_torch21_sensitivity
+python3 scripts/s34d_aggregate_inference_cost.py
+python3 scripts/s34d_common_runtime_post_analysis.py
+python3 scripts/s34d_semantic_failure_post_analysis.py
+```
 
 ## S31/S31b/S32 强 JSCC 基座（阶段完成）
 
@@ -88,13 +270,13 @@ PYTHONPATH=src python3 scripts/s33_equal_rate_post_analysis.py
 
 严格等码率 policy-dev 结果为 strong−author PSNR `+0.479929 dB`，source-image cluster 95% CI `[+0.370006,+0.598197]`，按预注册规则显著超过；聚合 MS-SSIM/LPIPS/failure 也显著有利。13/19 dB 感知边界和非最终测试限定见 `reports/strong_jscc_16384_equal_rate_stage_result_2026-07-21.md`。本轮没有启动 S34 消融、S35 diffusion 或 S36 official validation。
 
-## S34A SwinJSCC 公平对比（equal-budget 双臂执行中）
+## S34A SwinJSCC 公平对比（equal-budget 已完成，extension 待决定）
 
 官方 `semcomm/SwinJSCC@a6d0e6d...90f` 源码已固定，第三方源码不修改；项目侧 `src/cadsd_jscc/swinjscc_adapter.py` 负责逐图 SNR、逐图功率和 canonical paired-real AWGN。已确认 official Base-SA `28.18M` 与 capacity-matched CM-SA `31.35M` 双臂，二者均原生输出 `16,384 real`。真实 COCO microbatch=8 的单步 smoke 已通过，峰值 reserved VRAM 为 `9.75/10.40 GiB`；正式训练使用 microbatch=8、gradient accumulation=4 保持 effective batch=32。
 
-本轮只授权两臂各 12 epochs，并在同一固定 COCO val512 上检查 epoch 9--12 收敛曲线。训练器对 epoch 12 设硬上限，extension 无论 gate 是否触发都不会自动运行；official Imagenette validation 继续封存。
+本轮只授权两臂各 12 epochs，并在同一固定 COCO val512 上检查 epoch 9--12 收敛曲线。两臂现均完成 12/12 且都触发未明确收敛 gate；训练器在 epoch12 硬停止，extension 尚未授权，official Imagenette validation 继续封存。
 
-12-epoch equal-budget 与充分训练结论分开：先按 S33 的 FP32 4+8 epoch 合同训练双臂，再依据预注册 epoch 9--12 val-PSNR slope gate 决定是否为每个仍明显上升的架构增加 extension。完整判据见 `reports/swinjscc_equal_rate_comparison_preregistration_2026-07-22.md`。当前正式训练 gate 仍关闭，official Imagenette validation 继续封存。
+equal-budget policy-dev 结果：S33−Base PSNR=`+0.173947 dB`，95% CI=`[+0.078178,+0.265733]`，显著超过；S33−CM=`−0.065902 dB`，CI=`[−0.168886,+0.025307]`，未通过 `0.10 dB` 非劣 gate。CM 的 MS-SSIM/LPIPS 显著更好，S33 的观测 failure 更低，因此保守总 verdict 为 Pareto。完整中文结果见 `reports/swinjscc_equal_budget_stage_result_2026-07-22.md`；充分训练结论须等待用户另行授权 extension。
 
 历史 smoke 命令如下；输出已经存在，禁止覆盖：
 
@@ -112,6 +294,63 @@ PYTHONPATH=src python3 scripts/s34a_swinjscc_smoke.py \
   --arm official_base_sa --device cuda:0
 .venv-sgdjscc/bin/python scripts/s34a_train_swinjscc_equal_budget.py \
   --arm capacity_matched_sa --device cuda:0
+```
+
+冻结 equal-budget 评估历史命令如下；当前输出已经完成，禁止无新 analysis ID 直接重跑或覆盖：
+
+```bash
+.venv-sgdjscc/bin/python scripts/s34a_evaluate_swinjscc_equal_budget.py \
+  --config configs/s34a_swinjscc_equal_budget_evaluation.yaml \
+  --device cuda:0 --preflight
+
+.venv-sgdjscc/bin/python scripts/s34a_evaluate_swinjscc_equal_budget.py \
+  --config configs/s34a_swinjscc_equal_budget_evaluation.yaml \
+  --device cuda:0 --resume
+```
+
+## SGD-JSCC / S33 top-LPIPS 语义人工核查
+
+`ANALYSIS-TOP-LPIPS-SEMANTIC-VISUAL-AUDIT-004` 从两种方法各自已有 960 条 policy-dev 记录中，按 LPIPS 升序且 source 去重选择 15 张，生成 `[原图 | 重建]` 对照图。SGD 直接裁已有正式 montage；S33 只对入选键使用冻结 checkpoint 和 canonical noise 做推理重放，不训练、不调参、不访问 official val。有效结果中 S33 历史 PSNR 重放最大误差为 `0.0 dB`。人工标签采用绿色 faithful、橙色 minor structure/text change、红色 semantic mismatch；本次两种方法均无红色样本。完整边界见 `reports/top_lpips_semantic_visual_audit_2026-07-23.md`。
+
+历史执行方式如下。输出目录已存在，禁止覆盖；如需新审计必须修改 config 的 analysis ID 和输出路径。`prepare` 必须使用 S33 历史所用的系统 Python/PyTorch 环境，不能使用 SGD 的 PyTorch 2.1 虚拟环境：
+
+```bash
+python3 scripts/top_lpips_semantic_visual_audit.py \
+  --config configs/top_lpips_semantic_visual_audit.yaml \
+  --stage prepare --device cuda:0
+
+# 人工填写输出目录中的 manual_review.json 后：
+python3 scripts/top_lpips_semantic_visual_audit.py \
+  --config configs/top_lpips_semantic_visual_audit.yaml \
+  --stage finalize
+```
+
+## 低 SNR 语义漂移定向审计
+
+`ANALYSIS-LOW-SNR-SEMANTIC-DRIFT-AUDIT-003` 只在 1 dB 的 192 个冻结键中，以“LPIPS 尚可但 T_cls / 三个跨模型分类器 / CLIP 异常”为召回条件，source 去重选择 15 张，生成 `[原图 | S33 pure JSCC | SGD diffusion]` 三列图。人工结果：S33 `8 faithful / 7 重建失败 / 0 清晰但错`，SGD `15/0/0`。S33 历史 PSNR 重放最大误差 `0.0 dB`，没有训练或 official val 访问。
+
+`ANALYSIS-LOW-SNR-OUT-OF-RANGE-STRESS-001` 固定同一 15 张 source，在 −3/−5 dB 和共同 base seed 下重放，不根据压力结果二次选样本。S33 在 −3/−5 dB 分别有 14/15 个显式重建失败，SGD paper-upper 没有观察到 clear-wrong，但部分图有 patch 接缝。该压力结果不作公平排名：SGD 使用作者权重、额外 edge 码率和免费完美 captions。完整解释见 `reports/low_snr_semantic_drift_visual_audit_2026-07-23.md`。
+
+历史执行命令如下；输出目录均已存在，禁止覆盖。1 dB `prepare` 必须使用 S33 的系统 Python/PyTorch 环境：
+
+```bash
+python3 scripts/low_snr_semantic_drift_visual_audit.py \
+  --config configs/low_snr_semantic_drift_visual_audit.yaml \
+  --stage prepare --device cuda:0
+
+# 填写 1 dB 输出目录的 manual_review.json 后：
+python3 scripts/low_snr_semantic_drift_visual_audit.py \
+  --config configs/low_snr_semantic_drift_visual_audit.yaml \
+  --stage finalize
+
+python3 scripts/low_snr_out_of_range_stress.py --stage prepare-s33 --device cuda:0
+.venv-sgdjscc/bin/python scripts/external_sgdjscc_common_pilot.py \
+  --config outputs/analysis/ANALYSIS-LOW-SNR-OUT-OF-RANGE-STRESS-001/sgd_configs/sgd_stress_resolved.yaml \
+  --run
+python3 scripts/low_snr_out_of_range_stress.py --stage assemble
+
+# 填写 stress 输出目录的 manual_review.json 后：
+python3 scripts/low_snr_out_of_range_stress.py --stage finalize
 ```
 
 ## 最新 S30 官方 DiffJSCC 完整对比
