@@ -365,3 +365,93 @@ S30 完整 960 行复现随后给出两个方向性结论。第一，作者 Deep
 另一个关键是，发送端用的就是同一 VAE/diffusion 系统的潜变量，接收潜变量可以直接作为 diffusion 初态。这与本项目当前“DeepJSCC 专用信道 latent → B1 图像 → image-space residual bridge”不同；仅把 SNR 输入现有 refiner 不会自动建立 channel state 与 diffusion state 的对齐。这为 `EXP-S16-DIFF-001` 在五个 SNR 全部过修复提供了一个更直接的机制解释：该负结果否定当前 residual bridge，不否定物理匹配的 latent diffusion。
 
 迁移到本项目时不能直接照搬 `gamma/(gamma+1)`。本项目定义 `gamma=Es/N0` 每复信道使用，每个实坐标噪声方差为 `P/(2*gamma)`。若对实值 diffusion latent 逐坐标匹配，应为 `alpha_bar_channel=2*gamma/(2*gamma+1)`；只有把 SNR 重定义为每实维 SNR，或构造成对的复值 diffusion 过程时，才会回到作者公式。后续值得预注册的方法不是扫描更多 image-space diffusion strength，而是在 exact-rate JSCC latent 上训练 channel-state-matched score/denoiser，从匹配 `t*` 反演，在活动坐标加入逐步 measurement consistency，并继续使用预算内语义载荷和 hard new-error/tail-risk 门槛。文本和结构条件只能缩小反演解空间，不保证条件本身真实；本仓库已观察到 caption CRC 全通过但 sender BLIP2 仍可将 dog 写成 cat，因此 semantic reliability 不能被 packet reliability 替代。
+
+## fail-soft semantic HDA 新颖性扫描：2026-08-06
+
+本轮只做文献检索与正文核对，没有运行训练、推理、评测或下载模型/数据，没有访问封存的 official Imagenette validation。不改变 `2026-08-03 ENGINEERING_STOP`。
+
+核实等级：【全文核实】= 本机已抽取正文并检索；【用户核实】= 用户自行取回正文核对；【子代理报告】= 未经独立复核。
+
+### 三轴判定
+
+| 轴 | 判定 | 等级 |
+|---|---|---|
+| (a) 模拟基座 + 数字增强分层 | 概念层已被占据（SVZ 1998） | 【全文核实】 |
+| (b) 接收端 CRC/LLR 门控丢弃 + 模拟安全回退 | 未被占据，且有架构层机制解释 | 【用户核实】 |
+| (c) 数字失败子总体的失败条件评测 | 未被占据 | 【全文核实】 |
+
+### axis (a)：SVZ 1998 占概念层
+
+【全文核实】Shamai, Verdú, Zamir, "Systematic Lossy Source/Channel Coding," IEEE T-IT 44, pp. 564–579, Mar. 1998, DOI `10.1109/18.661505`（读 1997-06-22 accepted preprint）。原文定义：
+
+> By extension, we call systematic those source/channel codes which transmit the raw uncoded source in addition to the encoded version.
+
+原文已把 graceful degradation 写成卖点，模拟支路按构造可独立解码（动机是兼容遗留模拟广播接收机）。它没有的那一环：
+
+> We will assume that channel D is noiseless... for otherwise, conventional channel codes can be employed to convey the output of the source encoder to the receiver with arbitrary reliability.
+
+对外措辞：不得写「反向 HDA 分层是新的」。应引 SVZ 1998 作理论锚点，本工作定位为其深度 JSCC 实例化，加上补齐该假设失效时所需的机制。
+
+### axis (b)：门控丢弃在叠加式 HDA 中不可用
+
+【全文核实】Soft Delivery 综述（arXiv `2111.08189`，抽取文本 `softdeliv.txt` L1721）：
+
+> At the receiver side, it first decodes the digital-modulated symbols and then obtains the analog-modulated symbols by subtracting the digital-modulated symbols from the received symbols.
+
+经典 HDA 数字与模拟符号叠加，接收端须先解出并减去数字符号才能读模拟残差。数字块失败会同时污染模拟支路。因此「丢弃数字、回退纯模拟」不是没人实现，而是架构上不可用。独立可解码的模拟基座是该机制成立的前置条件。
+
+【用户核实】用户自行取回三篇正文并核对接收端框图，Q3（有无「检测数字失败 → 丢弃 → 回退纯模拟」）全部为否，其中两篇明确声明数字部分无差错：
+
+- SharpCast，IEEE TMM 17(9):1658–1670, 2015，§III-A：「By using a robust digital modulation and coding scheme, we can ensure that the digital parts are received error-free.」
+- SK-Cast，IEEE TMM 2017/18，§III-A.1：「Our design criterion is that the digital bits can be decoded with extremely high probability when CSNR is larger than 5 dB.」
+- DAC-Mobi，IEEE TMM 2016，§III-C：数字 MSB 与模拟 LSB 无条件进入同一低频系数合成流程，无 CRC 门控，也无仅靠 LSB 的恢复路径。
+
+这不是空白，而是一条从 SVZ 1998 延续到 2015/2018 IEEE TMM 的承重假设。论文形态上比空白好用：只需引三篇原文说明它们都以数字无差错为前提，而该前提在深衰落下不成立。SK-Cast 给出的 5 dB 等于自承该门槛以下方案未定义。
+
+数字失败时的既有处理方式，四种，无一为丢弃：重传（HDA-DASH, IEEE Access 2020）、时域错误隐藏（3D-HDA, IEEE Access 2020）、功率重优化（ARDE-HDA, IEEE T-CSVT 2018）、云端相关图像检索补全（DAC-Mobi）。前三条为【子代理报告】，第四条为【用户核实】。
+
+### 谱系的单一不变量
+
+各篇分层轴互不相同：结构/内容（SharpCast）、基础层/残差（SK-Cast）、比特平面（DAC-Mobi）、频率（A-HDAVT）、essential/residual（HDA-DeepSC）、基础层/量化误差（Yahampath）。但走数字的永远是更重要的成分。
+
+因此贡献应表述为倒置该不变量，而不是「频率分配的镜像」：现有 HDA 一律把重要成分放数字以求精确，代价是硬失效；本候选把重要成分放模拟（软失效），数字只承载可丢弃的增强，并在接收端做门控丢弃。倒置的理由不是更准，是换失效模式。
+
+### 「模拟残差引导数字重建」变体已有 2015 T-IT 占位者
+
+【全文核实】Köken & Tuncel, IEEE T-IT 2015（抽取文本 `koken15_it.txt` L127–129）：
+
+> ...sending the source uncoded from the first n/N uses and dedicating the remaining uses for the Wyner-Ziv coding by treating the received signal of uncoded transmission as side information (SI).
+
+并把该做法归给 Prabhakaran et al. [9] 与 Shamai et al. [11]。同文件检索 `residual` 0 命中、`superimpos` 0 命中、`uncoded` 14 命中。
+
+因此「用模拟支路作为数字译码的接收端边信息」在经典线性 HDA 中已是既有内容，谱系更早。该变体只能写成 Köken/Shamai 的 Wyner-Ziv 边信息在深度 JSCC 上的实例化加所设计机制，不得写成「我们提出用模拟支路辅助数字译码」。与 SVZ 1998 对 axis (a) 的关系同型：老理论占概念，深度实例化仍空着。
+
+### axis (c)：失败条件评测
+
+整个 lineage 报告 mean PSNR 或 SNR 阈值，无 p10/outage/CVaR 分条件统计。
+
+【全文核实】Yahampath, Signal Processing: Image Communication, 2020（HDA video over OFDM, imperfect CSI）是唯一同时含 Rayleigh 与明确 imperfect CSI 的 HDA 视频先例，方向为数字基座加模拟精化，鲁棒性全靠发送端 CSI-噪声感知功率分配，接收端无门控：
+
+> most of the OFDM packets were undecodable, and consequently no video output was produced by the H264/AVC decoder
+
+可作 axis (c) 的动机引用。本仓 CVaR-P0 已实测 AWGN 上几乎无条件尾部（median−p10 ≤ 0.11 dB），故「必须在 fading 上评测」有自有实测支撑，不只靠文献。
+
+### 关键零命中
+
+【全文核实】arXiv：`all:"fail-soft" AND all:"semantic communication"` = 0；`abs:"outage" AND abs:"deep joint source-channel coding"` = 0；`abs:"analog base layer"` = 0；`abs:"digital enhancement layer"` = 0；`abs:"hybrid digital-analog" AND abs:"imperfect CSI"` = 0；`abs:"multiple description" AND abs:"deep joint source-channel"` = 0。
+
+【全文核实】OpenAlex `filter=title_and_abstract.search:`：`"hybrid digital-analog" AND "semantic communication"` = 2（均为 HDA-DeepSC 本身）；`"analog base" AND "digital enhancement"` = 0；`"semantic communication" AND "fallback"` = 3（均无关）。
+
+零命中只说明没有论文把该事当作摘要级卖点，不等于没人做过。无 arXiv 版的纯 IEEE 期刊是主要盲区，本仓已有 CD3M 一例实证。
+
+### 措辞纪律
+
+不能说：「反向 HDA 分层是新的」（SVZ 1998 已占）；「用模拟支路辅助数字译码是新的」（Köken & Tuncel 2015 已占）；「fail-soft HDA 在文献中不存在」（只能说无摘要级卖点）；「MD-HDA 是更强备选」（Zong et al., DCC 2019 的 Meta-Free SoftCast via MDC 已使 MDC 成为该失效模式的既有答案）；「HDA 能补齐本仓对 SwinJSCC 的质量差距」（HDA-DeepSC 图 7 显示 DA 比例越大 PSNR/MS-SSIM 越低，最优点在纯模拟端）。
+
+### 引用更正
+
+【已核实】本轮曾记录一条「DeepFM, IEEE Comm. Letters 2025，模拟 FM 基座加数字语义增强加 RSSI-aware fusion」并列为最高优先级待核项。该引用无法证实，几乎确定为虚构，已撤回。真实 DeepFM 为 Guo et al., IJCAI 2017（arXiv `1703.04247`），CTR 预测模型，与语义通信无关。成因是转述子代理报告中明确标注「未经核实」的条目而未独立核实。纪律：子代理报告中标注未核实的条目，在独立核实前不得进入待核清单。
+
+### 本节可靠性声明
+
+本节由 AI 助手起草。同一会话中该助手四次生成未经工具验证的内容：一条虚构引用（上述 DeepFM）、一段虚构的 CD3M 检索结果、两次虚构的文件写入与 git 操作报告。因此标为【子代理报告】的条目未经独立复核；标为【全文核实】的条目对应本机 `Desktop/scan_archive_2026-08-06/extracted_texts/` 下的抽取文本，可自行复检行号与引语。入库前建议抽查。
