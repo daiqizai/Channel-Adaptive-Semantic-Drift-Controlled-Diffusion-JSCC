@@ -146,7 +146,12 @@ def load_population(config: dict[str, Any]) -> tuple[list[dict[str, Any]], list[
 
 
 def build_model(checkpoint: dict[str, Any], expected_arm: str) -> OfficialSwinJSCCSA:
-    if checkpoint["arm"] != expected_arm:
+    # The S34A training checkpoint format predates an explicit top-level arm
+    # field.  The frozen training summary already binds arm -> path -> SHA, and
+    # strict state-dict loading below independently checks the arm architecture.
+    # Keep validating the field for any newer checkpoint that does provide it.
+    checkpoint_arm = checkpoint.get("arm")
+    if checkpoint_arm is not None and checkpoint_arm != expected_arm:
         raise RuntimeError(f"checkpoint arm mismatch for {expected_arm}")
     if int(checkpoint["epoch_number_1based"]) > 12:
         raise RuntimeError("extension checkpoint is forbidden in equal-budget evaluation")
@@ -409,6 +414,28 @@ def main() -> None:
         shutil.copy2(SCRIPT, output / SCRIPT.name)
     elif sha256_file(output / "config_snapshot.yaml") != sha256_file(config_path):
         raise RuntimeError("resume config differs from output snapshot")
+    elif args.resume:
+        original_script = output / SCRIPT.name
+        original_script_sha256 = sha256_file(original_script)
+        resumed_script_sha256 = sha256_file(SCRIPT)
+        if original_script_sha256 != resumed_script_sha256:
+            resumed_script = output / (
+                f"{SCRIPT.stem}_resume_{resumed_script_sha256[:12]}{SCRIPT.suffix}"
+            )
+            shutil.copy2(SCRIPT, resumed_script)
+            write_json(
+                output / f"resume_event_{resumed_script_sha256[:12]}.json",
+                {
+                    "reason": "resume_after_fail_closed_evaluator_compatibility_fixes",
+                    "original_script": relative(original_script),
+                    "original_script_sha256": original_script_sha256,
+                    "resumed_script": relative(resumed_script),
+                    "resumed_script_sha256": resumed_script_sha256,
+                    "config_unchanged": True,
+                    "extension_checkpoint_used": False,
+                    "official_imagenette_validation_accessed": False,
+                },
+            )
 
     all_rows: list[dict[str, Any]] = []
     for arm_index, arm in enumerate(ARMS):
@@ -419,10 +446,11 @@ def main() -> None:
                 raise RuntimeError(f"incomplete saved arm CSV: {arm}")
             all_rows.extend(completed)
             continue
-        model = build_model(checkpoints[arm], arm).to(device).eval().requires_grad_(False)
+        model = build_model(checkpoints[arm], arm).to(device).eval()
         expected_parameters = int(config["models"][arm]["trainable_parameters"])
         if trainable_parameter_count(model) != expected_parameters or model.real_symbols != 16384:
             raise RuntimeError(f"model ledger mismatch for {arm}")
+        model.requires_grad_(False)
         arm_rows: list[dict[str, Any]] = []
         batch_size = int(config["runtime"]["batch_size"])
         for base_seed in map(int, config["population"]["channel_seeds"]):

@@ -1,0 +1,14 @@
+stage,population_contract,method,psnr_db,ms_ssim,lpips,semantic_failures,observations,latency_ms,real_symbols,status_note
+S20,Imagenette policy-dev 64x3x5,B1,28.12459,0.946697,0.159398,35,960,2.642,19712,旧保真锚点
+S20,Imagenette policy-dev 64x3x5,SGD paper upper,27.74037,0.952973,0.072101,25,960,2064.738,21856,non-ranking; 完美 caption; symbols为下界
+S27,COCO pristine 512x5,B1,27.323569,0.943408,0.188371,1561,2560,,19712,历史锚点
+S27,COCO pristine 512x5,routed fusion,27.416232,0.945718,0.180449,1517,2560,,19712,低SNR fusion，高SNR exact B1
+S33/S34C,Imagenette policy-dev 64x3x5,S33,30.466064,0.969708,0.119985,9,960,8.833,16384,共同runtime延迟
+S33,Imagenette policy-dev 64x3x5,author-JSCC,29.986135,0.963092,0.128342,22,960,,16384,S33显著超过
+S34C,Imagenette policy-dev 64x3x5,DiffJSCC-100,27.598398,0.940799,0.100223,23,960,5089.671,16384,exact-rate Pareto
+A1,Kodak 24x5x3,S33,29.207021,0.957358,0.206067,,360,,actual CBR=1/24,
+A1,Kodak 24x5x3,Swin Base-SA,29.159329,0.960928,0.19779,,360,,actual CBR=1/24,
+A1,Kodak 24x5x3,Swin CM-SA,29.407306,0.96251,0.186268,,360,,actual CBR=1/24,S33劣于此臂
+A1,CLIC2020 test 428x5x1,S33,32.1842,0.96745,0.215475,,2140,189.7,actual CBR 0.041667-0.063210,最大2048图延迟
+A1,CLIC2020 test 428x5x1,Swin Base-SA,32.4473,0.972799,0.163603,,2140,439.5,same as S33 per image,S33劣于
+A1,CLIC2020 test 428x5x1,Swin CM-SA,32.6751,0.974193,0.161385,,2140,464.4,same as S33 per image,S33劣于

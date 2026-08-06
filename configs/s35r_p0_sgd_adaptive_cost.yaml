@@ -1,0 +1,93 @@
+phase: S35R-P0-SGD-adaptive-cost
+analysis_id: ANALYSIS-S35R-P0-SGD-ADAPTIVE-COST-001
+status: completed_measurement
+created_at: "2026-07-23"
+
+scope:
+  measurement_only: true
+  new_training: false
+  network_download: false
+  existing_checkpoints_only: true
+  official_imagenette_validation_accessed: false
+  method_label: SGD-JSCC_released_weights_paper_protocol_upper
+  quality_ranking_allowed: false
+
+input_measurement:
+  source: outputs/analysis/ANALYSIS-S34D-GENERATIVE-INFERENCE-COST-001/sgd/latency_rows.csv
+  source_sha256: eed79813ae41d5fbf6289915a7d2ca931f4dbf6c76ddb9381a875a9c1db9a09d
+  rows: 80
+  source_images_per_snr: 16
+  snrs_db: [1, 4, 7, 13, 19]
+  same_source_images_at_every_snr: true
+  hardware: NVIDIA_GeForce_RTX_4090_D
+  gpu_uuid: GPU-e8c74486-e009-e254-2fb1-fbaea11d7f8a
+  torch_runtime: 2.1.0+cu121
+  batch_size_source_images: 1
+
+latency_contract:
+  start: 256x256_RGB_source_already_decoded_in_host_memory
+  end: 256x256_RGB_reconstruction_materialized_in_host_memory
+  includes:
+    - method_internal_patch_split_and_merge
+    - host_to_device_and_device_to_host_transfer
+    - main_and_edge_channel_forward
+    - receiver_BLIP2_caption
+    - MuGE_edge_extraction
+    - CLIP_text_conditioning
+    - every_executed_denoiser_evaluation
+    - every_executed_VAE_encode_and_decode
+  excludes:
+    - model_construction
+    - checkpoint_loading
+    - disk_image_read_and_output_write
+    - metric_models_and_metric_computation
+  statistics: [mean, median, p05, p95, standard_deviation]
+
+step_matching_audit:
+  canonical_awgn_real_noise_variance_factor: 0.5
+  gamma_definition: 10_pow_snr_db_over_10
+  alpha_bar_channel_formula: 2_times_gamma_over_2_times_gamma_plus_1
+  current_official_working_point:
+    step_style: continuous
+    diffusion_step_argument: 50
+  author_source:
+    inference: third_party/SGDJSCC/inference_one.py
+    inference_sha256: 0d20bb9f80f4a7654f0cf95c03c566dfb665c4a5362b551a3025f7fa19e00081
+    sampler: third_party/SGDJSCC/models/test_advanced_network/diffusion.py
+    sampler_sha256: 807e8c7734bfd59dd8c5d1114a15934ad63f9d2768f2ef0e94b97ccc56e8c053
+  count_definition:
+    scheduled_continuous_points: diffusion_step_argument
+    loop_denoiser_evaluations: scheduled_continuous_points_minus_1
+    final_denoiser_evaluation: 1
+    total_executed_denoiser_evaluations: scheduled_continuous_points
+  required_report:
+    - gamma
+    - alpha_bar_channel
+    - one_minus_alpha_bar_channel
+    - continuous_schedule_endpoint
+    - scheduled_points
+    - actual_denoiser_evaluations
+
+fixed_floor_audit:
+  components: [blip2_caption_ms, edge_extractor_ms]
+  structural_definition:
+    - executed_once_per_source_image_before_step_matching
+    - receives_no_diffusion_step_count
+    - not_skipped_at_any_preregistered_snr
+  empirical_report:
+    - per_snr_component_means
+    - per_snr_component_p05_p95
+    - combined_floor_mean
+    - max_minus_min_mean_across_snr
+  interpretation: structurally_fixed_for_released_pipeline_but_wall_time_has_runtime_jitter
+
+fairness_boundary:
+  sgd_main_plus_edge_real_symbols: 19712
+  minimum_with_unprotected_perfect_caption_accounting: 21856
+  caption_assumption: perfect_and_unmetered_as_in_paper
+  direct_quality_ranking_allowed: false
+
+outputs:
+  directory: outputs/analysis/ANALYSIS-S35R-P0-SGD-ADAPTIVE-COST-001
+  report: reports/s35r_p0_sgd_adaptive_cost_result_2026-07-23.md
+  overwrite_forbidden: true

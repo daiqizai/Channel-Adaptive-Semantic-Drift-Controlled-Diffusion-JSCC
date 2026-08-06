@@ -1,0 +1,118 @@
+phase: S34D-generative-inference-cost
+analysis_id: ANALYSIS-S34D-GENERATIVE-INFERENCE-COST-001
+status: completed_measurement
+created_at: "2026-07-23"
+
+protocol:
+  measurement_only: true
+  new_training: false
+  network_download: false
+  existing_checkpoints_only: true
+  official_imagenette_validation_accessed: false
+  claim_scope: known_policy_development_systems_measurement_not_final_quality_test
+
+hardware:
+  required_gpu_name: NVIDIA GeForce RTX 4090 D
+  required_gpu_uuid: GPU-e8c74486-e009-e254-2fb1-fbaea11d7f8a
+  device: cuda:0
+  batch_size_source_images: 1
+  precision: frozen_author_or_project_inference_precision
+  cudnn_benchmark: false
+
+latency_contract:
+  primary_name: receiver_wall_ms
+  start: 256x256_RGB_source_already_decoded_in_host_memory
+  end: 256x256_RGB_reconstruction_materialized_in_host_memory
+  includes:
+    - method_internal_resize_or_patch_split
+    - host_to_device_and_device_to_host_transfer
+    - channel_forward
+    - receiver_caption_generation_if_used
+    - text_conditioning_if_used
+    - edge_processing_if_used
+    - every_executed_diffusion_denoiser_evaluation
+    - every_executed_VAE_encode_and_decode
+    - color_correction_and_method_internal_output_resize
+  excludes:
+    - model_construction
+    - checkpoint_loading
+    - disk_image_read
+    - metric_models_and_metric_computation
+    - disk_output_write
+  secondary_name: synchronized_model_component_ms
+  cuda_synchronize_before_and_after_every_component: true
+  warmup_source_keys: 3
+  timed_source_images: 16
+  timed_snrs_db: [1, 4, 7, 13, 19]
+  timed_rows_per_method_or_step: 80
+  latency_source_selection: first_16_in_frozen_population_order
+  report_statistics: [mean, median, p05, p95, standard_deviation]
+
+quality_curve:
+  method: OfficialDiffJSCCOpenImageC16
+  sampling_steps: [100, 50, 25, 10, 4]
+  source_images: 64
+  channel_seeds: [20260748]
+  snrs_db: [1, 4, 7, 13, 19]
+  expected_rows_per_step: 320
+  sampler_seed_derivation: sha256_diffjscc_sampler_v1_base_seed_sample_id_snr
+  common_initial_rng_seed_across_step_counts: true
+  metrics: [PSNR, MS_SSIM, LPIPS, T_cls_failure]
+  bootstrap_unit: source_image
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260788
+  perception_advantage_reference: frozen_S33_same_320_keys
+  retained_perception_advantage_if:
+    metric: diffjscc_step_minus_S33_LPIPS
+    mean_lt: 0
+    two_sided_cluster_CI_high_lt: 0
+  quality_not_tuned_on_official_validation: true
+
+flops_contract:
+  tool: torch_profiler_with_flops
+  definition: counted_executed_FLOPs_for_supported_aten_conv_linear_mm_bmm_ops
+  multiply_add_counted_as: 2_FLOPs_where_profiler_supports_it
+  limitation: lower_bound_because_norm_activation_resize_sampling_and_some_custom_ops_are_not_counted
+  representative_snr_db: 7
+  representative_source: first_in_frozen_population_order
+  diffjscc_report_formula: fixed_frontend_plus_N_times_denoiser_step_plus_VAE_decode_and_color_fix
+  parameter_count:
+    exact_unique_live_parameters: true
+    split_by_component: true
+    pretrained_and_task_specific_both_included: true
+
+inputs:
+  population_reference: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/population/population_reference.yaml
+  population_reference_sha256: a08b0d3f3dead68919bea42a0a28c7854e998aea6173fe62d4669bd537ab393f
+  split_manifest: outputs/analysis/imagenette_scratch_classifiers/split_manifest.json
+  split_manifest_sha256: 0947c428a4ac03bd3907220c9305e5acceb564b95e91a6ffe0c658c132994a91
+  s33_config: configs/s33_strong_jscc_16384_external_comparison.yaml
+  s33_config_sha256: 70bb8f84e608b6e4f27ad49006107c29cd9c8529eb0f6a17c0b0c38e44b17b62
+  s33_checkpoint: outputs/train/EXP-S33B-STRONG-JSCC-16384-FP32-001/checkpoints/best.pt
+  s33_checkpoint_sha256: 2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb
+  s30_config: configs/s30_diffjscc_external_comparison.yaml
+  s30_config_sha256: ae7fc77e31897903b80a41b93b1a0596dbf11ab8acd3e491450130cb4c961ae3
+  s30_per_sample: outputs/external_baselines/ANALYSIS-S30-DIFFJSCC-COMPARISON-001/per_sample.csv
+  s30_per_sample_sha256: 549720b804df6cfd87a7035ba37be096b0cf8e683634ebb7f93feff47c49b6e2
+  sgd_seed_config: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/population/sgd_seed_20260748_resolved.yaml
+  sgd_seed_config_sha256: 5819d7848380a32022e1ae0d60ca1e71eded3529b856dd086403d58561ee0445
+
+fairness_boundaries:
+  same_source_resolution_at_entry: [3, 256, 256]
+  internal_resolution_is_method_native_and_must_be_reported: true
+  diffjscc_native_internal_resolution: [3, 512, 512]
+  sgd_native_internal_layout: four_patches_of_3x128x128
+  s33_native_internal_resolution: [3, 256, 256]
+  rates_remain_historical_not_equalized_by_this_measurement: true
+  s33_real_symbols: 16384
+  diffjscc_real_symbols: 16384
+  sgd_minimum_real_symbols_with_unprotected_caption_accounting: 21856
+  no_global_quality_winner_claim: true
+
+outputs:
+  root: outputs/analysis/ANALYSIS-S34D-GENERATIVE-INFERENCE-COST-001
+  s33: outputs/analysis/ANALYSIS-S34D-GENERATIVE-INFERENCE-COST-001/s33
+  diffjscc: outputs/analysis/ANALYSIS-S34D-GENERATIVE-INFERENCE-COST-001/diffjscc
+  sgd: outputs/analysis/ANALYSIS-S34D-GENERATIVE-INFERENCE-COST-001/sgd
+  report: reports/s34d_generative_inference_cost_result_2026-07-23.md
+  overwrite_forbidden: true

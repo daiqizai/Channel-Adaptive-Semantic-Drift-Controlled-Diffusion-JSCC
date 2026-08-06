@@ -1,0 +1,123 @@
+analysis_id: ANALYSIS-CVAR-P0-TAIL-RISK-001
+phase: CVaR-candidate-two-P0-conditional-tail-risk-diagnostic
+created_at: "2026-07-31"
+
+protocol:
+  purpose: conditional_channel_tail_risk_diagnosis_on_frozen_s33b
+  preregistration: reports/cvar_p0_tail_risk_preregistration_2026-07-31.md
+  no_training: true
+  no_checkpoint_selection: true
+  official_imagenette_validation_accessed: false
+  claim_scope: descriptive_diagnostic_gate_not_a_method_claim
+  # Deviations from 候选二_CVaR尾部风险JSCC_Codex实验任务书.md are recorded in the
+  # preregistration report; the three arms below are the main addition.
+
+inputs:
+  strong_checkpoint: outputs/train/EXP-S33B-STRONG-JSCC-16384-FP32-001/checkpoints/best.pt
+  strong_checkpoint_sha256: 2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb
+  coco_val_root: data/coco/val2017
+
+selection:
+  # Fresh 200 COCO val2017 images, disjoint from the 512-image subset that S33/S33B
+  # used for checkpoint selection.  Ranking is by content SHA256 so the set is
+  # reproducible without storing a manifest first.
+  source_count: 200
+  rank_by: content_sha256
+  exclude_s33_val_subset: true
+  s33_val_subset_size: 512
+  s33_val_subset_seed: 20260752
+  source_transform: torchvision_resize_256_then_center_crop_256
+
+diagnostic:
+  num_channel_realizations: 64
+  # Trained SNR grid of the frozen backbone.  The task book's [-2..10] grid is
+  # outside this model's training range; see preregistration for the rationale.
+  snrs_db: [1, 4, 7, 13, 19]
+  base_seed: 20260731
+  channel: rayleigh_block_fading_per_image
+  csi: receiver_known_h
+  equalization: zero_forcing
+  equalization_epsilon: 0.0
+  transmitter_knows_h: false
+  real_symbols: 16384
+
+arms:
+  # All three arms share one encoder pass and one standard-normal noise draw per
+  # (image, snr, realization), so they are exactly paired.  The AWGN control is
+  # the h=1 counterfactual of the very same realization.
+  - name: awgn_control
+    fading: false
+    decoder_snr: nominal
+    role: isolates_tail_that_exists_without_fading
+  - name: rayleigh_nominal_csi
+    fading: true
+    decoder_snr: nominal
+    role: naive_deployment_decoder_not_told_about_the_fade
+  - name: rayleigh_effective_csi
+    fading: true
+    decoder_snr: effective
+    role: fair_deployment_receiver_computes_post_equalization_snr
+  - name: rayleigh_effective_csi_clamped
+    fading: true
+    decoder_snr: effective_clamped
+    role: best_deployable_receiver_without_retraining_conditioning_kept_in_trained_range
+
+# The frozen backbone was trained on SNRs [1, 4, 7, 13, 19] only.  A deep fade
+# pushes the effective SNR far below 1 dB, so the `effective` arm drives the
+# conditioning embedding out of distribution as well.  The clamped arm keeps the
+# conditioning inside the trained range and is therefore the strongest receiver
+# that is available without retraining.
+decoder_snr_clamp_db: [1.0, 19.0]
+
+metrics:
+  primary_quantization: floor_uint8
+  quality: [MSE, PSNR, MS_SSIM, LPIPS]
+  lpips_required: true
+  tail_fractions: [0.05, 0.10, 0.20]
+  outage_psnr_thresholds_db: [20.0, 22.0, 24.0]
+  relative_outage_margin_db: 3.0
+
+decision_rule:
+  # The three Rayleigh arms differ only in receiver SNR conditioning, so "does a
+  # tail exist" is meaningless until one receiver is fixed.  The primary arm is
+  # chosen per SNR as the one with the highest MEAN PSNR, i.e. the receiver a
+  # deployer would pick.  This selection is deliberately blind to every tail
+  # statistic, so selecting on the mean and then testing the tail is not
+  # circular.  The rule was fixed after a 4-image x 4-realization dry run whose
+  # only purpose was smoke-testing, and before any tail statistic was computed.
+  primary_arm_selection: best_mean_psnr_among_rayleigh_arms_per_snr
+  candidate_arms:
+    - rayleigh_nominal_csi
+    - rayleigh_effective_csi
+    - rayleigh_effective_csi_clamped
+  reference_arm: awgn_control
+  go_requires_all:
+    - at_least_two_snr_points_with_median_minus_p10_psnr_ge_2_db
+    - worst10_mean_psnr_gap_vs_mean_ge_1_db
+    - nonneglible_outage_at_some_threshold
+    - tail_attributable_to_h_power_not_image_difficulty
+  no_go_if_any:
+    - median_minus_p10_psnr_lt_1_db_at_all_snr
+    - tail_removed_by_switching_to_a_better_snr_conditioning_arm
+    - tail_only_at_snr_outside_useful_range
+  # Reported alongside the verdict, not as a gate: a tail that survives the best
+  # available conditioning is still not proof that CVaR is the right fix, only
+  # that a channel-induced tail exists.  Attribution is the P2 analysis job.
+  mandatory_attribution_reports:
+    - per_arm_tail_table_for_all_four_arms
+    - within_image_vs_between_image_variance_decomposition
+    - psnr_vs_h_power_rank_correlation
+
+runtime:
+  device: cuda:0
+  realization_chunk: 32
+  dry_run:
+    source_count: 4
+    num_channel_realizations: 4
+    snrs_db: [1, 7]
+
+outputs:
+  directory: outputs/analysis/ANALYSIS-CVAR-P0-TAIL-RISK-001
+  dry_run_directory: outputs/analysis/ANALYSIS-CVAR-P0-TAIL-RISK-001-DRYRUN
+  save_worst_examples_per_snr: 8
+  overwrite_forbidden: true

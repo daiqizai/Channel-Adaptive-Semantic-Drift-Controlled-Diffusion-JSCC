@@ -1,0 +1,160 @@
+# RDD-P0 生成式重建分布偏移分析
+# 预注册：reports/rdd_p0_distribution_shift_preregistration_2026-07-30.md
+# 本 config 在任何分布指标产生前冻结。
+
+analysis_id: ANALYSIS-RDD-P0-DISTRIBUTION-SHIFT-001
+status: preregistered_frozen
+
+boundaries:
+  train_any_generative_model: false
+  download: false
+  network_access: false
+  official_imagenette_validation_accessed: false
+  sgd_ranking_allowed: false          # permanent non-ranking paper upper
+  overwrite_existing_outputs: false
+  new_generative_inference: false     # only exact S33 replay is permitted
+
+population:
+  name: imagenette_policy_dev_64
+  manifest: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/population/population_manifest.json
+  unique_source_images: 64
+  snr_db: [1.0, 4.0, 7.0, 13.0, 19.0]
+  base_seeds: [20260748, 20260749, 20260750]
+  rows_per_arm: 960
+  n_per_method_snr_cell: 192
+  resolution: 256
+
+arms:
+  s33_strong:
+    prior: none
+    kind: discriminative
+    source: exact_replay
+    checkpoint: outputs/train/EXP-S33-STRONG-JSCC-16384-FP32-001/checkpoints/best.pt
+    checkpoint_sha256: 2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb
+    replay_reference_csv: outputs/external_baselines/ANALYSIS-S33-STRONG-JSCC-16384-COMPARISON-001/per_sample.csv
+  author_jscc:
+    prior: none
+    kind: discriminative
+    source: montage_crop
+    montage_dir: outputs/external_baselines/ANALYSIS-S30-DIFFJSCC-COMPARISON-001/images
+    panel_index: 1                     # [source | author_jscc | diffjscc]
+  diffjscc:
+    prior: stable_diffusion_2_1
+    kind: generative
+    source: montage_crop
+    montage_dir: outputs/external_baselines/ANALYSIS-S30-DIFFJSCC-COMPARISON-001/images
+    panel_index: 2
+  sgd_jscc:
+    prior: mdtv2_dit
+    kind: generative
+    source: montage_crop
+    montage_root: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/sgd_jscc_paper_protocol
+    montage_size: [2066, 4130]
+    tile_grid: {cols: 8, stride: 258, origin: 2, recon_row_offset: 8}
+    non_ranking: true
+
+montage_key:
+  diffjscc: 'sha256(f"{sample_id}|{base_seed}|{float(snr_db)}")[:16]'
+  verified_hits: 960
+
+reference_sets:
+  real:
+    kind: baseline
+  vae_sd21:
+    kind: generative_prior_proxy
+    weights: third_party/DiffJSCC/checkpoints/DiffJSCC-OpenImage-CBR-1-96/model.ckpt
+    state_dict_prefix: first_stage_model.
+    embed_dim: 4
+    mode: encode_decode_posterior_mean_no_denoise
+  vae_sgd:
+    kind: generative_prior_proxy
+    weights: third_party/SGDJSCC/checkpoint/JSCC_model.pth
+    state_dict_prefix: vae.
+    embed_dim: 16
+    mode: encode_decode_posterior_mean_no_denoise
+  blur:
+    kind: smooth_lowpass
+    sigmas: [0.5, 1.0, 1.5, 2.0]
+    report_all: true                   # no post-hoc best-sigma selection
+  resample_512:
+    kind: resampling_control
+    pipeline: 256_to_512_bicubic_then_lanczos_to_256
+    rationale: DiffJSCC natively processes on a 512 grid and returns via Lanczos
+  jpeg:
+    kind: natural_degradation_control
+    qualities: [30, 70]
+    rationale: tests whether criterion 2 is trivially satisfied by any degradation
+
+distribution_metrics:
+  implementation: cleanfid
+  primary: kid                         # n=192 -> FID rank-deficient/biased
+  secondary: fid
+  fid_reported_always: true
+  feature_extractor: inception_clean
+  per_cell: separate_by_arm_and_snr    # never pool across SNR or arm
+  triangle_constraint:
+    enabled: true
+    also_report: kid_reference_vs_real
+    strong_criterion2_requires_non_trivial: true
+  bootstrap:
+    cluster: source_image
+    replicates: 10000
+
+fingerprint:
+  task: which_arm_produced_this_image
+  primary_arms: [s33_strong, author_jscc, diffjscc, sgd_jscc]
+  primary_chance: 0.25
+  secondary_arms: [s33_strong, diffjscc, sgd_jscc]
+  secondary_chance: 0.3333333333333333
+  cv:
+    scheme: GroupKFold
+    group_by: source_image             # critical anti-leakage measure
+    n_splits: 5
+  features:
+    - blockwise_dct_band_energy_ratios
+    - radial_power_spectrum_slope_and_band_energies
+    - highpass_residual_statistics
+    - local_variance_and_gradient_distribution
+    - inter_channel_correlation
+    - saturated_clipped_pixel_fraction
+  classifiers: [logistic_regression_standardized, gradient_boosting]
+  report_both_classifiers: true
+  ci:
+    method: bootstrap
+    cluster: source_image
+    replicates: 10000
+  attribution: [permutation_importance, frequency_band_aggregated_importance]
+  artifact_controls:
+    C1_center_crop:
+      size: 128
+      rationale: avoid SGD 4-patch seams located at 128 boundaries
+    C2_downsample:
+      size: 128
+      rationale: suppress high-frequency resampling fingerprints
+    C3_discriminative_only:
+      arms: [s33_strong, author_jscc]
+      chance: 0.5
+      rationale: if high, fingerprints are not prior-specific; weakens optimistic reading
+
+clic_complement:
+  population: paper_idea1b/data/clic2020_test
+  n: 428
+  arms: [s33_strong, swin_official_base_sa, swin_capacity_matched_sa]
+  reconstructions: paper_idea1b/outputs/ANALYSIS-IDEA1B-A1-DISCRIMINATIVE-001/reconstructions/clic2020_test
+  snr_db: [1.0, 4.0, 7.0, 13.0, 19.0]
+  seeds: [20260748]
+  purpose: well_powered_criterion2_test_on_discriminative_arms
+  changes_a1_quality_verdict: false
+
+criteria:
+  criterion1_fingerprint_above_chance: ci_lower_bound_exceeds_chance
+  criterion2_closer_to_nonreal_reference: kid_arm_vs_reference_below_kid_arm_vs_real
+  verdict_both: identifiable_directional_shift
+  verdict_only_1: fingerprint_without_directional_target
+  verdict_neither: negative_no_identifiable_directional_shift
+
+verification_gates:
+  s33_replay_max_abs_psnr_error_db: 0.001
+  montage_panel_max_abs_psnr_error_db: 0.001
+  sgd_recon_max_abs_psnr_error_db: 0.05   # known uint8-vs-float metric convention gap
+  source_tile_byte_identity_required: true

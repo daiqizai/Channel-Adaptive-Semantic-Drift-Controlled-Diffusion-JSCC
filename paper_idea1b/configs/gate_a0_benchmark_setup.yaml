@@ -1,0 +1,105 @@
+analysis:
+  id: GATE-A0-BENCHMARK-SETUP-001
+  stage: A0
+  output_dir: paper_idea1b/outputs/GATE-A0-BENCHMARK-SETUP-001
+  forbid_method_inference: true
+  forbid_official_imagenette_validation: true
+
+datasets:
+  root: paper_idea1b/data
+  archives_dir: paper_idea1b/data/archives
+  kodak:
+    root: paper_idea1b/data/kodak
+    count: 24
+    official_homepage: https://r0k.us/graphics/kodak/
+    official_url_template: https://r0k.us/graphics/kodak/kodak/kodim{index:02d}.png
+    download_note: official_cdn_returns_403_to_server; byte-size-verified_public_mirror
+    mirror_archive_url: https://codeload.github.com/MohamedBakrAli/Kodak-Lossless-True-Color-Image-Suite/tar.gz/refs/heads/master
+    mirror_archive_path: paper_idea1b/data/archives/Kodak-Lossless-True-Color-Image-Suite-master.tar.gz
+    mirror_url_template: https://raw.githubusercontent.com/MohamedBakrAli/Kodak-Lossless-True-Color-Image-Suite/master/PhotoCD_PCD0992/{index:02d}.png
+    expected_file_bytes:
+      [736501, 617995, 502888, 637432, 785610, 618959,
+       566322, 788470, 582899, 593463, 621023, 531024,
+       822712, 692201, 612582, 534247, 602078, 780947,
+       671476, 492462, 637051, 701970, 557596, 706397]
+  clic2020_test:
+    root: paper_idea1b/data/clic2020_test
+    count: 428
+    archives:
+      - name: mobile
+        url: https://data.vision.ee.ethz.ch/cvl/clic/test/CLIC2020Mobile_test.zip
+        filename: CLIC2020Mobile_test.zip
+        expected_bytes: 721789976
+      - name: professional
+        url: https://data.vision.ee.ethz.ch/cvl/clic/test/CLIC2020Professional_test.zip
+        filename: CLIC2020Professional_test.zip
+        expected_bytes: 891643809
+
+training_contract:
+  dataset: COCO2017
+  crop_size: 256
+  switch_to_div2k: false
+
+communication:
+  source_real_channels: 3
+  real_coordinates_per_complex_use: 2
+  s33_budget_cbr: 0.041666666666666664
+  s33_tile_size: 256
+  s33_real_symbols_per_tile: 16384
+  swin_real_symbols_per_tile: 16384
+  diffjscc:
+    processing: official_whole_frame
+    minimum_short_edge: 512
+    pad_multiple: 64
+    channel_downsample: 16
+    main_latent_channels: 16
+    receiver_generated_caption_real_symbols: 0
+  sgd_paper_upper:
+    processing: official_split_image_v2
+    patch_size: 128
+    main_real_symbols_per_patch: 4096
+    active_edge_real_symbols_per_patch: 832
+    caption_accounting: perfect_sender_caption_unpriced_in_paper
+    ranking_eligible: false
+
+metrics:
+  full_reference: [psnr, ms_ssim, lpips, dists]
+  distribution:
+    datasets: [clic2020_test]
+    metrics: [fid, kid]
+    clean_fid_mode: clean
+  semantic_future_a1:
+    unlabeled: [clip_image_similarity, dreamsim]
+    supervised_reliability: imagenette_policy_dev
+    official_imagenette_validation: sealed
+  identity_thresholds:
+    psnr_identity_min_db: 119.999
+    ms_ssim_abs_from_one_max: 1.0e-6
+    lpips_abs_max: 1.0e-6
+    dists_abs_max: 1.0e-5
+    fid_abs_max: 1.0e-4
+    kid_abs_max: 1.0e-2
+  download:
+    parallel_workers: 32
+    range_chunk_bytes: 1048576
+    metric_weights_root: paper_idea1b/data/metric_weights
+    metric_weights:
+      - name: torchvision_vgg16
+        url: https://download.pytorch.org/models/vgg16-397923af.pth
+        filename: vgg16-397923af.pth
+        expected_bytes: 553433881
+      - name: clean_fid_inception
+        url: https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/metrics/inception-2015-12-05.pt
+        filename: inception-2015-12-05.pt
+        expected_bytes: 95607719
+
+frozen_external_references:
+  s33_checkpoint:
+    path: outputs/train/EXP-S33B-STRONG-JSCC-16384-FP32-001/checkpoints/best.pt
+    sha256: 2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb
+  canonical_noise_implementation:
+    path: src/cadsd_jscc/external_common.py
+    sha256: 01978a77d2bbb937288fb1a2b9ed93063412c8dc1ce8812f858fb5736af46d22
+  s34d_aggregate:
+    path: outputs/analysis/ANALYSIS-S34D-GENERATIVE-INFERENCE-COST-001/aggregate_summary.json
+    sha256: 7fdeb1ff0feac9b544afd202780923d373b8df4ff9d0e1a33abf3df78e76d931

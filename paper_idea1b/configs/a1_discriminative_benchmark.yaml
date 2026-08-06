@@ -1,0 +1,108 @@
+analysis:
+  id: ANALYSIS-IDEA1B-A1-DISCRIMINATIVE-001
+  smoke_id: SMOKE-IDEA1B-A1-DISCRIMINATIVE-001
+  smoke_output: paper_idea1b/outputs/SMOKE-IDEA1B-A1-DISCRIMINATIVE-001
+  output: paper_idea1b/outputs/ANALYSIS-IDEA1B-A1-DISCRIMINATIVE-001
+
+protocol:
+  status: preregistered_before_a1_discriminative_smoke
+  train_dataset: COCO2017
+  training_crop_size: 256
+  method_inference_allowed: [s33_strong, swin_official_base_sa, swin_capacity_matched_sa]
+  diffusion_allowed: false
+  sgd_allowed: false
+  official_imagenette_validation_accessed: false
+  overwrite_forbidden: true
+
+inputs:
+  source_manifest:
+    path: paper_idea1b/outputs/GATE-A0-BENCHMARK-SETUP-001/manifests/source_images.csv
+    sha256: b240f4ddba307d7218c2deffc357060193a367ab6ee0b4338d29a21b4208aebb
+  tile_manifest:
+    path: paper_idea1b/outputs/GATE-A0-BENCHMARK-SETUP-001/manifests/s33_swin_tile_manifest.csv
+    sha256: d5bba72e2e948b7caf7e6377d6a766586b7f15d224868c8b2954633914804f32
+  s33:
+    checkpoint: outputs/train/EXP-S33B-STRONG-JSCC-16384-FP32-001/checkpoints/best.pt
+    sha256: 2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb
+  swin_official_base_sa:
+    checkpoint: outputs/train/EXP-S34A-SWINJSCC-BASE-SA-EQUAL-BUDGET-001/checkpoints/best.pt
+    sha256: d645e1567fb59c368dd1019129f92080d26f65938e2d0ddc0598f8710ee79f75
+    training_summary: outputs/train/EXP-S34A-SWINJSCC-BASE-SA-EQUAL-BUDGET-001/summary.json
+    training_summary_sha256: 6622240a92c5b82f34d68726729bbf2f8c3c05cd32490ed0c349622f3c5d1cc8
+  swin_capacity_matched_sa:
+    checkpoint: outputs/train/EXP-S34A-SWINJSCC-CM-SA-EQUAL-BUDGET-001/checkpoints/best.pt
+    sha256: 751ef505f1bf871130dfd07b36759884e3edb5e5b3c5e76c7184f294a6d26160
+    training_summary: outputs/train/EXP-S34A-SWINJSCC-CM-SA-EQUAL-BUDGET-001/summary.json
+    training_summary_sha256: 1e19969b3da5eadefdac05cd3c4dc33bfd468d5ba224bbea9da456cdb9f28eb8
+  source_code:
+    strong_jscc:
+      path: src/cadsd_jscc/strong_jscc.py
+      sha256: 53a239171c1377098fcd9c46dd787c5b0cbf3a87218b093e291c6df358329a71
+    swin_adapter:
+      path: src/cadsd_jscc/swinjscc_adapter.py
+      sha256: 18906e6b7c127739a7adb057b679f1306e56e3056fbdb6804db4368c9c93a409
+    canonical_noise:
+      path: src/cadsd_jscc/external_common.py
+      sha256: 01978a77d2bbb937288fb1a2b9ed93063412c8dc1ce8812f858fb5736af46d22
+
+models:
+  order: [s33_strong, swin_official_base_sa, swin_capacity_matched_sa]
+  expected_real_symbols_per_tile: 16384
+  expected_trainable_parameters:
+    s33_strong: 31028163
+    swin_official_base_sa: 28182512
+    swin_capacity_matched_sa: 31348752
+
+channel:
+  model: canonical_paired_real_awgn
+  snrs_db: [1, 4, 7, 13, 19]
+  kodak_seeds: [20260748, 20260749, 20260750]
+  clic_seeds: [20260748]
+  normalized_power_abs_error_max: 1.0e-5
+  noise_key: "canonical_standard_normal(base_seed, sample_id, snr_db, total_real_symbols)"
+
+native_processing:
+  tile_size: 256
+  tile_batch_size: 8
+  edge_padding: numpy_reflect_if_axis_gt_1_else_edge
+  output_restoration: crop_each_tile_to_valid_region_then_stitch_original_grid
+  quantization: floor_uint8
+  actual_rate:
+    source_real_dimensions: 3HW_on_original_grid
+    real_symbols: tile_count_times_16384
+    complex_channel_uses: real_symbols_div_2
+    cbr: complex_channel_uses_div_3HW
+
+smoke:
+  seed: 20260748
+  snr_db: 7
+  samples:
+    - kodak/kodim01.png
+    - clic2020_test/professional/professional/fd310b01839717c9aa5711e074d8eb7c.png
+  warmup_tile_batches: 1
+
+formal:
+  kodak:
+    sample_count: 24
+    snrs_db: [1, 4, 7, 13, 19]
+    seeds: [20260748, 20260749, 20260750]
+  clic2020_test:
+    sample_count: 428
+    snrs_db: [1, 4, 7, 13, 19]
+    seeds: [20260748]
+
+metrics:
+  full_reference: [psnr, ms_ssim, lpips, dists]
+  unlabeled_semantic: [open_clip_vit_b_32_image_cosine]
+  distribution_on_clic: [fid, kid]
+  bootstrap_replicates: 10000
+  bootstrap_seed: 20260786
+  bootstrap_unit: source_image_cluster
+  psnr_noninferiority_margin_db: 0.10
+  clip:
+    model_name: ViT-B-32
+    checkpoint: outputs/cache/open_clip/ViT-B-32.pt
+    sha256: 40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af
+  dreamsim:
+    status: not_installed_not_required_for_smoke
+    rule: may_be_added_only_with_frozen_implementation_weights_and_identity_sanity_before_formal_summary

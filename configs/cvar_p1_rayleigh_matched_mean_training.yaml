@@ -1,0 +1,94 @@
+phase: CVaR-candidate-two-P1-rayleigh-matched-mean-training
+experiment_id: EXP-CVAR-P1-RAYLEIGH-MATCHED-MEAN-001
+status: preregistered_before_training_output
+created_at: "2026-07-31"
+preregistration: reports/cvar_p1_rayleigh_matched_preregistration_2026-07-31.md
+method: RayleighBlockFadingMatched_EffectiveSnrConditioned_MeanMseTraining
+dataset: COCO2017
+image_size: 256
+seed: 20260731
+official_imagenette_validation_accessed: false
+
+# Purpose: the attribution control the user authorised after the P0 NO-GO.
+# This is the `Repeated-fading mean control` of the task book, trained on the
+# matched channel with correct effective-SNR conditioning.  Its residual
+# conditional tail decides whether CVaR is worth testing at all.
+
+initialization:
+  type: model_only_from_frozen_checkpoint
+  source_experiment: EXP-S33B-STRONG-JSCC-16384-FP32-001
+  checkpoint: outputs/train/EXP-S33B-STRONG-JSCC-16384-FP32-001/checkpoints/best.pt
+  checkpoint_sha256: 2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb
+  rationale: >-
+    Continuation rather than from-scratch keeps the comparison about channel
+    matching rather than about backbone capacity, and matches how S33B itself
+    was produced from S33.  The frozen S33B file is never modified.
+
+model:
+  implementation: src/cadsd_jscc/strong_jscc.py
+  latent_channels: 64
+  stage_channels: [64, 128, 256, 384]
+  stage_blocks: [1, 1, 2, 4]
+  condition_dim: 128
+
+rate:
+  source_real_dimensions: 196608
+  native_real_symbols: 16384
+  complex_channel_uses: 8192
+  exact_cbr: 0.041666666666666664
+  latent_shape: [64, 16, 16]
+  side_information_real_symbols: 0
+
+channel:
+  type: rayleigh_block_fading_per_image
+  convention: complex_awgn_per_real_half_variance
+  equalization: zero_forcing
+  equalization_epsilon: 0.0
+  transmitter_csi: nominal_snr_only
+  receiver_csi: known_h_and_true_effective_snr
+  encoder_conditioning: nominal_snr
+  decoder_conditioning: effective_snr_unclamped
+  train_snr_sampling: discrete_uniform_per_image
+  train_snrs_db: [1, 4, 7, 13, 19]
+  validation_snrs_db: [1, 4, 7, 13, 19]
+  validation_seed: 20260733
+
+data:
+  train_root: data/coco/train2017
+  val_root: data/coco/val2017
+  train_subset: null
+  val_subset: 512
+  train_crop_scale: [0.6, 1.0]
+  random_horizontal_flip: true
+
+validation:
+  # Fading makes single-realization validation very noisy, so each validation
+  # image is evaluated over several independent fading draws.
+  realizations_per_image: 4
+
+training:
+  # 15.2 min/epoch measured at 246 ms/batch, 3697 batches, 12.34 GiB peak.
+  # 6 epochs (22,182 steps) is deliberately generous: the point of this control
+  # is to give matched mean training its best shot at removing the tail, so a
+  # residual tail cannot be dismissed as under-training.
+  epochs: 6
+  batch_size: 32
+  gradient_accumulation_steps: 1
+  effective_batch_size: 32
+  num_workers: 8
+  amp: false
+  optimizer: AdamW_fresh_state
+  learning_rate: 5.0e-05
+  minimum_learning_rate: 1.0e-06
+  weight_decay: 0.0001
+  warmup_optimizer_steps: 0
+  grad_clip_norm: 1.0
+  loss: mse
+  device: cuda:0
+  dry_run_batches: 4
+
+outputs:
+  directory: outputs/train/EXP-CVAR-P1-RAYLEIGH-MATCHED-MEAN-001
+  dry_run_directory: outputs/smoke/EXP-CVAR-P1-RAYLEIGH-MATCHED-MEAN-001
+  overwrite_forbidden: true
+  checkpoint_selection: highest_aggregate_validation_psnr_on_matched_channel

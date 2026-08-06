@@ -1,0 +1,181 @@
+phase: S35R-P1-light-receiver-refiner-probe
+experiment_id: EXP-S35R-P1-LIGHT-RECEIVER-REFINER-001
+status: preregistered_waiting_user_confirmation_before_smoke_or_training
+created_at: "2026-07-23"
+
+authorization:
+  architecture_and_contract_only: true
+  one_batch_smoke_authorized: false
+  formal_training_authorized: false
+  official_imagenette_validation_accessed: false
+  required_sequence:
+    - user_confirms_preregistration
+    - one_batch_smoke_only
+    - report_peak_vram_step_time_and_exact_parameter_count
+    - user_explicitly_authorizes_formal_training
+
+frozen_backbone:
+  name: S33bStrongJSCC16384
+  checkpoint: outputs/train/EXP-S33B-STRONG-JSCC-16384-FP32-001/checkpoints/best.pt
+  checkpoint_sha256: 2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb
+  encoder_trainable: false
+  decoder_trainable: false
+  eval_mode: true
+  gradient_through_backbone: false
+  output_role: receiver_anchor_RGB
+
+rate_contract:
+  source_shape: [3, 256, 256]
+  transmitted_latent_shape: [64, 16, 16]
+  transmitted_real_symbols: 16384
+  complex_channel_uses: 8192
+  refiner_location: receiver_only_after_S33_decoder
+  refiner_additional_channel_symbols: 0
+  side_information_symbols: 0
+  exact_rate_required: true
+
+channel:
+  type: AWGN
+  snrs_db: [1, 4, 7, 13, 19]
+  train_snr_sampling: per_image_discrete_uniform
+  noise_variance_convention: paired_real_half_variance
+  power_normalization: per_image_unit_average_real_symbol_power
+  training_noise: fresh_reproducible_noise_from_explicit_seed
+  evaluation_noise: frozen_S33_canonical_noise
+
+data:
+  train_root: data/coco/train2017
+  training_population: same_COCO_train2017_contract_as_S33
+  image_size: 256
+  train_crop_scale: [0.6, 1.0]
+  random_horizontal_flip: true
+  selection_population: frozen_COCO_val512_not_policy_dev
+  policy_dev_population:
+    reference: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/population/population_reference.yaml
+    source_images: 64
+    channel_seeds: [20260748, 20260749, 20260750]
+    snrs_db: [1, 4, 7, 13, 19]
+    expected_rows_per_method: 960
+  policy_dev_for_checkpoint_selection: false
+  official_imagenette_validation_accessed: false
+
+generator:
+  family: deterministic_SNR_conditioned_residual_UNet_refiner
+  input:
+    receiver_anchor_RGB_channels: 3
+    normalized_snr_scalar: "(snr_db-1)/18"
+    snr_injection: FiLM_in_every_residual_block
+  topology:
+    base_width: 48
+    width_multipliers: [1, 2, 4]
+    encoder_residual_blocks_per_level: [2, 2]
+    bottleneck_residual_blocks: 4
+    decoder_residual_blocks_per_level: [2, 2]
+    normalization: group_norm
+    activation: SiLU
+    upsampling: bilinear_plus_3x3_convolution
+    downsampling: stride_2_3x3_convolution
+    output_head: zero_initialized_3x3_convolution
+  output_rule: clamp(anchor_RGB + 0.10_times_tanh(predicted_residual),0,1)
+  inference_parameter_target: [2000000, 6000000]
+  exact_parameter_count_to_be_reported_by_smoke: true
+
+discriminator:
+  family: conditional_70x70_PatchGAN
+  input: concat_anchor_RGB_and_real_or_refined_RGB
+  base_width: 32
+  channel_multipliers: [1, 2, 4, 8]
+  loss: hinge
+  training_only: true
+  excluded_from_inference_parameter_and_latency_claims: true
+
+loss:
+  generator_total: >
+    1.0*LPIPS(refined,clean) + 5.0*MSE(refined,clean)
+    + 0.01*hinge_GAN(refined,clean|anchor)
+    + 0.5*L1(refined,anchor)
+  lpips:
+    backbone: alexnet
+    frozen: true
+    local_cached_weights_only: true
+  mse_weight: 5.0
+  adversarial_weight: 0.01
+  anchor_l1_weight: 0.5
+  anchor_definition: frozen_S33_RGB_reconstruction
+  discriminator_hinge_weight: 1.0
+  no_ground_truth_semantic_labels_in_loss: true
+
+training:
+  precision: FP32
+  epochs_hard_cap: 12
+  effective_batch_size: 32
+  proposed_microbatch_size: 8
+  proposed_gradient_accumulation: 4
+  microbatch_may_change_only_after_smoke_to_fit_memory: true
+  effective_batch_size_must_remain_32: true
+  generator_optimizer: Adam
+  discriminator_optimizer: Adam
+  generator_learning_rate: 0.0001
+  discriminator_learning_rate: 0.0001
+  betas: [0.5, 0.999]
+  checkpoint_every_epoch: true
+  finite_gradient_required: true
+  output_overwrite_forbidden: true
+  no_epoch_extension_without_new_preregistration: true
+
+checkpoint_selection:
+  population: frozen_COCO_val512
+  primary: minimum_mean_LPIPS
+  constraint: mean_PSNR_delta_vs_S33_greater_than_minus_0.10_dB
+  tie_breaker: higher_mean_PSNR
+  if_no_epoch_satisfies_constraint: record_negative_and_select_no_refiner
+  policy_dev_or_official_validation_used_for_selection: false
+
+evaluation:
+  baseline: frozen_S33_same_960_keys
+  methods: [S33, S33_plus_light_refiner]
+  metrics: [PSNR, MS_SSIM, LPIPS, T_cls_failure, new_error, repair]
+  primary_quantization: floor_uint8
+  bootstrap:
+    unit: source_image_cluster_across_3_seeds_and_5_snrs
+    replicates: 10000
+    seed: 20260791
+    interval: two_sided_95_percentile
+  lpips_delta: refiner_minus_S33
+  psnr_delta: refiner_minus_S33
+  failure_delta: refiner_minus_S33
+
+go_no_go:
+  lpips_significant_improvement: LPIPS_delta_CI_high_lt_0
+  psnr_noninferiority_margin_db: 0.10
+  psnr_noninferior: PSNR_delta_CI_low_gt_minus_0.10
+  semantic_failure_not_significantly_higher: failure_delta_CI_low_lte_0
+  go_requires_all_three: true
+  mandatory_report:
+    - aggregate_and_per_SNR_metrics
+    - all_three_cluster_bootstrap_intervals
+    - failure_new_error_repair_counts
+    - exact_rate_audit
+    - refiner_parameters_FLOPs_and_latency
+  if_no_go: >
+    record_negative_and_return_to_cost_quality_reliability_characterization_letter;
+    do_not_escalate_to_main_method_b
+
+smoke:
+  scope: one_real_COCO_microbatch_one_forward_backward_G_and_D_one_optimizer_step
+  must_report:
+    - exact_generator_and_discriminator_parameters
+    - transmitted_real_symbols
+    - finite_losses_and_gradients
+    - output_shape_and_range
+    - peak_allocated_and_reserved_VRAM
+    - wall_time_per_microbatch
+    - estimated_12_epoch_duration
+    - strict_checkpoint_round_trip
+  output: outputs/smoke/SMOKE-S35R-P1-LIGHT-REFINER-001
+  overwrite_forbidden: true
+
+outputs:
+  formal_train: outputs/train/EXP-S35R-P1-LIGHT-RECEIVER-REFINER-001
+  formal_evaluation: outputs/analysis/ANALYSIS-S35R-P1-LIGHT-RECEIVER-REFINER-001
+  overwrite_forbidden: true

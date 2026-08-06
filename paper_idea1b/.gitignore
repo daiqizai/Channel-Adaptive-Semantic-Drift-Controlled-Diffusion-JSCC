@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+
+data/*
+!data/README.md
+
+outputs/*
+!outputs/README.md

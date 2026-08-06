@@ -1,0 +1,69 @@
+analysis_id: ANALYSIS-LOW-SNR-SEMANTIC-DRIFT-AUDIT-003
+created_at: "2026-07-23"
+
+protocol:
+  purpose: post_hoc_low_snr_failure_mode_visual_audit
+  no_training: true
+  no_tuning_or_checkpoint_selection: true
+  official_imagenette_validation_accessed: false
+  claim_scope: frozen_policy_dev_descriptive_audit_not_fair_method_ranking
+
+selection:
+  snr_db: 1
+  count: 15
+  unique_source_image: true
+  mandatory_t_cls_failure_lpips_percentile_max: 0.90
+  best_method_lpips_percentile_max: 0.60
+  worst_method_lpips_percentile_max: 0.90
+  clip_low_consistency_quantile: 0.25
+  t_cls_failure_weight: 3
+  cross_model_mismatch_weight: 1
+  clip_low_consistency_weight: 1
+  ranking: mandatory_t_cls_failure_stratum_then_max_anomaly_method_contrast_joint_anomaly_mean_lpips
+
+inputs:
+  population_manifest: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/population/population_manifest.json
+  sgd_root: outputs/external_baselines/ANALYSIS-S20-SGD-B1-DECISION-001/sgd_jscc_paper_protocol
+  s33_per_sample: outputs/external_baselines/ANALYSIS-S33-STRONG-JSCC-16384-COMPARISON-001/per_sample.csv
+  s33_config: configs/s33_strong_jscc_16384_external_comparison.yaml
+
+cross_model_classifiers:
+  cache_dir: outputs/cache/torch
+  batch_size: 64
+  models:
+    - key: alexnet
+      model_name: alexnet
+      weights_enum: AlexNet_Weights
+      weights: IMAGENET1K_V1
+      weights_file: outputs/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
+    - key: resnet18
+      model_name: resnet18
+      weights_enum: ResNet18_Weights
+      weights: IMAGENET1K_V1
+      weights_file: outputs/cache/torch/hub/checkpoints/resnet18-f37072fd.pth
+    - key: mobilenet_v3_small
+      model_name: mobilenet_v3_small
+      weights_enum: MobileNet_V3_Small_Weights
+      weights: IMAGENET1K_V1
+      weights_file: outputs/cache/torch/hub/checkpoints/mobilenet_v3_small-047dcff4.pth
+
+clip:
+  model_name: ViT-B-32
+  pretrained_path: outputs/cache/open_clip/ViT-B-32.pt
+  cache_dir: outputs/cache/open_clip
+  batch_size: 64
+  precision: fp32
+  weights_only: false
+
+manual_review:
+  categories:
+    - faithful
+    - reconstruction_failure_blur_noise
+    - semantic_drift_clear_wrong
+    - uncertain
+  reconstruction_failure_definition: visibly_blurred_noisy_or_structurally_broken_not_convincing
+  semantic_drift_definition: visually_clear_and_credible_but_subject_object_or_scene_meaning_wrong
+
+outputs:
+  directory: outputs/analysis/ANALYSIS-LOW-SNR-SEMANTIC-DRIFT-AUDIT-003
+  overwrite_forbidden: true

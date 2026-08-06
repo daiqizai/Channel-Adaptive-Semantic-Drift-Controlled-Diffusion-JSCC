@@ -1,0 +1,117 @@
+analysis_id: ANALYSIS-CVAR-P1-MATCHED-TAIL-RISK-002-SEED20260802
+phase: CVaR-candidate-two-P1-matched-mean-conditional-tail-risk
+created_at: "2026-07-31"
+
+protocol:
+  purpose: residual_conditional_tail_of_the_rayleigh_matched_mean_baseline
+  preregistration: reports/cvar_p1_rayleigh_matched_preregistration_2026-07-31.md
+  no_training: true
+  no_checkpoint_selection: true
+  official_imagenette_validation_accessed: false
+  claim_scope: attribution_closure_gate_not_a_method_claim
+  # Identical to the P0 diagnostic in every respect except the checkpoint under
+  # test and the a-priori fixed primary arm.  Same 200 images, same 64
+  # realizations, same 5 SNRs, same base_seed, same four paired arms.
+
+inputs:
+  strong_checkpoint: outputs/train/EXP-CVAR-P1-RAYLEIGH-MATCHED-MEAN-001/checkpoints/best.pt
+  strong_checkpoint_sha256: 4a52028480c7317c7084c7922af7d22e216b3798613036b278131122e44dbc20
+  coco_val_root: data/coco/val2017
+
+selection:
+  source_count: 200
+  rank_by: content_sha256
+  exclude_s33_val_subset: true
+  s33_val_subset_size: 512
+  s33_val_subset_seed: 20260752
+  source_transform: torchvision_resize_256_then_center_crop_256
+
+diagnostic:
+  num_channel_realizations: 64
+  snrs_db: [1, 4, 7, 13, 19]
+  base_seed: 20260802
+  channel: rayleigh_block_fading_per_image
+  csi: receiver_known_h
+  equalization: zero_forcing
+  equalization_epsilon: 0.0
+  transmitter_knows_h: false
+  real_symbols: 16384
+
+arms:
+  - name: awgn_control
+    fading: false
+    decoder_snr: nominal
+    role: isolates_tail_that_exists_without_fading
+  - name: rayleigh_nominal_csi
+    fading: true
+    decoder_snr: nominal
+    role: naive_deployment_decoder_not_told_about_the_fade
+  - name: rayleigh_effective_csi
+    fading: true
+    decoder_snr: effective
+    role: training_matched_deployment_this_is_the_primary_arm
+  - name: rayleigh_effective_csi_clamped
+    fading: true
+    decoder_snr: effective_clamped
+    role: kept_for_comparability_with_p0_not_matched_to_this_training
+
+decoder_snr_clamp_db: [1.0, 19.0]
+
+metrics:
+  primary_quantization: floor_uint8
+  quality: [MSE, PSNR, MS_SSIM, LPIPS]
+  lpips_required: true
+  tail_fractions: [0.05, 0.10, 0.20]
+  outage_psnr_thresholds_db: [20.0, 22.0, 24.0]
+  relative_outage_margin_db: 3.0
+
+decision_rule:
+  # Fixed a priori: this model was trained with effective-SNR conditioning, so
+  # the training-matched deployment arm is known before results and does not
+  # need a data-dependent selection rule.
+  primary_arm_selection: fixed
+  primary_arm: rayleigh_effective_csi
+  candidate_arms:
+    - rayleigh_nominal_csi
+    - rayleigh_effective_csi
+    - rayleigh_effective_csi_clamped
+  reference_arm: awgn_control
+  # The binding P1 decision table lives in scripts/cvar_p1_attribution_verdict.py.
+  # The checks below are the P0 gates, reported for continuity only.
+  go_requires_all:
+    - at_least_two_snr_points_with_median_minus_p10_psnr_ge_2_db
+    - worst10_mean_psnr_gap_vs_mean_ge_1_db
+    - nonneglible_outage_at_some_threshold
+    - tail_attributable_to_h_power_not_image_difficulty
+  no_go_if_any:
+    - median_minus_p10_psnr_lt_1_db_at_all_snr
+    - tail_removed_by_switching_to_a_better_snr_conditioning_arm
+    - tail_only_at_snr_outside_useful_range
+  mandatory_attribution_reports:
+    - per_arm_tail_table_for_all_four_arms
+    - within_image_vs_between_image_variance_decomposition
+    - psnr_vs_h_power_rank_correlation
+
+runtime:
+  device: cuda:0
+  # Reduced from the P0 value of 32 after an external VLLM process occupied
+  # 20.8 of 24 GiB and the first attempt hit CUDA OOM (failure preserved in
+  # ANALYSIS-CVAR-P1-MATCHED-TAIL-RISK-002-SEED20260802_failed_oom_20260801, 32 rows).
+  # Measured chunk sensitivity, 8 vs 2 on the dry run, keyed by
+  # (arm, image, snr, realization): |h|^2 and decoder SNR bit-identical,
+  # max |dPSNR| = 8.3e-4 dB, max |dMSE| = 4.4e-7, max |dLPIPS| = 1.7e-4.
+  # Channel realizations are therefore exactly reproduced; the residual is GPU
+  # kernel non-determinism at different batch sizes, four orders of magnitude
+  # below the 2.0 dB tail gate.  Row ORDER does change with the chunk size, so
+  # any cross-run comparison must be keyed, not positional.
+  realization_chunk: 8
+  dry_run:
+    source_count: 4
+    num_channel_realizations: 4
+    snrs_db: [1, 7]
+
+outputs:
+  directory: outputs/analysis/ANALYSIS-CVAR-P1-MATCHED-TAIL-RISK-002-SEED20260802
+  dry_run_directory: outputs/analysis/ANALYSIS-CVAR-P1-MATCHED-TAIL-RISK-002-SEED20260802-DRYRUN
+  save_worst_examples_per_snr: 8
+  overwrite_forbidden: true

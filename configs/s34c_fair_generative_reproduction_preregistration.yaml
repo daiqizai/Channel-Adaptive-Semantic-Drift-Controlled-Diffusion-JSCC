@@ -1,0 +1,180 @@
+phase: S34C-fair-generative-reproduction
+status: paused_by_user_before_any_execution
+created_at: "2026-07-23"
+official_imagenette_validation_accessed: false
+formal_output_creation_authorized: false
+pause_reason: >-
+  The exact-rate claim is already true for DiffJSCC; SGD lacks official training
+  code; unequal compute weakens causal interpretation; and the 14-29 day plan
+  conflicts with the near-term publication objective. Reconsider only after the
+  read-only S34C-Lite rate-transparency analysis.
+
+research_question: >-
+  Under the same COCO task-adaptation data, discrete five-SNR AWGN contract,
+  canonical evaluation noise, and exact 16,384-real total channel budget, how
+  much perceptual advantage remains for generative JSCC relative to frozen S33?
+
+frozen_reference:
+  method: S33-strong-pure-JSCC
+  checkpoint: outputs/train/EXP-S33B-STRONG-JSCC-16384-FP32-001/checkpoints/best.pt
+  checkpoint_sha256: 2daad9e73df9bca049e02800d32e4f34298bab6452dcf32634f6320881dd5bfb
+  real_symbols: 16384
+  side_information_real_symbols: 0
+
+external_sources:
+  diffjscc:
+    commit: 13aeb62451b872ce41ceba132c9c30a9ca172c53
+    reproduction_label: official-code_COCO_five-SNR_retraining
+    training_code_available: true
+    transmitted_side_information: false
+    receiver_generated_caption_real_symbols: 0
+  sgdjscc:
+    commit: 2188acc0dd2805355d3d0d2e478cbc27b46b4da5
+    reproduction_label: SGD-inspired_released-component_rate-constrained_adaptation
+    training_code_available: false
+    forbid_label: official_SGD-JSCC_retraining
+
+channel:
+  type: AWGN
+  train_snrs_db: [1, 4, 7, 13, 19]
+  train_sampling: per-image_discrete_uniform
+  evaluation_snrs_db: [1, 4, 7, 13, 19]
+  convention: paired-real_half-variance
+  evaluation_noise: canonical_external-common-v1_16384-real
+  per_coordinate_average_power: 1.0
+
+rate_contract:
+  source_resolution: [256, 256]
+  total_real_symbols: 16384
+  total_complex_channel_uses: 8192
+  source_real_dimensions: 196608
+  cbr: 0.041666666666666664
+  exact_total_required: true
+  padding_must_be_declared: true
+  unmetered_sender_side_information_forbidden: true
+
+diffjscc_arm:
+  image_latent_real_symbols: 16384
+  receiver_generated_caption_real_symbols: 0
+  input_processing: author_auto-resize_to_512_then_return_to_256
+  jscc_stage:
+    initialization: random
+    data: COCO_train2017_project_manifest
+    snr_change_from_official: continuous_0_14_to_discrete_1_4_7_13_19
+    max_steps_cap: 100000
+  diffusion_stage:
+    initialization: stable-diffusion-2.1_plus_frozen_trained_JSCC
+    trainable_part: official_ControlNet_contract
+    data: COCO_train2017_project_manifest
+    max_steps_cap: 25000
+    checkpoint_selection: frozen_COCO_selection_only
+
+sgdjscc_fair_arm:
+  total_real_symbols: 16384
+  allocation:
+    main_latent:
+      projected_channels_per_128_patch: 12
+      patches: 4
+      spatial_shape: [16, 16]
+      real_symbols: 12288
+    active_edge:
+      canny_cr: 8
+      real_symbols_per_patch: 512
+      real_symbols: 2048
+    caption:
+      tokenizer: frozen_CLIP_BPE
+      max_tokens_per_patch: 12
+      token_bits: 16
+      length_bits: 4
+      crc_bits: 16
+      convolutional_code_rate: 0.5
+      tail_bits_before_coding: 6
+      real_symbols_per_patch: 436
+      patches: 4
+      real_symbols: 1744
+      crc_failure_action: empty_caption
+    no_information_padding_real_symbols: 304
+    sum_check: 16384
+  adaptation:
+    main_transmit_projection: learned_16_to_12
+    main_receive_projection: learned_12_to_16
+    edge_branch: released_architecture_retrained_at_cr8
+    caption_codec: deterministic_project_adapter
+    diffusion: released_backbone_with_clean-room_ControlNet_or_LoRA_finetuning
+    initial_freeze: released_VAE_and_diffusion_backbone
+  mandatory_diagnostic_controls:
+    - fair_rate_no_text_same_allocation_text_coordinates_zeroed
+    - fair_rate_oracle_clean_caption_non-ranking_upper_bound
+    - released_paper_protocol_upper_bound_non-ranking
+
+training_fairness:
+  common_task_adaptation_dataset: COCO_train2017
+  common_augmentations: S33_manifest_and_crop_contract_where_architecture_allows
+  common_train_SNR_distribution: discrete_five-SNR
+  common_channel_convention: true
+  identical_total_pretraining_data: false
+  external_generative_pretraining_must_be_reported: true
+  optimizer_steps_must_be_reported: true
+  gpu_hours_must_be_reported: true
+  no_equal_compute_claim: true
+
+evaluation:
+  paired_policy_development:
+    population: frozen_S20_Imagenette_policy-dev_64_sources
+    channel_seeds: [20260748, 20260749, 20260750]
+    snrs_db: [1, 4, 7, 13, 19]
+    rows_per_method: 960
+    metrics: [PSNR, MS-SSIM, LPIPS, T_cls_failure]
+  perception_holdout:
+    population: sealed_SHA-ranked_COCO_val2017_2048_excluding_all_selection_paths
+    channel_seeds: [20260748]
+    snrs_db: [1, 4, 7, 13, 19]
+    metrics: [FID, KID, LPIPS, PSNR, MS-SSIM, COCO_object_semantic_aux]
+    forbid_method_selection: true
+  official_imagenette_validation: sealed
+
+statistics:
+  confidence_level: 0.95
+  bootstrap_replicates: 10000
+  paired_metrics_cluster: source_image
+  fid_kid_features: frozen_InceptionV3_same_preprocess_all_methods
+  fid_kid_bootstrap_cluster: source_image
+  kid_is_primary_small_sample_distribution_metric: true
+  report_aggregate_and_per_SNR: true
+  psnr_noninferiority_margin_db: 0.10
+  semantic_failure_must_not_worsen_for_unqualified_perceptual_claim: true
+  shrinkage_definition: >-
+    1 - (S33_metric - fair_generative_metric) /
+    (S33_metric - paper_protocol_metric), with sign-aware raw deltas and CI also reported;
+    undefined when the paper-protocol gap has the wrong sign or crosses zero.
+
+decision_gate:
+  perceptual_advantage_retained: >-
+    fair generative arm has lower LPIPS and lower KID (FID supportive), both
+    pairwise 95% CI below zero versus S33, without higher semantic failure.
+  perceptual_advantage_erased: >-
+    fair generative LPIPS/KID no longer significantly beat S33, or any gain is
+    accompanied by significantly higher semantic failure.
+  venue_hedge:
+    ICASSP: retained_fair_perception-reliability_Pareto_or_substantial_reproducible_fairness_analysis
+    WCL: fair_advantage_erased_and_S33_simple_exact-rate_result_remains_the_cleanest_claim
+
+execution_order_after_explicit_authorization:
+  - static_contract_implementation
+  - one-batch_memory_time_and_exact-rate_smoke_then_report
+  - DiffJSCC_JSCC_stage_then_convergence_report
+  - DiffJSCC_diffusion_stage_then_convergence_report
+  - SGD_rate-adapter_and_edge_stage_then_report
+  - SGD_diffusion_adaptation_then_report
+  - frozen_64x3x5_paired_evaluation
+  - sealed_COCO2048_FID_KID_evaluation
+  - venue_decision_report
+
+limitations_requiring_acceptance:
+  - SGD official training recipe is absent; its fair arm is an approximate adaptation, not an official reproduction.
+  - Diffusion priors retain external pretraining; only task adaptation data are aligned to COCO.
+  - Diffusion training may require BF16/FP16, gradient checkpointing, batch-size one, and accumulation on a 24GB RTX 4090D.
+  - Training compute and model capacity are not equal to S33 and must be reported rather than claimed equal.
+  - FID at 64 sources is invalid as a primary claim; the sealed COCO-2048 arm is required.
+
+overwrite_forbidden: true
